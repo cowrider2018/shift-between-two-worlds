@@ -21,9 +21,15 @@ from lib import X, Y, Z
 
 HEIGHT = 0.84
 # Facet density outside the head matches the primitive head (10x8 sphere): coarse planes, few turns.
-BODY_TRIS = 900
+BODY_TRIS = 700
+TUNIC_TRIS = 450
+SLEEVE_TRIS = 120
+BOOT_TRIS = 260
+CLOTH = 0.008  # how far the tunic stands off the body: the visible thickness of its hem
+HEM_Z = 0.172  # tunic hem height
+SLEEVE_R = 0.034  # sleeve tube radius over the 0.025 arm
 PANT_R = 0.05   # trouser leg radius: full, nearly straight
-BOOT_R = 0.054  # boot shaft radius: only a touch wider, so the rim is a small step, not a big tuck
+BOOT_R = 0.06   # boot shaft radius: only a touch wider, so the rim is a small step, not a big tuck
 BOOT_TOP = 0.34  # boot rim height between ankle and knee: low, so the trouser leg reads long
 THICK = 1.5  # trunk and leg girth relative to the original slim build (heights unchanged)
 DEPTH = 0.7  # the trunk's front-to-back depth relative to THICK (a flatter, less barrel-chested body)
@@ -66,60 +72,96 @@ def L(name, s=1):
 # ---------------------------------------------------------------------------
 # body (no head, no hair — those are separate parts)
 
+_D = THICK * DEPTH
+
+
+def wide(semi, side=1.0):
+    """Girth scales (depth x by THICK * DEPTH, width y by THICK * side); height z does not."""
+    return Vector((semi[0] * _D, semi[1] * THICK * side, semi[2]))
+
+
+# Trunk: a pear that widens in one steady slope; the bands overlap deeply in height so it reads as one form.
+TRUNK = [
+    ((0.005, 0, 0.332), wide((0.062, 0.068, 0.056))),        # chest, sloping into the shoulders
+    ((0.015, 0, 0.278), wide((0.08, 0.088, 0.075), 0.9)),    # belly
+    ((0.008, 0, 0.228), wide((0.092, 0.106, 0.072), 0.78)),  # lower belly / hips
+    ((0.002, 0, 0.198), wide((0.092, 0.112, 0.05), 0.72)),   # hem region
+]
+
+
 def build_body():
     a = lib.Anatomy("hero_body", resolution=0.0045)
-    skin = "hero_skin"
-    tunic, belt, pants, boot = "hero_tunic", "hero_belt", "hero_pants", "hero_boot"
+    skin, pants = "hero_skin", "hero_pants"
 
     a.seg(L("neck") + Vector((0, 0, -0.02)), h(0.0, 0, -0.12), 0.04, skin)  # neck
-    T = THICK
-
-    D = T * DEPTH
-
-    def wide(semi, side=1.0):  # girth scales (depth x by T * DEPTH, width y by T * side), height z does not
-        return (semi[0] * D, semi[1] * T * side, semi[2])
-
-    # --- trunk: full depth, but the lower body is pulled in sideways so it reads as a rounded egg,
-    #     not a wide bell; the bottom is two round, tucked-in cheeks
-    a.ell((0.005, 0, 0.332), wide((0.062, 0.068, 0.056)), tunic)             # chest, sloping into the shoulders
+    # trunk (under the tunic shell; only its lower part shows, as trousers below the hem)
+    for c, semi in TRUNK:
+        a.ell(c, semi, pants)
     for s in (1, -1):
-        sh = L("shoulder", s)
-        a.ell(sh + Vector((0, -0.006 * s, -0.004)), (0.03, 0.03, 0.024), tunic)  # small, dropped shoulder cap
-        a.ell((-0.05 * D / 1.5, 0.042 * s, 0.2), (0.062 * D / 1.5, 0.056, 0.064), tunic)       # round bottom cheek, flows into the thigh
-    # below the chest the trunk widens in one steady slope: the bands overlap deeply in height so the
-    # standing silhouette reads as one pear, not stacked bulges
-    a.ell((0.015, 0, 0.278), wide((0.08, 0.088, 0.075), 0.9), tunic)        # belly
-    a.ell((0.008, 0, 0.228), wide((0.092, 0.106, 0.072), 0.78), tunic)      # lower belly / hips
-    a.ell((0.002, 0, 0.198), wide((0.092, 0.112, 0.05), 0.72), tunic)       # tunic hem, no flare
+        a.ell((-0.05 * _D / 1.5, 0.042 * s, 0.2), (0.062 * _D / 1.5, 0.056, 0.064), pants)  # bottom cheek
     # hips-to-legs: one block across both thigh roots, so the widest part of the pear runs straight on
     # into the outer thighs; the legs only part below it
     a.ell((-0.006, 0, 0.16), (0.075, 0.122, 0.05), pants)
-    a.paint((0.0, 0, 0.151), (0.15, 0.19, 0.031), pants)  # a level tunic hem instead of a saw-tooth seam
-    a.ell((0.012, 0, 0.25), wide((0.096, 0.099, 0.012), 0.86), belt)        # belt band, just proud of the belly
-    a.ell((0.012 + 0.096 * D, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")  # buckle
 
     # --- arms: one smooth tapering tube per limb; the skeleton does the bending, so the surface carries no
     #     elbow or muscle segments (overlapping pieces would sum into bulges at the joints)
     for s in (1, -1):
         sh, el, wr, ha = L("shoulder", s), L("elbow", s), L("wrist", s), L("hand", s)
         a.seg(sh, wr, 0.025, skin, r2=0.021)                                     # shoulder to wrist in one
-        a.paint(sh.lerp(el, 0.4), (0.04, 0.04, 0.045), tunic)                    # short sleeve: colour only
         a.ell(ha + Vector((0.004, -0.002 * s, -0.008)), (0.022, 0.017, 0.03), skin)  # mitten hand: one plain oval
 
-    # --- short legs: one smooth trouser tube per leg, boots worn over it ---------
+    # --- short legs: one smooth trouser tube per leg (the boots are a separate shell worn over it) ---------
     for s in (1, -1):
-        hj, kn, an, to = L("hip", s), L("knee", s), L("ankle", s), L("toe", s)
-        a.ell(hj + Vector((-0.012, 0.01 * s, -0.022)), (0.062, 0.056, 0.05), pants)  # full upper thigh under the hem
-        # trouser leg: a straight, slim tube from the thigh root to the ankle (the boot is the widest part)
+        hj, an = L("hip", s), L("ankle", s)
+        a.ell(hj + Vector((-0.012, 0.01 * s, -0.022)), (0.062, 0.056, 0.05), pants)  # full upper thigh
         a.seg(hj, an, PANT_R * 1.03, pants, r2=PANT_R)                          # hip to ankle in one, no knee seam
-        # boot: a straight shaft one step wider than the trouser leg, worn over it, then one clean shoe
-        # shaft over the trouser leg, dropping straight down to the ground: that is the heel
-        top = an.lerp(kn, BOOT_TOP)
-        a.seg(Vector((an.x - 0.006, an.y, -0.03)), top, BOOT_R, boot)  # runs into the floor
-        a.seg(Vector((an.x, an.y, 0.01)), Vector((to.x + 0.024, an.y, 0.012)), 0.036, boot, r2=0.03)  # toe, forward
-    a.subtract((0, 0, -1.0), (1.5, 1.5, 1.0))  # flat soles: everything below the floor is sliced off
 
     return a.build(target_tris=BODY_TRIS, voxel=0.006)
+
+
+# ---------------------------------------------------------------------------
+# clothes: separate shells worn over the body, so every garment edge (tunic hem, sleeve cuff, boot rim)
+# is a real cut edge with thickness instead of a colour change
+
+def build_tunic():
+    a = lib.Anatomy("hero_tunic", resolution=0.0045)
+    m = CLOTH
+    for c, (x, y, z) in TRUNK:
+        a.ell(c, (x + m, y + m, z + m), "hero_tunic")
+    a.ell((-0.006, 0, 0.17), (0.075 + m, 0.122 + m, 0.05), "hero_tunic")       # over the hip block, down to the hem
+    for s in (1, -1):
+        a.ell((-0.05 * _D / 1.5, 0.042 * s, 0.2), (0.062 * _D / 1.5 + m, 0.056 + m, 0.064), "hero_tunic")
+        a.ell(L("shoulder", s) + Vector((0, -0.006 * s, -0.004)), (0.03, 0.03, 0.026), "hero_tunic")  # shoulder
+    a.ell((0.012, 0, 0.25), wide((0.1, 0.099, 0.017), 0.9) + Vector((m, m, 0)), "hero_belt")         # belt band
+    a.ell((0.012 + 0.1 * _D + m, 0, 0.25), (0.01, 0.022, 0.019), "hero_buckle")                       # buckle
+    a.subtract((0, 0, HEM_Z - 1.0), (1.5, 1.5, 1.0))   # the hem: a level cut edge over the trousers
+    return a.build(target_tris=TUNIC_TRIS, voxel=0.006)
+
+
+def build_sleeves():
+    a = lib.Anatomy("hero_sleeves", resolution=0.0045)
+    for s in (1, -1):
+        sh, el = L("shoulder", s), L("elbow", s)
+        d = (el - sh).normalized()
+        end = sh.lerp(el, 0.55)
+        a.seg(sh - d * 0.01, end + d * 0.03, SLEEVE_R, "hero_tunic")
+        a.subtract(end + d * 0.6, (0.6, 0.6, 0.6))      # square cuff across the arm
+    return a.build(target_tris=SLEEVE_TRIS, voxel=0.005)
+
+
+def build_boots():
+    a = lib.Anatomy("hero_boots", resolution=0.0045)
+    rim = 0.0
+    for s in (1, -1):
+        kn, an, to = L("knee", s), L("ankle", s), L("toe", s)
+        top = an.lerp(kn, BOOT_TOP)
+        rim = top.z
+        # shaft over the trouser leg, dropping straight down to the floor: that is the heel
+        a.seg(Vector((an.x - 0.006, an.y, -0.03)), top + Vector((0, 0, 0.03)), BOOT_R, "hero_boot")
+        a.seg(Vector((an.x, an.y, 0.01)), Vector((to.x + 0.024, an.y, 0.012)), 0.036, "hero_boot", r2=0.03)  # toe
+    a.subtract((0, 0, -1.0), (1.5, 1.5, 1.0))           # flat soles
+    a.subtract((0, 0, rim + 1.0), (1.5, 1.5, 1.0))      # the rim: a level cut edge around the trouser leg
+    return a.build(target_tris=BOOT_TRIS, voxel=0.005)
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +504,7 @@ def build_actions(rig):
 def build(out_glb, out_preview):
     lib.reset()
     body = build_body()
+    clothes = [build_tunic(), build_sleeves(), build_boots()]
     parts = {
         "hair": build_hair("hair"),
         "hood": build_hood(),
@@ -471,6 +514,8 @@ def build(out_glb, out_preview):
     head_parts = build_head()
     rig = build_rig()
     lib.skin(body, rig)
+    for obj in clothes:
+        lib.skin(obj, rig)
     for obj in head_parts:
         lib.attach(obj, rig, "head")
     lib.weight_chain(parts["cape"], rig, [("chest", 0.4), ("cape.1", 0.26), ("cape.2", 0.065)])
@@ -481,7 +526,7 @@ def build(out_glb, out_preview):
         lib.attach(obj, rig, bone)
     build_actions(rig)
     rig["variants"] = json.dumps(VARIANTS)  # the game reads this to show / hide outfit parts
-    lib.export_glb(out_glb, [rig, body] + head_parts + list(parts.values()) + [o for o, _ in props.values()])
+    lib.export_glb(out_glb, [rig, body] + clothes + head_parts + list(parts.values()) + [o for o, _ in props.values()])
 
     poses = [("idle", 1), ("walk", 1), ("walk", 5), ("walk", 9), ("walk", 13), ("attack", 3),
              ("attack", 5), ("attack", 7), ("crouch", 1), ("crouch_walk", 1), ("crouch_walk", 7), ("crouch_walk", 13)]

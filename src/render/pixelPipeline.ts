@@ -7,12 +7,12 @@ import {
   Color, Vector2, WebGLRenderTarget, WebGLRenderer, PCFShadowMap, UnsignedIntType,
 } from 'three';
 
-/** Target height of the low-res framebuffer in pixels. */
-const TARGET_HEIGHT = 270;
+/** Render resolution = screen resolution / PIXEL_SCALE (each art pixel is PIXEL_SCALE×PIXEL_SCALE screen pixels). */
+export const PIXEL_SCALE = 3;
 
 export class PixelPipeline {
   readonly renderer: WebGLRenderer;
-  pixelSize = 3;
+  pixelSize = PIXEL_SCALE;
   width = 1;
   height = 1;
   private readonly rt: WebGLRenderTarget;
@@ -86,7 +86,7 @@ export class PixelPipeline {
 
   /** Resize to the window; returns the low-res framebuffer size. */
   resize(cssW: number, cssH: number): { w: number; h: number } {
-    this.pixelSize = Math.max(2, Math.round(cssH / TARGET_HEIGHT));
+    this.pixelSize = PIXEL_SCALE;
     this.width = Math.max(1, Math.ceil(cssW / this.pixelSize));
     this.height = Math.max(1, Math.ceil(cssH / this.pixelSize));
     this.renderer.setSize(this.width, this.height, false);

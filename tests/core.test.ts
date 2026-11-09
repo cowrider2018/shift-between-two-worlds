@@ -1,0 +1,149 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { BLOCKS } from '../src/core/blocks';
+import { castRay } from '../src/core/grid';
+import { createEmptyLevel, parseLevel, serializeLevel, setCell, setProp, type Level } from '../src/core/level';
+import { NO_INPUT, Sim, type SimInput } from '../src/core/sim';
+import { validateLevel } from '../src/core/validate';
+
+const levelsDir = resolve(import.meta.dirname, '..', 'levels');
+const levelFiles = readdirSync(levelsDir).filter((f) => f.endsWith('.json'));
+const load = (f: string) => readFileSync(join(levelsDir, f), 'utf8').replace(/\r\n/g, '\n');
+const level01 = () => parseLevel(JSON.parse(load('level01.json'))).level!;
+
+/** Walk the player to a cell centre by stepping the sim (no pathfinding; straight line). */
+function walkTo(sim: Sim, x: number, y: number, extra: Partial<SimInput> = {}) {
+  for (let i = 0; i < 2000; i++) {
+    const dx = x + 0.5 - sim.x;
+    const dy = y + 0.5 - sim.y;
+    if (Math.hypot(dx, dy) < 0.05 || sim.status !== 'playing') return;
+    const d = Math.hypot(dx, dy);
+    const s = Math.min(1, d / (3.2 / 60));
+    sim.update({ ...NO_INPUT, moveX: (dx / d) * s, moveY: (dy / d) * s, ...extra }, 1 / 60);
+  }
+  throw new Error(`could not reach ${x},${y}; at ${sim.x.toFixed(2)},${sim.y.toFixed(2)}`);
+}
+const tap = (sim: Sim, key: 'shift' | 'interact' | 'attack') => sim.update({ ...NO_INPUT, [key]: true }, 1 / 60);
+
+describe('block registry', () => {
+  it('has unique ids and chars', () => {
+    expect(new Set(BLOCKS.map((b) => b.id)).size).toBe(BLOCKS.length);
+    expect(new Set(BLOCKS.map((b) => b.char)).size).toBe(BLOCKS.length);
+  });
+});
+
+describe('level files', () => {
+  for (const f of levelFiles) {
+    it(`${f} is canonical, valid and solvable`, () => {
+      const text = load(f);
+      const { level, errors } = parseLevel(JSON.parse(text));
+      expect(errors).toEqual([]);
+      expect(serializeLevel(level!)).toBe(text);
+      const report = validateLevel(level!);
+      expect(report.issues.filter((i) => i.severity === 'error')).toEqual([]);
+      expect(report.solve?.status).toBe('solved');
+    });
+  }
+});
+
+describe('validator', () => {
+  it('reports a door that no lever opens', () => {
+    const l = createEmptyLevel('t');
+    setCell(l, 0, 5, 5, 'E');
+    setCell(l, 0, 3, 3, 'D');
+    expect(validateLevel(l).issues.some((i) => i.severity === 'error' && i.message.includes('沒有任何拉桿'))).toBe(true);
+  });
+
+  it('detects an unsolvable level', () => {
+    const l = createEmptyLevel('t', 7, 5);
+    setCell(l, 0, 4, 1, '#'); setCell(l, 0, 4, 2, '#'); setCell(l, 0, 4, 3, '#');
+    for (let y = 1; y < 4; y++) for (let x = 1; x < 6; x++) setCell(l, 1, x, y, '#');
+    setCell(l, 0, 5, 2, 'E');
+    const r = validateLevel(l);
+    expect(r.solve?.status).toBe('unsolvable');
+    expect(r.ok).toBe(false);
+  });
+
+  it('rejects monster paths through walls', () => {
+    const l = createEmptyLevel('t');
+    setCell(l, 0, 5, 5, 'E');
+    setCell(l, 0, 4, 2, '#');
+    l.dimensions[0].monsters.push({ id: 'm', path: [[2, 2], [6, 2]], mode: 'pingpong', speed: 1, pause: 0, viewRadius: 3, viewAngle: 60, facing: 0 });
+    expect(validateLevel(l).issues.some((i) => i.message.includes('穿過'))).toBe(true);
+  });
+});
+
+describe('ray cast', () => {
+  it('stops at the first blocked cell', () => {
+    const d = castRay(0.5, 0.5, 1, 0, 10, (x) => x === 3);
+    expect(d).toBeCloseTo(2.5);
+  });
+});
+
+describe('simulation on level01', () => {
+  it('denies shifting on non-anchor cells and allows it on floor', () => {
+    const sim = new Sim(level01());
+    walkTo(sim, 2, 5); // reward in A
+    tap(sim, 'shift');
+    expect(sim.dim).toBe(0);
+    walkTo(sim, 1, 3);
+    tap(sim, 'shift');
+    expect(sim.dim).toBe(1);
+  });
+
+  it('a lever in B opens the door in A, and souls die to one swing', () => {
+    const sim = new Sim(level01());
+    const doorA = sim.grid.cell(0, 6, 3);
+    expect(sim.doorOpen(doorA)).toBe(false);
+    // kill the B keeper's soul from A
+    const keeper = sim.monsters.find((m) => m.def.id === 'keeper')!;
+    for (let i = 0; i < 600 && Math.hypot(keeper.x - sim.x, keeper.y - sim.y) > 1.2; i++) {
+      const dx = keeper.x - sim.x, dy = keeper.y - sim.y, d = Math.hypot(dx, dy);
+      sim.update({ ...NO_INPUT, moveX: dx / d, moveY: dy / d }, 1 / 60);
+    }
+    tap(sim, 'attack');
+    expect(keeper.alive).toBe(false);
+    walkTo(sim, 1, 2);
+    tap(sim, 'shift');
+    expect(sim.dim).toBe(1);
+    walkTo(sim, 2, 2);
+    tap(sim, 'interact');
+    expect(sim.doorOpen(doorA)).toBe(true);
+    expect(sim.status).toBe('playing');
+  });
+
+  it('is caught when standing in a cone, but not while sneaking at the edge', () => {
+    const l: Level = createEmptyLevel('t', 12, 5);
+    setCell(l, 0, 10, 3, 'E');
+    l.dimensions[0].monsters.push({ id: 'm', path: [[6, 2]], mode: 'pingpong', speed: 1, pause: 0, viewRadius: 4, viewAngle: 90, facing: 180 });
+    // player at (2.5, 2.5): 4 tiles away → not seen (edge); move to x=3.5 → 3 tiles → seen unless sneaking (r=2)
+    setCell(l, 0, 1, 1, '.');
+    setCell(l, 0, 3, 2, 'S');
+    const sneaking = new Sim(l);
+    for (let i = 0; i < 120; i++) sneaking.update({ ...NO_INPUT, sneak: true }, 1 / 60);
+    expect(sneaking.status).toBe('playing');
+    const open = new Sim(l);
+    for (let i = 0; i < 120; i++) open.update(NO_INPUT, 1 / 60);
+    expect(open.status).toBe('caught');
+  });
+
+  it('requires both cores to win', () => {
+    const l = createEmptyLevel('t', 8, 3);
+    setCell(l, 0, 3, 1, 'C');
+    setCell(l, 1, 5, 1, 'C');
+    setCell(l, 0, 6, 1, 'E');
+    setProp(l, 0, 6, 1, 'coresRequired', 0);
+    const sim = new Sim(l);
+    walkTo(sim, 6, 1);
+    expect(sim.status).toBe('playing');
+    walkTo(sim, 4, 1);
+    tap(sim, 'shift');
+    walkTo(sim, 5, 1);
+    walkTo(sim, 4, 1);
+    tap(sim, 'shift');
+    walkTo(sim, 6, 1);
+    expect(sim.cores).toBe(2);
+    expect(sim.status).toBe('won');
+  });
+});

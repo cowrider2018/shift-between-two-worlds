@@ -5,7 +5,7 @@ short sword. Pear-shaped trunk, narrow shoulders, short legs.
 
 Outfits are modular parts on one skeleton (see VARIANTS):
   plain  — full fluffy hair, no cape, no hood
-  hooded — under-hood hair (bangs + side locks only), pointed hood, cape, clasp
+  hooded — bangs only, streamlined pointed hood, full-body cloak, clasp
 The fluffy hair cannot sit under a hood, so the hair itself is a swappable part.
 
 Faces +X, feet on z = 0, ~0.84 tiles tall. Right hand = -Y.
@@ -181,41 +181,59 @@ def build_hair(name, full):
 
 
 def build_hood():
-    """Smooth hood shell: outer volume, boolean-hollowed, face opening cut, cowl, drooping tail."""
-    a = lib.Anatomy("hood", resolution=0.0045)
-    cape = "hero_cape"
-    a.ell(h(-0.025, 0, 0.045), (0.198, 0.205, 0.195), cape)              # crown of the hood
-    a.ell(h(-0.025, 0, -0.14), (0.15, 0.175, 0.08), cape)                # cowl
-    a.seg(h(-0.15, 0, 0.13), h(-0.27, 0, 0.0), 0.07, cape, r2=0.06)      # tail
-    a.seg(h(-0.27, 0, 0.0), h(-0.3, 0, -0.12), 0.04, cape, r2=0.035)
-    a.ell(h(-0.3, 0, -0.14), (0.025, 0.025, 0.03), cape)
-    a.subtract(h(-0.02, 0, 0.035), (0.18, 0.185, 0.178))                 # hollow inside
-    a.subtract(h(-0.025, 0, -0.13), (0.12, 0.145, 0.065))                # neck hole
-    a.subtract(h(0.2, 0, -0.03), (0.13, 0.15, 0.165))                    # face opening
-    return a.build(target_tris=1600, voxel=0.0035)
+    """
+    Streamlined hood: one lofted tube along a smooth spine. The front ring is the face opening,
+    the rings grow around the skull, then taper smoothly down the back to a pointed tip.
+    """
+    spine = lib.catmull_rom([h(0.16, 0, 0.0), h(0.02, 0, 0.035), h(-0.14, 0, 0.045), h(-0.25, 0, -0.01),
+                             h(-0.31, 0, -0.12), h(-0.33, 0, -0.25)], samples_per_segment=3)
+    #            (half-width across, half-height) at each control point, interpolated along the spine
+    radii = [(0.175, 0.2), (0.205, 0.215), (0.165, 0.17), (0.1, 0.1), (0.055, 0.055), (0.0, 0.0)]
+    sides = 14
+    rings = []
+    m = len(spine) - 1
+    for k, c in enumerate(spine[:-1]):
+        u = k / m * (len(radii) - 1)
+        i0 = min(int(u), len(radii) - 2)
+        f = u - i0
+        ry = radii[i0][0] * (1 - f) + radii[i0 + 1][0] * f
+        rz = radii[i0][1] * (1 - f) + radii[i0 + 1][1] * f
+        tangent = (spine[k + 1] - c).normalized()
+        up = Y.cross(tangent).normalized()
+        side = tangent.cross(up).normalized()
+        rings.append([c + side * (math.cos(2 * math.pi * a / sides) * ry) + up * (math.sin(2 * math.pi * a / sides) * rz)
+                      for a in range(sides)])
+    return lib.loft("hood", rings, "hero_cape", tip=spine[-1])
 
 
 def build_cape():
-    """A curved cloth panel hanging from the shoulders, ragged hem; weighted down a 2-bone chain."""
-    cols, rows = 9, 6
-    verts, faces = [], []
-    for r in range(rows + 1):
-        t = r / rows
-        z = 0.39 - t * 0.30
-        rx = 0.065 + t * 0.06
-        ry = 0.095 + t * 0.06
-        spread = math.radians(70 + t * 15)
+    """
+    Full-body cloak: wraps the back and both sides from a raised collar down to the ankles,
+    leaving only a narrow opening at the front. Gentle folds, flared hem. Weighted down the cape chain.
+    """
+    wrap = math.radians(160)  # angle from the back to each front edge (front opening = 2 * 20°)
+    cols = 16
+    rows = [  # (z, x-radius, y-radius, x-centre)
+        (0.445, 0.055, 0.062, -0.005),   # collar top
+        (0.395, 0.075, 0.118, -0.005),   # shoulders
+        (0.33, 0.1, 0.142, 0.0),
+        (0.25, 0.12, 0.158, 0.0),        # hips
+        (0.16, 0.13, 0.168, 0.0),
+        (0.065, 0.145, 0.182, 0.0),      # hem, just above the ankles
+    ]
+    rings = []
+    for r, (z, rx, ry, cx) in enumerate(rows):
+        t = r / (len(rows) - 1)
+        ring = []
         for c in range(cols + 1):
-            ang = (c / cols * 2 - 1) * spread
-            hem = (0.018 if c % 2 else -0.004) if r == rows else 0.0
-            verts.append((-0.012 - math.cos(ang) * rx, math.sin(ang) * ry, z - hem))
-    for r in range(rows):
-        for c in range(cols):
-            i = r * (cols + 1) + c
-            faces.append((i, i + 1, i + cols + 2, i + cols + 1))
-    cape = lib.mesh_from("cape", verts, faces, "hero_cape")
-    clasp = lib.ico("clasp", (0.05, 0.0, 0.385), 0.013, "hero_buckle", 0)
-    return cape, clasp
+            a = -wrap + 2 * wrap * c / cols          # 0 = straight back
+            fold = 1 + 0.06 * t * math.sin(a * 5)    # cloth folds, deeper towards the hem
+            hem = (0.012 if c % 2 else -0.004) if r == len(rows) - 1 else 0.0
+            ring.append((cx - math.cos(a) * rx * fold, math.sin(a) * ry * fold, z - hem))
+        rings.append(ring)
+    cloak = lib.loft("cape", rings, "hero_cape", closed=False)
+    clasp = lib.ico("clasp", (0.07, 0.0, 0.395), 0.014, "hero_buckle", 0)
+    return cloak, clasp
 
 
 def build_props():
@@ -248,8 +266,8 @@ def build_rig():
         ("chest", J["chest"], J["neck"], "spine"),
         ("neck", J["neck"], tuple(h(0, 0, -0.1)), "chest"),
         ("head", tuple(h(0, 0, -0.1)), tuple(h(0, 0, 0.2)), "neck"),
-        ("cape.1", (-0.075, 0, 0.39), (-0.095, 0, 0.25), "chest"),
-        ("cape.2", (-0.095, 0, 0.25), (-0.12, 0, 0.09), "cape.1"),
+        ("cape.1", (-0.075, 0, 0.4), (-0.11, 0, 0.24), "chest"),
+        ("cape.2", (-0.11, 0, 0.24), (-0.15, 0, 0.065), "cape.1"),
     ]
     for s, side in ((1, "L"), (-1, "R")):
         P = lambda n: tuple(L(n, s))
@@ -386,7 +404,7 @@ def build(out_glb, out_preview):
     lib.skin(body, rig)
     for obj in head_parts:
         lib.attach(obj, rig, "head")
-    lib.weight_chain(parts["cape"], rig, [("chest", 0.39), ("cape.1", 0.27), ("cape.2", 0.09)])
+    lib.weight_chain(parts["cape"], rig, [("chest", 0.4), ("cape.1", 0.26), ("cape.2", 0.065)])
     for name in ("hair_full", "hair_hood", "hood"):
         lib.attach(parts[name], rig, "head")
     lib.attach(parts["clasp"], rig, "chest")

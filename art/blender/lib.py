@@ -277,6 +277,42 @@ def prism(name, outline, z0, z1, mat, origin=(0, 0, 0), top_apex=None, skip_side
     return mesh_from(name, verts, faces, mat, recalc=not skip_sides)
 
 
+def catmull_rom(points, samples_per_segment=4):
+    """Smooth curve through control points (endpoints included)."""
+    pts = [Vector(p) for p in points]
+    ext = [pts[0] * 2 - pts[1]] + pts + [pts[-1] * 2 - pts[-2]]
+    out = []
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        for k in range(samples_per_segment):
+            t = k / samples_per_segment
+            t2, t3 = t * t, t * t * t
+            out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3))
+    out.append(pts[-1])
+    return out
+
+
+def loft(name, rings, mat, tip=None, closed=True):
+    """
+    Skin a list of vertex rings (equal length) into quads; optional point `tip` closes the last ring.
+    closed=False leaves the ring open (a sheet, e.g. a cloak with a front opening).
+    """
+    n = len(rings[0])
+    verts = [Vector(v) for ring in rings for v in ring]
+    faces = []
+    span = n if closed else n - 1
+    for r in range(len(rings) - 1):
+        for i in range(span):
+            a, b = r * n + i, r * n + (i + 1) % n
+            faces.append((a, b, b + n, a + n))
+    if tip is not None:
+        verts.append(Vector(tip))
+        t = len(verts) - 1
+        last = (len(rings) - 1) * n
+        faces += [(last + i, last + (i + 1) % n, t) for i in range(span)]
+    return mesh_from(name, verts, faces, mat)
+
+
 def _frame(direction):
     d = Vector(direction).normalized()
     ref = Z if abs(d.dot(Z)) < 0.9 else X

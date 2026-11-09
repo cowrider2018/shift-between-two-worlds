@@ -24,6 +24,7 @@ HEIGHT = 0.84
 BODY_TRIS = 900
 PANT_R = 0.04  # trouser leg radius: straight and slim
 BOOT_R = 0.057  # boot shaft radius: one clear step wider than the trouser leg, the widest part of the leg
+BOOT_TOP = 0.34  # boot rim height between ankle and knee: low, so the trouser leg reads long
 THICK = 1.5  # trunk and leg girth relative to the original slim build (heights unchanged)
 DEPTH = 0.7  # the trunk's front-to-back depth relative to THICK (a flatter, less barrel-chested body)
 H = Vector((0.0, 0.0, 0.555))  # head centre
@@ -113,7 +114,8 @@ def build_body():
         a.seg(hj, an, PANT_R * 1.05, pants, r2=PANT_R * 0.95)                          # hip to ankle in one, no knee seam
         # boot: a straight shaft one step wider than the trouser leg, worn over it, then one clean shoe
         # shaft over the trouser leg, dropping straight down to the ground: that is the heel
-        a.seg(Vector((an.x - 0.006, an.y, -0.03)), kn.lerp(an, 0.22), BOOT_R, boot)  # runs into the floor
+        top = an.lerp(kn, BOOT_TOP)
+        a.seg(Vector((an.x - 0.006, an.y, -0.03)), top, BOOT_R, boot)  # runs into the floor
         a.seg(Vector((an.x, an.y, 0.01)), Vector((to.x + 0.024, an.y, 0.012)), 0.036, boot, r2=0.03)  # toe, forward
     a.subtract((0, 0, -1.0), (1.5, 1.5, 1.0))  # flat soles: everything below the floor is sliced off
 

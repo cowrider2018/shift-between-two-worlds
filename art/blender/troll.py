@@ -214,24 +214,45 @@ def build_rig():
 
 
 def build_actions(rig):
-    """idle (2 s), walk (1 s waddle), alert (head up, ears perk)."""
-    def walk_pose(phase):
-        c = math.cos(phase * 2 * math.pi)
-        sn = math.sin(phase * 2 * math.pi)
+    """idle (2 s), walk (1 s heavy stomping waddle), alert (head up, ears perk)."""
+    tau = 2 * math.pi
+
+    def leg(side, p):
+        """One leg at gait phase p: [0, .5) stance (planted, sweeps back), [.5, 1) swing (knee lifts, reaches)."""
+        c, sn = math.cos(p * tau), math.sin(p * tau)
+        swing = max(0.0, -sn)
         return {
-            "thigh.L": [(Y, -24 * c)], "thigh.R": [(Y, 24 * c)],
-            "shin.L": [(Y, 22 * max(0, sn))], "shin.R": [(Y, 22 * max(0, -sn))],
-            "foot.L": [(Y, 8 * c)], "foot.R": [(Y, -8 * c)],
-            "upper_arm.L": [(Y, 20 * c)], "upper_arm.R": [(Y, -20 * c)],
-            "forearm.L": [(Y, -15 - 8 * c)], "forearm.R": [(Y, -15 + 8 * c)],
-            "hips": [(X, 5 * c)],                       # waddle
-            "chest": [(X, -4 * c), (Y, 4)],
-            "head": [(X, 3 * c)],
-            "ear.L": [(X, 6 * sn)], "ear.R": [(X, 6 * sn)],
-            "_lift": 0.025 * abs(sn),
+            f"thigh.{side}": [(Y, -30 * c - 14 * swing)],              # forward = negative; lift the knee in swing
+            f"shin.{side}": [(Y, 48 * swing + 8 * max(0.0, sn) ** 4)],  # big knee bend in swing, small give at contact
+            f"foot.{side}": [(Y, 14 * c - 10 * swing)],                 # heel strike, toe-off
         }
 
-    lib.action(rig, "walk", {f: walk_pose((f - 1) / 24) for f in range(1, 26, 3)})
+    def walk_pose(ph):
+        c, sn = math.cos(ph * tau), math.sin(ph * tau)
+        bounce = math.sin(2 * ph * tau - 1.0)                           # twice per cycle, lagging the steps
+        pose = {**leg("L", ph), **leg("R", (ph + 0.5) % 1)}
+        upper_r = -14 * c
+        fore_r = -20 + 6 * c
+        pose.update({
+            "hips": [(X, 7 * c), (Z, -10 * c)],                         # weight onto the stance leg, hip leads the leg
+            "spine": [(Y, 6), (Z, 4 * c)],
+            "chest": [(Y, 8 + 3 * abs(sn)), (Z, 9 * c), (X, -5 * c)],   # hunched lean, counter-twist against the hips
+            "neck": [(Y, -4)],
+            "head": [(Y, -8 + 5 * bounce), (X, 4 * c), (Z, -5 * c)],    # nod on each stomp, keeps looking ahead
+            # free left arm: long knuckle-dragger swing, elbow bends when it comes forward, hand trails
+            "upper_arm.L": [(Y, 32 * c), (X, 8 + 4 * abs(sn))],
+            "forearm.L": [(Y, -14 - 22 * max(0.0, -c))],
+            "hand.L": [(Y, -12 * sn)],
+            # lantern arm: shorter swing; the wrist counters it so the lantern stays roughly hanging
+            "upper_arm.R": [(Y, upper_r), (X, -10)],
+            "forearm.R": [(Y, fore_r)],
+            "hand.R": [(Y, -(upper_r + fore_r) + 10 * sn)],
+            "ear.L": [(X, 12 * bounce)], "ear.R": [(X, -12 * bounce)],  # floppy ears flap after each stomp
+            "_lift": 0.04 * abs(sn) ** 1.5,
+        })
+        return pose
+
+    lib.action(rig, "walk", {f: walk_pose((f - 1) / 24) for f in range(1, 26, 2)})
 
     def idle_pose(phase):
         b = math.sin(phase * 2 * math.pi)
@@ -268,4 +289,6 @@ def build(out_glb, out_preview):
     objs = [rig, body] + [o for o, _ in props.values()]
     lib.export_glb(out_glb, objs)
     lib.previews(out_preview, HEIGHT, head=hp((0.22, 0, 1.12)))
+    lib.pose_sheet(rig, out_preview.replace(".png", "_poses.png"), HEIGHT,
+                   [("idle", 1), ("alert", 1)] + [("walk", f) for f in range(1, 24, 3)], cols=5)
     print(f"troll: {lib.tri_count(body)} body tris, {sum(lib.tri_count(o) for o, _ in props.values())} prop tris")

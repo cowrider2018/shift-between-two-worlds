@@ -1,7 +1,7 @@
 """
 Hero (DESIGN §4.2): small chibi adventurer — the original primitive head (sphere, half-sphere hair cap,
 cone bangs, cone ears, box eyes) on an anatomical body: green tunic with belt, cream leggings, boots,
-short sword. Pear-shaped trunk, narrow shoulders, short legs.
+short sword. Stocky pear-shaped trunk and thick short legs (THICK x the original girth).
 
 Outfits are modular parts on one skeleton (see VARIANTS):
   plain  — full fluffy hair, no cape, no hood
@@ -20,6 +20,7 @@ import lib
 from lib import X, Y, Z
 
 HEIGHT = 0.84
+THICK = 1.5  # trunk and leg girth relative to the original slim build (heights unchanged)
 H = Vector((0.0, 0.0, 0.555))  # head centre
 
 # Outfit variants: the game shows the listed parts and hides every other part named here.
@@ -40,14 +41,14 @@ J = {
     "spine": (0.00, 0.00, 0.27),
     "chest": (0.00, 0.00, 0.34),
     "neck": (0.00, 0.00, 0.395),
-    "shoulder": (0.00, 0.078, 0.368),
-    "elbow": (0.005, 0.112, 0.295),
-    "wrist": (0.015, 0.13, 0.232),
-    "hand": (0.022, 0.136, 0.196),
-    "hip": (0.00, 0.05, 0.19),
-    "knee": (0.012, 0.056, 0.112),
-    "ankle": (0.00, 0.058, 0.045),
-    "toe": (0.07, 0.06, 0.018),
+    "shoulder": (0.00, 0.108, 0.368),
+    "elbow": (0.005, 0.17, 0.3),
+    "wrist": (0.015, 0.198, 0.24),
+    "hand": (0.022, 0.208, 0.205),
+    "hip": (0.00, 0.068, 0.19),
+    "knee": (0.012, 0.074, 0.112),
+    "ankle": (0.00, 0.076, 0.045),
+    "toe": (0.07, 0.078, 0.018),
 }
 
 
@@ -65,17 +66,21 @@ def build_body():
     tunic, belt, pants, boot = "hero_tunic", "hero_belt", "hero_pants", "hero_boot"
 
     a.seg(L("neck") + Vector((0, 0, -0.02)), h(0.0, 0, -0.12), 0.04, skin)  # neck
+    T = THICK
+
+    def wide(semi):  # girth (x, y) scales, height (z) does not
+        return (semi[0] * T, semi[1] * T, semi[2])
 
     # --- trunk: narrow at the chest, widening through belly to hips -----------
-    a.ell((0.005, 0, 0.335), (0.062, 0.068, 0.05), tunic)               # chest (narrow)
+    a.ell((0.005, 0, 0.335), wide((0.062, 0.068, 0.05)), tunic)               # chest (narrow)
     for s in (1, -1):
-        a.ell(L("shoulder", s), (0.028, 0.028, 0.028), tunic)          # small shoulders
-        a.ell((-0.04, 0.036 * s, 0.2), (0.05, 0.05, 0.045), tunic)      # bottom (under the tunic)
-    a.ell((0.015, 0, 0.275), (0.08, 0.088, 0.055), tunic)               # belly
-    a.ell((0.008, 0, 0.225), (0.092, 0.106, 0.05), tunic)               # lower belly / hips (widest)
-    a.ell((0.0, 0, 0.195), (0.102, 0.118, 0.04), tunic)                 # tunic hem flare
-    a.ell((0.012, 0, 0.25), (0.088, 0.099, 0.012), belt)                # belt band
-    a.ell((0.1, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")          # buckle
+        a.ell(L("shoulder", s), (0.034, 0.034, 0.03), tunic)          # small shoulders
+        a.ell((-0.04 * T, 0.036 * s * T, 0.2), wide((0.05, 0.05, 0.045)), tunic)      # bottom (under the tunic)
+    a.ell((0.015, 0, 0.275), wide((0.08, 0.088, 0.055)), tunic)               # belly
+    a.ell((0.008, 0, 0.225), wide((0.092, 0.106, 0.05)), tunic)               # lower belly / hips (widest)
+    a.ell((0.0, 0, 0.195), wide((0.102, 0.118, 0.04)), tunic)                 # tunic hem flare
+    a.ell((0.012, 0, 0.25), wide((0.088, 0.099, 0.012)), belt)                # belt band
+    a.ell((0.012 + 0.088 * T, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")          # buckle
 
     # --- arms: sleeve, forearm, hand with four fingers + thumb -----------------
     for s in (1, -1):
@@ -94,14 +99,14 @@ def build_body():
     # --- short legs: leggings, knees, boots ------------------------------------
     for s in (1, -1):
         hj, kn, an, to = L("hip", s), L("knee", s), L("ankle", s), L("toe", s)
-        a.seg(hj, kn, 0.036, pants, r2=0.038)                                     # thigh
-        a.ell(kn + Vector((0.014, 0, 0)), (0.02, 0.024, 0.022), pants)            # knee
-        a.seg(kn, an, 0.028, pants)                                               # shin
-        a.seg(kn.lerp(an, 0.3), an, 0.035, boot)                                  # boot shaft
-        a.ell(kn.lerp(an, 0.28), (0.04, 0.04, 0.011), boot)                      # boot cuff
-        a.seg(an + Vector((-0.028, 0, -0.026)), to, 0.038, boot, r2=0.026)        # foot
-        a.ell(an + Vector((-0.028, 0, -0.022)), (0.028, 0.033, 0.026), boot)      # heel
-        a.ell(to + Vector((0.005, 0, 0.004)), (0.028, 0.034, 0.02), boot)         # toe cap
+        a.seg(hj, kn, 0.036 * T, pants, r2=0.038 * T)                                     # thigh
+        a.ell(kn + Vector((0.014 * T, 0, 0)), (0.02 * T, 0.024 * T, 0.022), pants)            # knee
+        a.seg(kn, an, 0.028 * T, pants)                                               # shin
+        a.seg(kn.lerp(an, 0.3), an, 0.035 * T, boot)                                  # boot shaft
+        a.ell(kn.lerp(an, 0.28), (0.04 * T, 0.04 * T, 0.011), boot)                      # boot cuff
+        a.seg(an + Vector((-0.028, 0, -0.026)), to, 0.038 * 1.25, boot, r2=0.026 * 1.25)        # foot
+        a.ell(an + Vector((-0.028 * T, 0, -0.022)), (0.028 * T, 0.033 * 1.25, 0.026), boot)      # heel
+        a.ell(to + Vector((0.005, 0, 0.004)), (0.028 * 1.25, 0.034 * 1.25, 0.02), boot)         # toe cap
 
     return a.build(target_tris=3600, voxel=0.0035)
 
@@ -213,13 +218,14 @@ def build_cape():
     """
     wrap = math.radians(160)  # angle from the back to each front edge (front opening = 2 * 20°)
     cols = 16
+    k = THICK / 1.5  # radii below are sized for THICK = 1.5
     rows = [  # (z, x-radius, y-radius, x-centre)
         (0.445, 0.055, 0.062, -0.005),   # collar top
-        (0.395, 0.075, 0.118, -0.005),   # shoulders
-        (0.33, 0.1, 0.142, 0.0),
-        (0.25, 0.12, 0.158, 0.0),        # hips
-        (0.16, 0.13, 0.168, 0.0),
-        (0.065, 0.145, 0.182, 0.0),      # hem, just above the ankles
+        (0.395, 0.1, 0.15, -0.005),      # shoulders
+        (0.33, 0.15 * k, 0.2, 0.0),
+        (0.25, 0.165 * k, 0.21 * k, 0.0),  # hips
+        (0.16, 0.17 * k, 0.22 * k, 0.0),
+        (0.065, 0.175 * k, 0.23 * k, 0.0),  # hem, just above the ankles
     ]
     rings = []
     for r, (z, rx, ry, cx) in enumerate(rows):
@@ -232,7 +238,7 @@ def build_cape():
             ring.append((cx - math.cos(a) * rx * fold, math.sin(a) * ry * fold, z - hem))
         rings.append(ring)
     cloak = lib.loft("cape", rings, "hero_cape", closed=False)
-    clasp = lib.ico("clasp", (0.07, 0.0, 0.395), 0.014, "hero_buckle", 0)
+    clasp = lib.ico("clasp", (0.09, 0.0, 0.395), 0.014, "hero_buckle", 0)
     return cloak, clasp
 
 
@@ -266,8 +272,8 @@ def build_rig():
         ("chest", J["chest"], J["neck"], "spine"),
         ("neck", J["neck"], tuple(h(0, 0, -0.1)), "chest"),
         ("head", tuple(h(0, 0, -0.1)), tuple(h(0, 0, 0.2)), "neck"),
-        ("cape.1", (-0.075, 0, 0.4), (-0.11, 0, 0.24), "chest"),
-        ("cape.2", (-0.11, 0, 0.24), (-0.15, 0, 0.065), "cape.1"),
+        ("cape.1", (-0.1, 0, 0.4), (-0.15, 0, 0.24), "chest"),
+        ("cape.2", (-0.15, 0, 0.24), (-0.18, 0, 0.065), "cape.1"),
     ]
     for s, side in ((1, "L"), (-1, "R")):
         P = lambda n: tuple(L(n, s))

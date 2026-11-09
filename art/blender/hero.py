@@ -1,12 +1,12 @@
 """
-Hero (DESIGN §4.2): small chibi adventurer — the original primitive head (sphere, half-sphere hair cap,
-cone bangs, cone ears, box eyes) on an anatomical body: green tunic with belt, cream leggings, boots,
+Hero (DESIGN §4.2): small chibi adventurer — a primitive head (sphere, box eyes, small human ears) with
+hair made of five thick turning cones (see HAIR), on an anatomical body: green tunic with belt, cream leggings, boots,
 short sword. Stocky pear-shaped trunk and thick short legs (THICK x the original girth).
 
 Outfits are modular parts on one skeleton (see VARIANTS):
-  plain  — full fluffy hair, no cape, no hood
-  hooded — bangs only, streamlined pointed hood, full-body cloak, clasp
-The fluffy hair cannot sit under a hood, so the hair itself is a swappable part.
+  plain  — the five-lock hair, no cape, no hood
+  hooded — streamlined pointed hood, full-body cloak, clasp, hair hidden
+The bulky locks cannot sit under a hood, so the hair itself is a swappable part.
 
 Faces +X, feet on z = 0, ~0.84 tiles tall. Right hand = -Y.
 """
@@ -26,8 +26,8 @@ H = Vector((0.0, 0.0, 0.555))  # head centre
 
 # Outfit variants: the game shows the listed parts and hides every other part named here.
 VARIANTS = {
-    "plain": ["hair_full"],
-    "hooded": ["hair_hood", "hood", "cape", "clasp"],
+    "plain": ["hair"],
+    "hooded": ["hood", "cape", "clasp"],
 }
 
 
@@ -121,7 +121,7 @@ def build_body():
 # ---------------------------------------------------------------------------
 # head: the original primitive head from the pre-Blender build (three.js HeroModel), rebuilt with the
 # same primitives, sizes and angles and placed on this body:
-#   10x8 sphere head, half-sphere hair cap, three 4-sided cone bangs, two 4-sided cone ears, box eyes.
+#   10x8 sphere head, box eyes. Ears are small human ears; hair: see HAIR below.
 # Old coordinates are three.js space (x forward, y up, z side) around the old head centre.
 
 OLD_HEAD = Vector((0.01, 0.5, 0.0))
@@ -171,24 +171,74 @@ def build_head():
     k = HEAD_K
     parts = [uv_sphere("head_mesh", old(0.01, 0.5, 0), 0.15 * k, "hero_skin", 10, 8)]
     for s, side in ((1, "L"), (-1, "R")):
-        # three.js: ear at z = s*0.17, rotation.x = s*1.25  ->  axis (0, cos 1.25, s*sin 1.25)
-        parts.append(old_cone(f"ear.{side}", (-0.02, 0.51, s * 0.17), (0, math.cos(1.25), s * math.sin(1.25)),
-                              0.035, 0.16, "hero_skin"))
+        # small rounded human ear, flat against the side of the head, tilted slightly back
+        parts.append(lib.ico(f"ear.{side}", H + Vector((-0.012, s * (HEAD_R - 0.006), -0.012)), 1.0, "hero_skin", 1,
+                             scale=(0.026, 0.011, 0.038), rot=Quaternion(Y, math.radians(-12)).to_matrix()))
         parts.append(lib.box(f"eye.{side}", old(0.145, 0.5, s * 0.055), (0.01 * k, 0.0125 * k, 0.02 * k), "hero_eye"))
     return parts
 
 
-def _bangs():
-    # three.js: cones at (0.12, 0.58, z), rotation.z = -2.3  ->  axis (sin 2.3, cos 2.3, 0)
-    return [old_cone(f"bang{i}", (0.12, 0.58, z), (math.sin(2.3), math.cos(2.3), 0), 0.045, 0.11, "hero_hair")
-            for i, z in enumerate((-0.08, 0.0, 0.08))]
+# Hair: five big, thick cones ("locks") and nothing else — no caps, spheres, sheets or bangs.
+# Each lock is a solid cone at most twice as wide as it is thick (LOCK_RATIO). Its root is buried in the skull;
+# it turns as it leaves the scalp and bends along the head, so its own bulk covers a region of the skull.
+# The five are placed to wrap the head with as little overlap as possible, tips turning outward.
+#   (name, exit (azimuth, elevation), end (azimuth, elevation), width, taper exponent,
+#    centre depth relative to the scalp in thicknesses (negative = sunk in), tip flick outward)
+#   azimuth 0 = forward, +90 = the hero's left; elevation 90 = straight up.
+HEAD_R = 0.15 * HEAD_K
+LOCK_RATIO = 2.0  # width : thickness, never flatter than this
+# Fitted numerically: scalp ~98% covered, ~6% double-covered, face and ears clear; every lock >= 0.2 wide
+# and bending >= 70 degrees around the head (big locks, no small filler spikes).
+HAIR = [
+    ("sweep_r", (158, 58), (-54, -2), 0.226, 2.80, 0.30, 0.022),
+    ("sweep_l", (94, 88), (10, 8), 0.329, 3.50, 0.10, 0.064),
+    ("side_l", (136, 36), (34, 6), 0.308, 1.27, 0.30, 0.083),
+    ("side_r", (204, 26), (-64, 6), 0.205, 1.99, 0.27, 0.020),
+    ("back", (129, 18), (268, -29), 0.335, 3.50, -0.01, 0.067),
+]
 
 
-def build_hair(name, full):
-    """full: the old half-sphere cap + three bangs. Under the hood: the bangs only."""
-    objs = _bangs()
-    if full:
-        objs.append(uv_sphere("cap", old(-0.015, 0.515, 0), 0.162 * HEAD_K, "hero_hair", 10, 8, math.pi * 0.55))
+def _sph(az, el):
+    az, el = math.radians(az), math.radians(el)
+    return Vector((math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)))
+
+
+def _slerp(a, b, t):
+    om = math.acos(max(-1.0, min(1.0, a.dot(b))))
+    if om < 1e-6:
+        return a.copy()
+    return (a * math.sin((1 - t) * om) + b * math.sin(t * om)) / math.sin(om)
+
+
+def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, steps=7):
+    """One thick turning cone: hexagonal cross-section width:thickness = LOCK_RATIO, root buried in the skull."""
+    a, b = _sph(*exit_dir), _sph(*end_dir)
+
+    def ring(centre, along, normal, w):
+        th = w / LOCK_RATIO
+        side = normal.cross(along).normalized()
+        return [centre + side * (w * x) + normal * (th * y)
+                for x, y in ((0.5, 0), (0.25, 0.5), (-0.25, 0.5), (-0.5, 0), (-0.25, -0.5), (0.25, -0.5))]
+
+    tip = H + b * (HEAD_R + flick)
+    pts = []
+    for k in range(steps):
+        u = k / steps
+        n = _slerp(a, b, u).normalized()
+        w = width * (1 - u ** taper)
+        lift = flick * max(0.0, (u - 0.55) / 0.45) ** 2            # the tip turns away from the head
+        pts.append((n, H + n * (HEAD_R + depth * w / LOCK_RATIO + lift), w))
+    root = H + a * HEAD_R * 0.3                                     # buried root: the lock grows out of the skull
+    rings = [ring(root, (pts[1][1] - root).normalized(), a, width * 1.05)]
+    for k, (n, c, w) in enumerate(pts):
+        nxt = pts[k + 1][1] if k + 1 < len(pts) else tip
+        rings.append(ring(c, (nxt - c).normalized(), n, w))
+    return lib.loft(name, rings, "hero_hair", tip=tip)
+
+
+def build_hair(name):
+    objs = [build_lock(f"hair_{n}", *args) for n, *args in HAIR]
+    assert len(objs) == 5
     return lib.join(name, objs)
 
 
@@ -407,8 +457,7 @@ def build(out_glb, out_preview):
     lib.reset()
     body = build_body()
     parts = {
-        "hair_full": build_hair("hair_full", True),
-        "hair_hood": build_hair("hair_hood", False),
+        "hair": build_hair("hair"),
         "hood": build_hood(),
     }
     parts["cape"], parts["clasp"] = build_cape()
@@ -419,7 +468,7 @@ def build(out_glb, out_preview):
     for obj in head_parts:
         lib.attach(obj, rig, "head")
     lib.weight_chain(parts["cape"], rig, [("chest", 0.4), ("cape.1", 0.26), ("cape.2", 0.065)])
-    for name in ("hair_full", "hair_hood", "hood"):
+    for name in ("hair", "hood"):
         lib.attach(parts[name], rig, "head")
     lib.attach(parts["clasp"], rig, "chest")
     for obj, bone in props.values():
@@ -436,4 +485,6 @@ def build(out_glb, out_preview):
         suffix = "" if variant == "plain" else f"_{variant}"
         lib.previews(out_preview.replace(".png", f"{suffix}.png"), HEIGHT, head=H)
         lib.pose_sheet(rig, out_preview.replace(".png", f"{suffix}_poses.png"), HEIGHT, poses)
+        if variant == "plain":
+            lib.head_sheet(out_preview.replace(".png", "_head.png"), H, HEIGHT * 0.65)
     print(f"hero: body {lib.tri_count(body)}, head {sum(lib.tri_count(o) for o in head_parts)}, " + ", ".join(f"{n} {lib.tri_count(o)}" for n, o in parts.items()) + " tris")

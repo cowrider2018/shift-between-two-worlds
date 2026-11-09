@@ -592,6 +592,22 @@ def previews(out_png, height, head=None):
     os.remove(tmp)
 
 
+def head_sheet(out_png, head, size):
+    """Head turnaround (call after previews(), which sets up shading): front, left, back, right / top, back 3/4."""
+    hc = Vector(head)
+    d = size * 8
+    tmp = os.path.join(os.path.dirname(out_png), "_tmp.png")
+    views = [X, Y, -X, -Y, (Z + X * 0.05).normalized(), (-X * 0.8 + Y * 0.6 + Z * 0.5).normalized()]
+    tiles = [_render(_camera(f"hv{i}", hc + v * d, hc, size), tmp, 300, 300) for i, v in enumerate(views)]
+    sheet = np.vstack([np.hstack(tiles[4:6] + [np.zeros_like(tiles[0])] * 2), np.hstack(tiles[0:4])])
+    img = bpy.data.images.new("head", sheet.shape[1], sheet.shape[0], alpha=True)
+    img.pixels.foreach_set(sheet.ravel())
+    img.filepath_raw = out_png
+    img.file_format = "PNG"
+    img.save()
+    os.remove(tmp)
+
+
 def pose_sheet(arm_obj, out_png, height, poses, cols=6):
     """Render key frames of actions (3/4 view) into one sheet, labelled by order in `poses`."""
     sc = bpy.context.scene

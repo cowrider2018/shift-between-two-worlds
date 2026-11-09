@@ -35,17 +35,17 @@ def h(x, y, z):
     return H + Vector((x, y, z))
 
 
-# Proportions: narrow sloping shoulders, short legs; the trunk widens downwards (pear / bell shape).
+# Proportions: small dropped shoulders, rounded egg-shaped trunk with a tucked round bottom, thick short legs.
 J = {
     "pelvis": (0.00, 0.00, 0.205),
     "spine": (0.00, 0.00, 0.27),
     "chest": (0.00, 0.00, 0.34),
     "neck": (0.00, 0.00, 0.395),
-    "shoulder": (0.00, 0.108, 0.368),
-    "elbow": (0.005, 0.17, 0.3),
-    "wrist": (0.015, 0.198, 0.24),
-    "hand": (0.022, 0.208, 0.205),
-    "hip": (0.00, 0.068, 0.19),
+    "shoulder": (0.00, 0.098, 0.35),   # low and set in: the acromion sits on the chest's slope, no shrug
+    "elbow": (0.004, 0.158, 0.288),
+    "wrist": (0.014, 0.186, 0.23),
+    "hand": (0.021, 0.196, 0.196),
+    "hip": (0.00, 0.064, 0.19),
     "knee": (0.012, 0.074, 0.112),
     "ankle": (0.00, 0.076, 0.045),
     "toe": (0.07, 0.078, 0.018),
@@ -68,19 +68,21 @@ def build_body():
     a.seg(L("neck") + Vector((0, 0, -0.02)), h(0.0, 0, -0.12), 0.04, skin)  # neck
     T = THICK
 
-    def wide(semi):  # girth (x, y) scales, height (z) does not
-        return (semi[0] * T, semi[1] * T, semi[2])
+    def wide(semi, side=1.0):  # girth scales (depth x by T, width y by T * side), height z does not
+        return (semi[0] * T, semi[1] * T * side, semi[2])
 
-    # --- trunk: narrow at the chest, widening through belly to hips -----------
-    a.ell((0.005, 0, 0.335), wide((0.062, 0.068, 0.05)), tunic)               # chest (narrow)
+    # --- trunk: full depth, but the lower body is pulled in sideways so it reads as a rounded egg,
+    #     not a wide bell; the bottom is two round, tucked-in cheeks
+    a.ell((0.005, 0, 0.332), wide((0.062, 0.068, 0.056)), tunic)             # chest, sloping into the shoulders
     for s in (1, -1):
-        a.ell(L("shoulder", s), (0.034, 0.034, 0.03), tunic)          # small shoulders
-        a.ell((-0.04 * T, 0.036 * s * T, 0.2), wide((0.05, 0.05, 0.045)), tunic)      # bottom (under the tunic)
-    a.ell((0.015, 0, 0.275), wide((0.08, 0.088, 0.055)), tunic)               # belly
-    a.ell((0.008, 0, 0.225), wide((0.092, 0.106, 0.05)), tunic)               # lower belly / hips (widest)
-    a.ell((0.0, 0, 0.195), wide((0.102, 0.118, 0.04)), tunic)                 # tunic hem flare
-    a.ell((0.012, 0, 0.25), wide((0.088, 0.099, 0.012)), belt)                # belt band
-    a.ell((0.012 + 0.088 * T, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")          # buckle
+        sh = L("shoulder", s)
+        a.ell(sh + Vector((0, -0.006 * s, -0.004)), (0.03, 0.03, 0.024), tunic)  # small, dropped shoulder cap
+        a.ell((-0.052, 0.04 * s, 0.208), (0.064, 0.056, 0.058), tunic)     # round bottom cheek, tucked in
+    a.ell((0.015, 0, 0.275), wide((0.08, 0.088, 0.055), 0.94), tunic)       # belly
+    a.ell((0.008, 0, 0.228), wide((0.092, 0.106, 0.052), 0.84), tunic)      # lower belly / hips
+    a.ell((0.002, 0, 0.198), wide((0.096, 0.112, 0.036), 0.8), tunic)       # tunic hem, slight flare
+    a.ell((0.012, 0, 0.25), wide((0.088, 0.099, 0.012), 0.86), belt)        # belt band
+    a.ell((0.012 + 0.088 * T, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")  # buckle
 
     # --- arms: sleeve, forearm, hand with four fingers + thumb -----------------
     for s in (1, -1):
@@ -221,11 +223,11 @@ def build_cape():
     k = THICK / 1.5  # radii below are sized for THICK = 1.5
     rows = [  # (z, x-radius, y-radius, x-centre)
         (0.445, 0.055, 0.062, -0.005),   # collar top
-        (0.395, 0.1, 0.15, -0.005),      # shoulders
-        (0.33, 0.15 * k, 0.2, 0.0),
-        (0.25, 0.165 * k, 0.21 * k, 0.0),  # hips
-        (0.16, 0.17 * k, 0.22 * k, 0.0),
-        (0.065, 0.175 * k, 0.23 * k, 0.0),  # hem, just above the ankles
+        (0.385, 0.1, 0.14, -0.005),      # shoulders (dropped with the shoulder caps)
+        (0.33, 0.15 * k, 0.185, 0.0),
+        (0.25, 0.165 * k, 0.19 * k, 0.0),  # hips
+        (0.16, 0.17 * k, 0.2 * k, 0.0),
+        (0.065, 0.175 * k, 0.21 * k, 0.0),  # hem, just above the ankles
     ]
     rings = []
     for r, (z, rx, ry, cx) in enumerate(rows):

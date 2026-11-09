@@ -83,19 +83,23 @@ def build_body():
         sh = L("shoulder", s)
         a.ell(sh + Vector((0, -0.006 * s, -0.004)), (0.03, 0.03, 0.024), tunic)  # small, dropped shoulder cap
         a.ell((-0.05 * D / 1.5, 0.042 * s, 0.2), (0.062 * D / 1.5, 0.056, 0.064), tunic)       # round bottom cheek, flows into the thigh
-    # below the chest the trunk only widens a little, so the hem meets the upper thighs without a step
-    a.ell((0.015, 0, 0.275), wide((0.08, 0.088, 0.055), 0.9), tunic)        # belly
-    a.ell((0.008, 0, 0.228), wide((0.092, 0.106, 0.052), 0.78), tunic)      # lower belly / hips
-    a.ell((0.002, 0, 0.2), wide((0.092, 0.112, 0.034), 0.72), tunic)        # tunic hem, barely flared
-    a.ell((0.012, 0, 0.25), wide((0.088, 0.099, 0.012), 0.8), belt)         # belt band
-    a.ell((0.012 + 0.088 * D, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")  # buckle
+    # below the chest the trunk widens in one steady slope: the bands overlap deeply in height so the
+    # standing silhouette reads as one pear, not stacked bulges
+    a.ell((0.015, 0, 0.278), wide((0.08, 0.088, 0.075), 0.9), tunic)        # belly
+    a.ell((0.008, 0, 0.228), wide((0.092, 0.106, 0.072), 0.78), tunic)      # lower belly / hips
+    a.ell((0.002, 0, 0.198), wide((0.092, 0.112, 0.05), 0.72), tunic)       # tunic hem, no flare
+    # hips-to-legs: one block across both thigh roots, so the widest part of the pear runs straight on
+    # into the outer thighs; the legs only part below it
+    a.ell((-0.006, 0, 0.16), (0.075, 0.122, 0.05), pants)
+    a.paint((0.0, 0, 0.151), (0.15, 0.19, 0.031), pants)  # a level tunic hem instead of a saw-tooth seam
+    a.ell((0.012, 0, 0.25), wide((0.096, 0.099, 0.012), 0.86), belt)        # belt band, just proud of the belly
+    a.ell((0.012 + 0.096 * D, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")  # buckle
 
     # --- arms: sleeve, forearm, hand with four fingers + thumb -----------------
     for s in (1, -1):
         sh, el, wr, ha = L("shoulder", s), L("elbow", s), L("wrist", s), L("hand", s)
         a.seg(sh, el, 0.03, tunic, length=0.8, offset=tuple((sh - el) * 0.12))   # short sleeve
         a.seg(sh, el, 0.024, skin)                                               # upper arm
-        a.ell(el, (0.022, 0.022, 0.022), skin)                                    # elbow
         a.seg(el, wr, 0.022, skin, r2=0.024)                                      # forearm
         a.seg(wr, ha, 0.019, skin, r2=0.028)                                      # palm
         a.seg(ha, ha + Vector((0.004, -0.008 * s, -0.026)), 0.02, skin, r2=0.014)  # fingers as one mitten block
@@ -107,10 +111,8 @@ def build_body():
         hj, kn, an, to = L("hip", s), L("knee", s), L("ankle", s), L("toe", s)
         a.ell(hj + Vector((-0.012, 0.01 * s, -0.022)), (0.062, 0.056, 0.05), pants)  # full upper thigh under the hem
         a.seg(hj, kn, 0.042 * T, pants, r2=0.034 * T)                                     # thigh, tapering to the knee
-        a.ell(kn + Vector((0.014 * T, 0, 0)), (0.02 * T, 0.024 * T, 0.022), pants)            # knee
         a.seg(kn, an, 0.028 * T, pants)                                               # shin
         a.seg(kn.lerp(an, 0.3), an, 0.035 * T, boot)                                  # boot shaft
-        a.ell(kn.lerp(an, 0.28), (0.04 * T, 0.04 * T, 0.011), boot)                      # boot cuff
         a.seg(an + Vector((-0.028, 0, -0.026)), to, 0.038 * 1.25, boot, r2=0.026 * 1.25)        # foot
         a.ell(an + Vector((-0.028 * T, 0, -0.022)), (0.028 * T, 0.033 * 1.25, 0.026), boot)      # heel
         a.ell(to + Vector((0.005, 0, 0.004)), (0.028 * 1.25, 0.034 * 1.25, 0.02), boot)         # toe cap

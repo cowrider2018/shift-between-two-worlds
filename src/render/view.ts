@@ -97,7 +97,7 @@ export class GameView {
   private shownDim: DimIndex | -1 = -1;
   private t = 0;
 
-  constructor(canvas: HTMLCanvasElement, private readonly outfit = 'hooded') {
+  constructor(canvas: HTMLCanvasElement) {
     this.pipeline = new PixelPipeline(canvas);
     this.hemi.intensity = 1.5;
     this.sun.intensity = 1.8;
@@ -120,7 +120,7 @@ export class GameView {
     this.cut = [];
     this.world.add(...this.dims);
     if (!this.hero) {
-      this.hero = new CharacterInstance('hero', 'normal', this.outfit);
+      this.hero = new CharacterInstance('hero', 'normal', 'plain');
       this.scene.add(this.hero.root);
     }
     for (const dim of [0, 1] as DimIndex[]) {
@@ -192,6 +192,7 @@ export class GameView {
 
     this.hero.root.position.set(sim.x, 0, sim.y);
     this.hero.root.rotation.y = -sim.facing;
+    this.hero.setOutfit(sim.sneaking ? 'hooded' : 'plain'); // cloak up while sneaking, off when standing
     this.hero.play(sim.sneaking ? (sim.moving ? 'crouch_walk' : 'crouch') : sim.moving ? 'walk' : 'idle', 0.15);
     this.hero.update(dt);
     const canShift = sim.canShiftHere();

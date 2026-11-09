@@ -54,19 +54,16 @@ export class CharacterInstance {
   private readonly mixer: AnimationMixer;
   private readonly actions = new Map<string, AnimationAction>();
   private current: AnimationAction | null = null;
+  private readonly variants: Record<string, string[]>;
+  private outfit = '';
 
   constructor(name: ModelName, look: 'normal' | 'soul', outfit?: string) {
     const t = templates.get(name);
     if (!t) throw new Error(`model "${name}" not loaded`);
     this.root = cloneSkinned(t.scene);
+    this.variants = t.variants;
     const outfits = Object.keys(t.variants);
-    if (outfits.length) {
-      const shown = new Set(t.variants[outfit && t.variants[outfit] ? outfit : outfits[0]]);
-      const parts = new Set(Object.values(t.variants).flat());
-      this.root.traverse((o) => {
-        if (parts.has(o.name)) o.visible = shown.has(o.name);
-      });
-    }
+    if (outfits.length) this.setOutfit(outfit && t.variants[outfit] ? outfit : outfits[0]);
     const soulMat = ghost(CHARACTER.soul);
     this.root.traverse((o) => {
       if (!(o instanceof Mesh)) return;
@@ -83,6 +80,17 @@ export class CharacterInstance {
       action.setLoop(LoopOnce, 1);
       action.clampWhenFinished = true;
     }
+  }
+
+  /** Show one outfit's parts and hide every other outfit part (no-op if already worn or unknown). */
+  setOutfit(name: string): void {
+    const shown = this.variants[name];
+    if (!shown || name === this.outfit) return;
+    this.outfit = name;
+    const parts = new Set(Object.values(this.variants).flat());
+    this.root.traverse((o) => {
+      if (parts.has(o.name)) o.visible = shown.includes(o.name);
+    });
   }
 
   /** True while a one-shot clip (e.g. attack) is still playing; looping clips must not cut it off. */

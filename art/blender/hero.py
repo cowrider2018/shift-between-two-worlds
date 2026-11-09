@@ -1,7 +1,7 @@
 """
 Hero (DESIGN §4.2): small chibi adventurer — a primitive head (sphere, box eyes, small human ears) with
 hair made of five thick turning cones (see HAIR), on an anatomical body: green tunic with belt, cream leggings, boots,
-short sword. Stocky pear-shaped trunk and thick short legs (THICK x the original girth).
+short sword. Stocky pear-shaped trunk; short legs of straight trouser tubes with wider boots worn over them.
 
 Outfits are modular parts on one skeleton (see VARIANTS):
   plain  — the five-lock hair, no cape, no hood
@@ -22,6 +22,8 @@ from lib import X, Y, Z
 HEIGHT = 0.84
 # Facet density outside the head matches the primitive head (10x8 sphere): coarse planes, few turns.
 BODY_TRIS = 900
+PANT_R = 0.04  # trouser leg radius: straight and slim
+BOOT_R = 0.057  # boot shaft radius: one clear step wider than the trouser leg, the widest part of the leg
 THICK = 1.5  # trunk and leg girth relative to the original slim build (heights unchanged)
 DEPTH = 0.7  # the trunk's front-to-back depth relative to THICK (a flatter, less barrel-chested body)
 H = Vector((0.0, 0.0, 0.555))  # head centre
@@ -106,16 +108,16 @@ def build_body():
         tb = wr.lerp(ha, 0.5) + Vector((0.024, -0.006 * s, 0))
         a.seg(tb, tb + Vector((0.018, -0.01 * s, -0.02)), 0.0095, skin)          # thumb
 
-    # --- short legs: leggings, knees, boots ------------------------------------
+    # --- short legs: straight trouser legs, boots worn over them ----------------
     for s in (1, -1):
         hj, kn, an, to = L("hip", s), L("knee", s), L("ankle", s), L("toe", s)
         a.ell(hj + Vector((-0.012, 0.01 * s, -0.022)), (0.062, 0.056, 0.05), pants)  # full upper thigh under the hem
-        a.seg(hj, kn, 0.042 * T, pants, r2=0.034 * T)                                     # thigh, tapering to the knee
-        a.seg(kn, an, 0.028 * T, pants)                                               # shin
-        a.seg(kn.lerp(an, 0.3), an, 0.035 * T, boot)                                  # boot shaft
-        a.seg(an + Vector((-0.028, 0, -0.026)), to, 0.038 * 1.25, boot, r2=0.026 * 1.25)        # foot
-        a.ell(an + Vector((-0.028 * T, 0, -0.022)), (0.028 * T, 0.033 * 1.25, 0.026), boot)      # heel
-        a.ell(to + Vector((0.005, 0, 0.004)), (0.028 * 1.25, 0.034 * 1.25, 0.02), boot)         # toe cap
+        # trouser leg: a straight, slim tube from the thigh root to the ankle (the boot is the widest part)
+        a.seg(hj, kn, PANT_R * 1.06, pants, r2=PANT_R)                                 # thigh
+        a.seg(kn, an, PANT_R, pants, r2=PANT_R * 0.96)                                 # shin
+        # boot: a straight shaft one step wider than the trouser leg, worn over it, then one clean shoe
+        a.seg(an, kn.lerp(an, 0.22), BOOT_R, boot)                                     # shaft over the trouser leg
+        a.ell(Vector((0.026, an.y, 0.026)), (0.066, 0.046, 0.03), boot)                 # shoe: one clean long oval
 
     return a.build(target_tris=BODY_TRIS, voxel=0.006)
 

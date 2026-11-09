@@ -1,5 +1,6 @@
 import {
-  AdditiveBlending, Color, DataTexture, MeshBasicMaterial, MeshToonMaterial, NearestFilter, RedFormat, type Material,
+  AdditiveBlending, Color, DataTexture, DoubleSide, MeshBasicMaterial, MeshToonMaterial, NearestFilter, RedFormat,
+  type Material,
 } from 'three';
 
 let gradient: DataTexture | null = null;
@@ -17,12 +18,13 @@ function toonRamp(): DataTexture {
 
 const cache = new Map<string, Material>();
 
-export function toon(color: string, emissive?: string): MeshToonMaterial {
-  const key = `toon:${color}:${emissive ?? ''}`;
+export function toon(color: string, emissive?: string, doubleSided = false): MeshToonMaterial {
+  const key = `toon:${color}:${emissive ?? ''}:${doubleSided}`;
   let m = cache.get(key) as MeshToonMaterial | undefined;
   if (!m) {
     m = new MeshToonMaterial({ color: new Color(color), gradientMap: toonRamp() });
     if (emissive) m.emissive = new Color(emissive);
+    if (doubleSided) m.side = DoubleSide;
     cache.set(key, m);
   }
   return m;

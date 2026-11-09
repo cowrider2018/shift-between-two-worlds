@@ -127,6 +127,8 @@ class Anatomy:
         self.mb.threshold = 0.6
         self.obj = link(bpy.data.objects.new(name + "_mb", self.mb))
         self.shapes = []  # (centre, rotation, semi-axes, tag)
+        self.booleans = []  # (centre, semi-axes, rotation)
+        self.paints = []  # (centre, semi-axes, tag): forced colour regions
 
     def ell(self, c, semi, tag, rot=None, stiffness=2.0, negative=False):
         """Ellipsoid with *visible* semi-axes `semi` (in its rotated frame)."""
@@ -157,8 +159,16 @@ class Anatomy:
             rot = Quaternion(d.normalized(), roll) @ rot
         self.ell((a + b) / 2 + Vector(offset), (d.length / 2 * length, r, r2 if r2 is not None else r), tag, rot)
 
+    def paint(self, c, semi, tag):
+        """Faces whose centre lies inside this ellipsoid get `tag`, overriding the nearest-shape rule."""
+        self.paints.append((Vector(c), Vector(semi), tag))
+
+    def subtract(self, c, semi, rot=None):
+        """Hard boolean cut applied after fusing (for thin shells, where a negative metaball would eat everything)."""
+        self.booleans.append((Vector(c), Vector(semi), rot or Quaternion()))
+
     def build(self, target_tris, voxel=0.007):
-        """Fuse -> remesh -> decimate -> flat shade -> region materials. Returns the mesh object."""
+        """Fuse -> remesh -> boolean cuts -> decimate -> flat shade -> region materials. Returns the mesh object."""
         bpy.context.view_layer.update()
         dg = bpy.context.evaluated_depsgraph_get()
         me = bpy.data.meshes.new_from_object(self.obj.evaluated_get(dg))
@@ -170,6 +180,17 @@ class Anatomy:
         rm.mode = "VOXEL"
         rm.voxel_size = voxel
         apply_modifiers(obj)
+        for c, semi, rot in self.booleans:
+            cutter = ico("_cutter", (0, 0, 0), 1.0, next(iter(PALETTE)), 3, scale=tuple(semi))
+            cutter.rotation_mode = "QUATERNION"
+            cutter.rotation_quaternion = rot
+            cutter.location = c
+            mod = obj.modifiers.new("cut", "BOOLEAN")
+            mod.operation = "DIFFERENCE"
+            mod.object = cutter
+            mod.solver = "EXACT"
+            apply_modifiers(obj)
+            bpy.data.objects.remove(cutter)
         dec = obj.modifiers.new("decimate", "DECIMATE")
         dec.ratio = min(1.0, target_tris / max(1, tri_count(obj)))
         apply_modifiers(obj)
@@ -178,7 +199,8 @@ class Anatomy:
         return obj
 
     def _paint(self, obj):
-        tags = sorted({s[3] for s in self.shapes})
+        tags = sorted({s[3] for s in self.shapes} | {t for _, _, t in self.paints})
+        obj.data.materials.clear()  # boolean cuts can bring in the cutter's material
         for t in tags:
             obj.data.materials.append(material(t))
         index = {t: i for i, t in enumerate(tags)}
@@ -192,28 +214,122 @@ class Anatomy:
                 d = q.length * (1 - 1 / n) if n > 1e-6 else -min(semi)  # approx. signed distance
                 if d < best_d:
                     best, best_d = tag, d
+            for c, semi, tag in self.paints:
+                q = pc - c
+                if (q.x / semi.x) ** 2 + (q.y / semi.y) ** 2 + (q.z / semi.z) ** 2 <= 1:
+                    best = tag
             p.material_index = index[best]
 
 
 # ---------------------------------------------------------------------------
 # rigid low-poly props
 
-def mesh_from(name, verts, faces, mat):
+def mesh_from(name, verts, faces, mat, recalc=False):
     me = bpy.data.meshes.new(name)
     me.from_pydata([Vector(v) for v in verts], [], faces)
     me.update()
+    if recalc:
+        import bmesh
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(me)
+        bm.free()
     obj = link(bpy.data.objects.new(name, me))
     me.materials.append(material(mat))
     flat(obj)
     return obj
 
 
-def ico(name, c, r, mat, subdiv=1, scale=(1, 1, 1)):
+# ---------------------------------------------------------------------------
+# hard-surface low-poly builders (few large planes)
+
+def prism(name, outline, z0, z1, mat, origin=(0, 0, 0), top_apex=None, skip_sides=(), bottom=True,
+          rings=None):
+    """
+    Vertical prism from a closed top-view outline [(x, y)], counter-clockwise seen from +Z.
+    rings: optional [(z, scale, dx)] replacing (z0, z1) for tapered shells.
+    top_apex: optional point; the top becomes a fan to it instead of a flat lid.
+    skip_sides: side indices left open (e.g. a face opening), applied to every band.
+    """
+    o = Vector(origin)
+    rings = rings or [(z0, 1.0, 0.0), (z1, 1.0, 0.0)]
+    n = len(outline)
+    verts = []
+    for z, k, dx in rings:
+        verts += [o + Vector((x * k + dx, y * k, z)) for x, y in outline]
+    faces = []
+    for r in range(len(rings) - 1):
+        for i in range(n):
+            if i in skip_sides:
+                continue
+            a, b = r * n + i, r * n + (i + 1) % n
+            faces.append((a, b, b + n, a + n))
+    top = (len(rings) - 1) * n
+    if top_apex is not None:
+        verts.append(o + Vector(top_apex))
+        ap = len(verts) - 1
+        faces += [(top + i, top + (i + 1) % n, ap) for i in range(n)]
+    else:
+        faces.append(tuple(top + i for i in range(n)))
+    if bottom:
+        faces.append(tuple(reversed(range(n))))
+    return mesh_from(name, verts, faces, mat, recalc=not skip_sides)
+
+
+def _frame(direction):
+    d = Vector(direction).normalized()
+    ref = Z if abs(d.dot(Z)) < 0.9 else X
+    u = d.cross(ref).normalized()
+    v = d.cross(u).normalized()
+    return u, v
+
+
+def lock(name, pts, r, mat, sides=5, taper=0.55):
+    """A flowing hair lock: base ring -> narrower bent ring -> point. pts = (base, mid, tip)."""
+    base, mid, tip = (Vector(p) for p in pts)
+    verts, faces = [], []
+    for c, rad, d in ((base, r, mid - base), (mid, r * taper, tip - base)):
+        u, v = _frame(d)
+        for i in range(sides):
+            t = 2 * math.pi * i / sides
+            verts.append(c + (u * math.cos(t) + v * math.sin(t)) * rad)
+    verts.append(tip)
+    for i in range(sides):
+        j = (i + 1) % sides
+        faces.append((i, j, j + sides, i + sides))
+        faces.append((i + sides, j + sides, 2 * sides))
+    faces.append(tuple(reversed(range(sides))))
+    return mesh_from(name, verts, faces, mat, recalc=True)
+
+
+def disc(name, centre, normal, ry, rz, mat, sides=10, lift=0.0):
+    """Flat n-gon lying on a surface (eyes, blush, mouth). ry / rz are the half-sizes across / up the surface."""
+    n = Vector(normal).normalized()
+    side = Z.cross(n).normalized() if abs(n.dot(Z)) < 0.9 else Y
+    up = n.cross(side).normalized()
+    c = Vector(centre) + n * lift
+    verts = [c + side * (math.cos(2 * math.pi * i / sides) * ry) + up * (math.sin(2 * math.pi * i / sides) * rz)
+             for i in range(sides)]
+    face = tuple(range(sides))
+    obj = mesh_from(name, verts, [face], mat)
+    if obj.data.polygons[0].normal.dot(n) < 0:
+        obj.data.polygons[0].flip()
+    return obj
+
+
+def ico(name, c, r, mat, subdiv=1, scale=(1, 1, 1), rot=None, shape=None):
+    """Low-poly icosphere. `shape(v) -> v` can reshape the unit-scaled vertex before placement."""
     import bmesh
     bm = bmesh.new()
     bmesh.ops.create_icosphere(bm, subdivisions=subdiv, radius=r)
     for v in bm.verts:
-        v.co = Vector((v.co.x * scale[0], v.co.y * scale[1], v.co.z * scale[2])) + Vector(c)
+        p = Vector((v.co.x * scale[0], v.co.y * scale[1], v.co.z * scale[2]))
+        if shape:
+            p = shape(p)
+        if rot:
+            p = rot @ p
+        v.co = p + Vector(c)
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
@@ -275,6 +391,36 @@ def skin(mesh_obj, arm_obj):
     bpy.ops.object.parent_set(type="ARMATURE_AUTO")
 
 
+def weight_chain(obj, arm_obj, chain):
+    """
+    Manual skinning for cloth: chain = [(bone, z)] ordered top to bottom; each vertex is blended
+    between the two chain entries bracketing its height.
+    """
+    groups = {b: obj.vertex_groups.new(name=b) for b, _ in chain}
+    for v in obj.data.vertices:
+        z = (obj.matrix_world @ v.co).z
+        for (b0, z0), (b1, z1) in zip(chain, chain[1:]):
+            if z1 <= z <= z0 or (b0 == chain[0][0] and z > z0) or (b1 == chain[-1][0] and z < z1):
+                t = 0.0 if z > z0 else 1.0 if z < z1 else (z0 - z) / (z0 - z1)
+                groups[b0].add([v.index], 1 - t, "REPLACE")
+                groups[b1].add([v.index], t, "REPLACE")
+                break
+    obj.parent = arm_obj
+    mod = obj.modifiers.new("armature", "ARMATURE")
+    mod.object = arm_obj
+
+
+def join(name, objs):
+    """Merge several mesh objects into one (one part = one node in the glb)."""
+    set_active(objs[0])
+    for o in objs[1:]:
+        o.select_set(True)
+    bpy.ops.object.join()
+    objs[0].name = name
+    objs[0].data.name = name
+    return objs[0]
+
+
 def attach(obj, arm_obj, bone):
     """Rigidly parent a prop to a bone, keeping its world placement."""
     bpy.context.view_layer.update()
@@ -329,6 +475,7 @@ def export_glb(path, objs):
         export_animation_mode="ACTIONS",
         export_skins=True,
         export_materials="EXPORT",
+        export_extras=True,  # custom properties (e.g. outfit variants) reach the game as userData
     )
 
 
@@ -402,6 +549,38 @@ def previews(out_png, height, head=None):
     # image rows are bottom-up in Blender
     sheet = np.vstack([np.hstack(tiles[3:6]), np.hstack(tiles[0:3])])
     img = bpy.data.images.new("sheet", 1200, 800, alpha=True)
+    img.pixels.foreach_set(sheet.ravel())
+    img.filepath_raw = out_png
+    img.file_format = "PNG"
+    img.save()
+    os.remove(tmp)
+
+
+def pose_sheet(arm_obj, out_png, height, poses, cols=6):
+    """Render key frames of actions (3/4 view) into one sheet, labelled by order in `poses`."""
+    sc = bpy.context.scene
+    c = Vector((0, 0, height * 0.5))
+    cam = _camera("pose", c + (X * 0.75 + Y * 0.6 + Z * 0.2).normalized() * height * 4, c, height * 1.3)
+    tmp = os.path.join(os.path.dirname(out_png), "_tmp.png")
+    tiles = []
+    for name, frame in poses:
+        arm_obj.animation_data.action = bpy.data.actions[name]
+        if hasattr(arm_obj.animation_data, "action_slot") and arm_obj.animation_data.action_slot is None:
+            slots = bpy.data.actions[name].slots
+            if len(slots):
+                arm_obj.animation_data.action_slot = slots[0]
+        sc.frame_set(frame)
+        tiles.append(_render(cam, tmp, 200, 200))
+    arm_obj.animation_data.action = None
+    for pb in arm_obj.pose.bones:  # back to rest so later renders are not left in the last pose
+        pb.rotation_quaternion = (1, 0, 0, 0)
+        pb.location = (0, 0, 0)
+    sc.frame_set(1)
+    while len(tiles) % cols:
+        tiles.append(np.zeros_like(tiles[0]))
+    rows = [np.hstack(tiles[i:i + cols]) for i in range(0, len(tiles), cols)]
+    sheet = np.vstack(list(reversed(rows)))
+    img = bpy.data.images.new("poses", sheet.shape[1], sheet.shape[0], alpha=True)
     img.pixels.foreach_set(sheet.ravel())
     img.filepath_raw = out_png
     img.file_format = "PNG"

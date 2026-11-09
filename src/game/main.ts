@@ -15,7 +15,7 @@ const playtest = params.has('playtest') ? loadPlaytest() : null;
 const levels: Level[] = playtest ? [playtest] : BUILTIN_LEVELS;
 let levelIndex = Math.max(0, levels.findIndex((l) => l.id === params.get('level')));
 
-const view = new GameView($<HTMLCanvasElement>('game'));
+const view = new GameView($<HTMLCanvasElement>('game'), params.get('outfit') === 'plain' ? 'plain' : 'hooded');
 const input = new Input();
 input.bindPointerLock($<HTMLCanvasElement>('game'));
 let sim: Sim;

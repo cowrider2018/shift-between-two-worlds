@@ -6,8 +6,20 @@
   "troll_nail": { "color": "#3a3240" },
   "troll_eye": { "color": "#ffe066", "emissive": true },
   "troll_tooth": { "color": "#e8dfc8" },
-  "cloth": { "color": "#6b4a2e" },
+  "cloth": { "color": "#6b4a2e", "doubleSided": true },
   "rope": { "color": "#9a7a45" },
   "metal": { "color": "#3b3640" },
-  "lantern": { "color": "#fff3b0", "emissive": true }
+  "lantern": { "color": "#fff3b0", "emissive": true },
+  "hero_skin": { "color": "#f2c9a0" },
+  "hero_shade": { "color": "#b07d62" },
+  "hero_hair": { "color": "#f5d142" },
+  "hero_eye": { "color": "#1d1a2a" },
+  "hero_tunic": { "color": "#3f8f3a" },
+  "hero_belt": { "color": "#5a3a22" },
+  "hero_buckle": { "color": "#e0b84a" },
+  "hero_pants": { "color": "#e9dcc0" },
+  "hero_boot": { "color": "#6b4428" },
+  "hero_cape": { "color": "#9b2335", "doubleSided": true },
+  "hero_blade": { "color": "#dfe8f0" },
+  "hero_grip": { "color": "#4a2e1c" }
 }

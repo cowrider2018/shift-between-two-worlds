@@ -8,14 +8,12 @@ import {
 import type { DimIndex } from '../core/level';
 import type { MonsterState, Sim, SimEvent } from '../core/sim';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
-import { HeroModel } from './characters';
 import { CharacterInstance } from './models';
 import { FollowCamera } from './followCamera';
 import { glow } from './materials';
 import { THEMES } from './palette';
 import { PixelPipeline } from './pixelPipeline';
 
-const CHAR_SCALE = 1.3;
 const CONE_SEGMENTS = 32;
 
 class VisionCone {
@@ -93,13 +91,13 @@ export class GameView {
   private tall: [Map<string, BlockView['object']>, Map<string, BlockView['object']>] = [new Map(), new Map()];
   private cut: BlockView['object'][] = [];
   private monsters: MonsterView[] = [];
-  private readonly hero = new HeroModel();
+  private hero!: CharacterInstance;
   private readonly shiftRing: Mesh;
   private sim!: Sim;
   private shownDim: DimIndex | -1 = -1;
   private t = 0;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, private readonly outfit = 'hooded') {
     this.pipeline = new PixelPipeline(canvas);
     this.hemi.intensity = 1.5;
     this.sun.intensity = 1.8;
@@ -110,8 +108,7 @@ export class GameView {
     this.scene.add(this.hemi, this.sun, this.sun.target, this.world);
     this.shiftRing = new Mesh(new RingGeometry(0.3, 0.4, 20), glow('#7ff0ff'));
     this.shiftRing.rotation.x = -Math.PI / 2;
-    this.hero.root.scale.setScalar(CHAR_SCALE);
-    this.scene.add(this.hero.root, this.shiftRing);
+    this.scene.add(this.shiftRing);
   }
 
   setSim(sim: Sim): void {
@@ -122,6 +119,10 @@ export class GameView {
     this.tall = [new Map(), new Map()];
     this.cut = [];
     this.world.add(...this.dims);
+    if (!this.hero) {
+      this.hero = new CharacterInstance('hero', 'normal', this.outfit);
+      this.scene.add(this.hero.root);
+    }
     for (const dim of [0, 1] as DimIndex[]) {
       const ctx = { theme: THEMES[dim], grid: sim.grid };
       for (const cell of sim.grid.all(dim)) {
@@ -166,7 +167,9 @@ export class GameView {
 
   onEvents(events: SimEvent[]): void {
     for (const e of events) {
-      if (e.type === 'shift') {
+      if (e.type === 'swing') {
+        this.hero.trigger('attack');
+      } else if (e.type === 'shift') {
         this.pipeline.fx.flash = 0.85;
         this.pipeline.fx.ripple = 1;
       } else if (e.type === 'kill') {
@@ -188,7 +191,9 @@ export class GameView {
     for (const b of this.blocks) b.update?.(sim, dt, this.t);
 
     this.hero.root.position.set(sim.x, 0, sim.y);
-    this.hero.update(dt, sim.facing, sim.moving, sim.sneaking, sim.swingT);
+    this.hero.root.rotation.y = -sim.facing;
+    this.hero.play(sim.sneaking ? (sim.moving ? 'crouch_walk' : 'crouch') : sim.moving ? 'walk' : 'idle', 0.15);
+    this.hero.update(dt);
     const canShift = sim.canShiftHere();
     this.shiftRing.visible = canShift;
     this.shiftRing.position.set(sim.x, 0.02, sim.y);

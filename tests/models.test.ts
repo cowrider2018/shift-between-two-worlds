@@ -27,6 +27,11 @@ const SPEC: Record<string, { animations: string[]; bones: string[]; maxTris: num
     bones: ['root', 'hips', 'head', 'ear.L', 'ear.R', 'hand.L', 'hand.R', 'foot.L', 'foot.R'],
     maxTris: 8000,
   },
+  hero: {
+    animations: ['idle', 'walk', 'attack', 'crouch', 'crouch_walk'],
+    bones: ['root', 'hips', 'head', 'cape.1', 'hand.R', 'foot.L', 'foot.R', 'hair_full', 'hair_hood', 'hood', 'cape'],
+    maxTris: 8000,
+  },
 };
 
 describe('character models', () => {

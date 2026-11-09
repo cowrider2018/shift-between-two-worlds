@@ -35,14 +35,8 @@ export const THEMES: readonly [DimTheme, DimTheme] = [
   },
 ];
 
+/** Character model colours live in art/palette.json; this is the soul look applied at runtime. */
 export const CHARACTER = {
-  skin: '#f2c9a0',
-  hair: '#f5d142',
-  tunic: '#3f8f3a',
-  cape: '#9b2335',
-  belt: '#5a3a22',
-  boots: '#4a3020',
-  blade: '#dfe8f0',
   soul: '#bff6ff',
 };
 

@@ -97,24 +97,20 @@ def build_body():
     a.ell((0.012, 0, 0.25), wide((0.096, 0.099, 0.012), 0.86), belt)        # belt band, just proud of the belly
     a.ell((0.012 + 0.096 * D, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")  # buckle
 
-    # --- arms: sleeve, forearm, hand with four fingers + thumb -----------------
+    # --- arms: one smooth tapering tube per limb; the skeleton does the bending, so the surface carries no
+    #     elbow or muscle segments (overlapping pieces would sum into bulges at the joints)
     for s in (1, -1):
         sh, el, wr, ha = L("shoulder", s), L("elbow", s), L("wrist", s), L("hand", s)
-        a.seg(sh, el, 0.03, tunic, length=0.8, offset=tuple((sh - el) * 0.12))   # short sleeve
-        a.seg(sh, el, 0.024, skin)                                               # upper arm
-        a.seg(el, wr, 0.022, skin, r2=0.024)                                      # forearm
-        a.seg(wr, ha, 0.019, skin, r2=0.028)                                      # palm
-        a.seg(ha, ha + Vector((0.004, -0.008 * s, -0.026)), 0.02, skin, r2=0.014)  # fingers as one mitten block
-        tb = wr.lerp(ha, 0.5) + Vector((0.024, -0.006 * s, 0))
-        a.seg(tb, tb + Vector((0.018, -0.01 * s, -0.02)), 0.0095, skin)          # thumb
+        a.seg(sh, wr, 0.025, skin, r2=0.021)                                     # shoulder to wrist in one
+        a.paint(sh.lerp(el, 0.4), (0.04, 0.04, 0.045), tunic)                    # short sleeve: colour only
+        a.ell(ha + Vector((0.004, -0.002 * s, -0.008)), (0.022, 0.017, 0.03), skin)  # mitten hand: one plain oval
 
-    # --- short legs: straight trouser legs, boots worn over them ----------------
+    # --- short legs: one smooth trouser tube per leg, boots worn over it ---------
     for s in (1, -1):
         hj, kn, an, to = L("hip", s), L("knee", s), L("ankle", s), L("toe", s)
         a.ell(hj + Vector((-0.012, 0.01 * s, -0.022)), (0.062, 0.056, 0.05), pants)  # full upper thigh under the hem
         # trouser leg: a straight, slim tube from the thigh root to the ankle (the boot is the widest part)
-        a.seg(hj, kn, PANT_R * 1.06, pants, r2=PANT_R)                                 # thigh
-        a.seg(kn, an, PANT_R, pants, r2=PANT_R * 0.96)                                 # shin
+        a.seg(hj, an, PANT_R * 1.05, pants, r2=PANT_R * 0.95)                          # hip to ankle in one, no knee seam
         # boot: a straight shaft one step wider than the trouser leg, worn over it, then one clean shoe
         a.seg(an, kn.lerp(an, 0.22), BOOT_R, boot)                                     # shaft over the trouser leg
         a.ell(Vector((0.026, an.y, 0.026)), (0.066, 0.046, 0.03), boot)                 # shoe: one clean long oval

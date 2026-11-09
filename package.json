@@ -7,7 +7,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "validate": "tsx scripts/validate.ts",
-    "check": "tsc --noEmit && vitest run && tsx scripts/validate.ts"
+    "check": "tsc --noEmit && vitest run && tsx scripts/validate.ts",
+    "models": "tsx scripts/build-models.ts"
   },
   "description": "SHIFT - a two-dimension stealth exploration game with a level editor",
   "dependencies": {

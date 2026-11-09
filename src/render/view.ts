@@ -8,7 +8,8 @@ import {
 import type { DimIndex } from '../core/level';
 import type { MonsterState, Sim, SimEvent } from '../core/sim';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
-import { HeroModel, buildSoul, buildTroll } from './characters';
+import { HeroModel } from './characters';
+import { CharacterInstance } from './models';
 import { FollowCamera } from './followCamera';
 import { glow } from './materials';
 import { THEMES } from './palette';
@@ -70,8 +71,8 @@ class VisionCone {
 
 interface MonsterView {
   state: MonsterState;
-  body: Group;
-  soul: Group;
+  body: CharacterInstance;
+  soul: CharacterInstance;
   cone: VisionCone;
   alert: Group;
   lastX: number;
@@ -133,19 +134,17 @@ export class GameView {
       }
     }
     this.monsters = sim.monsters.map((state) => {
-      const body = buildTroll();
-      const soul = buildSoul();
-      body.scale.setScalar(CHAR_SCALE);
-      soul.scale.setScalar(CHAR_SCALE);
+      const body = new CharacterInstance('troll', 'normal');
+      const soul = new CharacterInstance('troll', 'soul');
       const cone = new VisionCone();
       const alert = new Group();
       alert.add(new Mesh(new BoxGeometry(0.08, 0.22, 0.08), glow('#ff4040')));
       const dot = new Mesh(new BoxGeometry(0.08, 0.08, 0.08), glow('#ff4040'));
       dot.position.y = -0.2;
       alert.add(dot);
-      alert.position.y = 1.5;
-      body.add(alert);
-      this.world.add(body, soul, cone.mesh);
+      alert.position.y = 1.75;
+      body.root.add(alert);
+      this.world.add(body.root, soul.root, cone.mesh);
       return { state, body, soul, cone, alert, lastX: state.x, lastY: state.y, deathT: 0 };
     });
     const { w, h } = sim.level.size;
@@ -221,21 +220,28 @@ export class GameView {
     mv.lastX = m.x;
     mv.lastY = m.y;
     const home = m.dim === sim.dim;
-    mv.body.visible = m.alive && home;
-    mv.body.position.set(m.x, 0, m.y);
-    mv.body.rotation.set(0, -m.angle, moved ? Math.sin(this.t * 9) * 0.07 : 0);
+    const anim = m.detect > 0.3 ? 'alert' : moved ? 'walk' : 'idle';
+    const pace = m.def.speed / 1.4;
+    mv.body.root.visible = m.alive && home;
+    mv.body.root.position.set(m.x, 0, m.y);
+    mv.body.root.rotation.y = -m.angle;
+    mv.body.play(anim, 0.2, anim === 'walk' ? pace : 1);
+    mv.body.update(dt);
     mv.alert.visible = m.detect > 0.05;
     mv.alert.scale.setScalar(0.6 + m.detect * 0.8);
 
     if (!m.alive) mv.deathT += dt;
     const dying = !m.alive && mv.deathT < 0.5;
-    mv.soul.visible = !home && (m.alive || dying);
-    if (mv.soul.visible) {
+    const soul = mv.soul.root;
+    soul.visible = !home && (m.alive || dying);
+    if (soul.visible) {
       const k = dying ? mv.deathT / 0.5 : 0;
-      mv.soul.position.set(m.x, 0.15 + Math.sin(this.t * 2 + m.x) * 0.06 + k * 0.6, m.y);
-      mv.soul.rotation.y = -m.angle;
-      mv.soul.scale.setScalar(CHAR_SCALE * (1 + k * 0.8));
-      mv.soul.visible = k < 1;
+      soul.position.set(m.x, 0.15 + Math.sin(this.t * 2 + m.x) * 0.06 + k * 0.6, m.y);
+      soul.rotation.y = -m.angle;
+      soul.scale.setScalar(1 + k * 0.8);
+      soul.visible = k < 1;
+      mv.soul.play(moved ? 'walk' : 'idle', 0.2, moved ? pace : 1);
+      mv.soul.update(dt);
     }
     mv.cone.update(sim, m);
   }

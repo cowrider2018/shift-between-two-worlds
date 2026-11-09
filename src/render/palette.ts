@@ -43,12 +43,6 @@ export const CHARACTER = {
   belt: '#5a3a22',
   boots: '#4a3020',
   blade: '#dfe8f0',
-  troll: '#5b4e66',
-  trollBelly: '#6f6380',
-  trollNose: '#7d6789',
-  trollEarInner: '#9a7a8e',
-  trollEye: '#ffe066',
-  lantern: '#fff3b0',
   soul: '#bff6ff',
 };
 

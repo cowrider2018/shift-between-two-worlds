@@ -1,12 +1,10 @@
 /**
- * DESIGN §4.2 — characters built from primitives. All models face +X in local space;
+ * DESIGN §4.2 — the hero, still built from primitives (the troll is a Blender model, see models.ts). All models face +X in local space;
  * set `rotation.y = -angle` to face a grid angle (grid y maps to world z).
  */
-import {
-  BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, SphereGeometry, type Material, type Object3D,
-} from 'three';
+import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, SphereGeometry, type Material } from 'three';
 import { CHARACTER as K } from './palette';
-import { ghost, glow, toon } from './materials';
+import { glow, toon } from './materials';
 
 function mesh(geo: ConstructorParameters<typeof Mesh>[0], mat: Material, x = 0, y = 0, z = 0): Mesh {
   const m = new Mesh(geo, mat);
@@ -77,52 +75,4 @@ export class HeroModel {
     this.sword.visible = swing > 0;
     this.sword.rotation.y = swing > 0 ? -1.4 + (1 - swing / 0.25) * 2.8 : 0;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Troll: dark violet-grey, fat, huge nose and ears, holds a lantern.
-
-export function buildTroll(): Group {
-  const g = new Group();
-  const skin = toon(K.troll);
-  for (const z of [-0.14, 0.14]) g.add(mesh(new CylinderGeometry(0.08, 0.09, 0.18, 6), skin, 0, 0.09, z));
-  const body = mesh(new SphereGeometry(0.38, 12, 10), skin, 0, 0.44, 0);
-  body.scale.set(1, 0.95, 1.08);
-  g.add(body);
-  const belly = mesh(new SphereGeometry(0.25, 10, 8), toon(K.trollBelly), 0.18, 0.4, 0);
-  belly.scale.set(0.7, 1, 1);
-  g.add(belly);
-  g.add(mesh(new SphereGeometry(0.24, 12, 10), skin, 0.06, 0.9, 0));
-  const nose = mesh(new SphereGeometry(0.1, 10, 8), toon(K.trollNose), 0.3, 0.86, 0);
-  nose.scale.set(1.7, 1, 1);
-  g.add(nose);
-  for (const s of [-1, 1]) {
-    const ear = new Group();
-    ear.position.set(0.02, 0.95, s * 0.22);
-    ear.rotation.x = s * -0.45;
-    ear.rotation.y = s * 0.25;
-    const outer = mesh(new SphereGeometry(0.2, 10, 8), skin, 0, 0, s * 0.14);
-    outer.scale.set(0.55, 0.85, 1);
-    const inner = mesh(new SphereGeometry(0.13, 8, 6), toon(K.trollEarInner), 0.05, 0, s * 0.14);
-    inner.scale.set(0.35, 0.8, 1);
-    ear.add(outer, inner);
-    g.add(ear);
-    g.add(mesh(new SphereGeometry(0.032, 6, 4), glow(K.trollEye), 0.24, 0.98, s * 0.085));
-    g.add(mesh(new SphereGeometry(0.09, 8, 6), skin, 0.08, 0.5, s * 0.38));
-  }
-  // lantern in front of the right hand
-  g.add(mesh(new BoxGeometry(0.1, 0.13, 0.1), glow(K.lantern), 0.3, 0.45, 0.32));
-  return g;
-}
-
-export function buildSoul(): Group {
-  const g = buildTroll();
-  const mat = ghost(K.soul);
-  g.traverse((o: Object3D) => {
-    if (o instanceof Mesh) {
-      o.material = mat;
-      o.castShadow = false;
-    }
-  });
-  return g;
 }

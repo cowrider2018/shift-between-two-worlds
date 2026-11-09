@@ -1,0 +1,13 @@
+{
+  "troll_skin": { "color": "#5b4e66" },
+  "troll_belly": { "color": "#6f6380" },
+  "troll_nose": { "color": "#7d6789" },
+  "troll_ear": { "color": "#66576f" },
+  "troll_nail": { "color": "#3a3240" },
+  "troll_eye": { "color": "#ffe066", "emissive": true },
+  "troll_tooth": { "color": "#e8dfc8" },
+  "cloth": { "color": "#6b4a2e" },
+  "rope": { "color": "#9a7a45" },
+  "metal": { "color": "#3b3640" },
+  "lantern": { "color": "#fff3b0", "emissive": true }
+}

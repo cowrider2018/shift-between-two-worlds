@@ -1,6 +1,7 @@
 import { DIM_NAMES, type Level } from '../core/level';
 import { Sim, TUNING, type SimEvent } from '../core/sim';
 import { CAMERA } from '../render/followCamera';
+import { loadModels } from '../render/models';
 import { GameView } from '../render/view';
 import { Input } from './input';
 import { BUILTIN_LEVELS } from './levels';
@@ -131,9 +132,16 @@ function loop(now: number): void {
 }
 
 window.addEventListener('resize', () => view.resize());
-if (levels.length === 0) {
-  $('level-name').textContent = '沒有關卡';
-} else {
+async function boot(): Promise<void> {
+  if (levels.length === 0) {
+    $('level-name').textContent = '沒有關卡';
+    return;
+  }
+  $('level-name').textContent = '載入中…';
+  await loadModels();
   start(levelIndex);
+  last = performance.now();
   requestAnimationFrame(loop);
 }
+
+void boot();

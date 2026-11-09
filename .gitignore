@@ -4,3 +4,5 @@ CLAUDE.md
 .claude/*
 !.claude/skills/
 *.log
+art/previews/
+__pycache__/

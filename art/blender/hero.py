@@ -22,8 +22,8 @@ from lib import X, Y, Z
 HEIGHT = 0.84
 # Facet density outside the head matches the primitive head (10x8 sphere): coarse planes, few turns.
 BODY_TRIS = 900
-PANT_R = 0.04  # trouser leg radius: straight and slim
-BOOT_R = 0.057  # boot shaft radius: one clear step wider than the trouser leg, the widest part of the leg
+PANT_R = 0.05   # trouser leg radius: full, nearly straight
+BOOT_R = 0.054  # boot shaft radius: only a touch wider, so the rim is a small step, not a big tuck
 BOOT_TOP = 0.34  # boot rim height between ankle and knee: low, so the trouser leg reads long
 THICK = 1.5  # trunk and leg girth relative to the original slim build (heights unchanged)
 DEPTH = 0.7  # the trunk's front-to-back depth relative to THICK (a flatter, less barrel-chested body)
@@ -111,7 +111,7 @@ def build_body():
         hj, kn, an, to = L("hip", s), L("knee", s), L("ankle", s), L("toe", s)
         a.ell(hj + Vector((-0.012, 0.01 * s, -0.022)), (0.062, 0.056, 0.05), pants)  # full upper thigh under the hem
         # trouser leg: a straight, slim tube from the thigh root to the ankle (the boot is the widest part)
-        a.seg(hj, an, PANT_R * 1.05, pants, r2=PANT_R * 0.95)                          # hip to ankle in one, no knee seam
+        a.seg(hj, an, PANT_R * 1.03, pants, r2=PANT_R)                          # hip to ankle in one, no knee seam
         # boot: a straight shaft one step wider than the trouser leg, worn over it, then one clean shoe
         # shaft over the trouser leg, dropping straight down to the ground: that is the heel
         top = an.lerp(kn, BOOT_TOP)

@@ -2,19 +2,18 @@
  * GameView: turns a Sim into a three.js scene each frame. Owns no game rules.
  */
 import {
-  BoxGeometry, BufferAttribute, BufferGeometry, Color, DirectionalLight, Group, HemisphereLight, Mesh, MeshBasicMaterial,
-  OrthographicCamera, RingGeometry, Scene, Vector3,
+  BoxGeometry, BufferAttribute, BufferGeometry, Color, DirectionalLight, Fog, Group, HemisphereLight, Mesh, MeshBasicMaterial,
+  RingGeometry, Scene, Vector3,
 } from 'three';
 import type { DimIndex } from '../core/level';
 import type { MonsterState, Sim, SimEvent } from '../core/sim';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HeroModel, buildSoul, buildTroll } from './characters';
+import { FollowCamera } from './followCamera';
 import { glow } from './materials';
 import { THEMES } from './palette';
 import { PixelPipeline } from './pixelPipeline';
 
-const VIEW_H = 10.5; // world units visible vertically
-const ELEVATION = (48 * Math.PI) / 180;
 const CHAR_SCALE = 1.3;
 const CONE_SEGMENTS = 32;
 
@@ -83,12 +82,15 @@ interface MonsterView {
 export class GameView {
   readonly pipeline: PixelPipeline;
   readonly scene = new Scene();
-  readonly camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+  readonly follow = new FollowCamera();
   private readonly hemi = new HemisphereLight();
   private readonly sun = new DirectionalLight();
   private readonly world = new Group();
   private dims: [Group, Group] = [new Group(), new Group()];
   private blocks: BlockView[] = [];
+  /** Tall block objects per dimension, keyed "x,y" — candidates for the camera cutaway. */
+  private tall: [Map<string, BlockView['object']>, Map<string, BlockView['object']>] = [new Map(), new Map()];
+  private cut: BlockView['object'][] = [];
   private monsters: MonsterView[] = [];
   private readonly hero = new HeroModel();
   private readonly shiftRing: Mesh;
@@ -102,7 +104,8 @@ export class GameView {
     this.sun.intensity = 1.8;
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
-    this.sun.shadow.bias = -0.002;
+    this.sun.shadow.bias = -0.0015;
+    this.sun.shadow.normalBias = 0.04;
     this.scene.add(this.hemi, this.sun, this.sun.target, this.world);
     this.shiftRing = new Mesh(new RingGeometry(0.3, 0.4, 20), glow('#7ff0ff'));
     this.shiftRing.rotation.x = -Math.PI / 2;
@@ -115,6 +118,8 @@ export class GameView {
     this.world.clear();
     this.dims = [new Group(), new Group()];
     this.blocks = [];
+    this.tall = [new Map(), new Map()];
+    this.cut = [];
     this.world.add(...this.dims);
     for (const dim of [0, 1] as DimIndex[]) {
       const ctx = { theme: THEMES[dim], grid: sim.grid };
@@ -124,6 +129,7 @@ export class GameView {
         const v = factory(cell, ctx);
         this.dims[dim].add(v.object);
         this.blocks.push(v);
+        if (cell.def.solid !== 'never') this.tall[dim].set(`${cell.x},${cell.y}`, v.object);
       }
     }
     this.monsters = sim.monsters.map((state) => {
@@ -150,14 +156,13 @@ export class GameView {
     Object.assign(this.sun.shadow.camera, { left: -s, right: s, top: s, bottom: -s, near: 1, far: 50 });
     this.sun.shadow.camera.updateProjectionMatrix();
     this.shownDim = -1;
+    this.follow.reset(sim);
     this.resize();
   }
 
   resize(): void {
     const { w, h } = this.pipeline.resize(window.innerWidth, window.innerHeight);
-    const aspect = w / h;
-    Object.assign(this.camera, { left: (-VIEW_H * aspect) / 2, right: (VIEW_H * aspect) / 2, top: VIEW_H / 2, bottom: -VIEW_H / 2 });
-    this.camera.updateProjectionMatrix();
+    this.follow.setAspect(w / h);
   }
 
   onEvents(events: SimEvent[]): void {
@@ -191,8 +196,22 @@ export class GameView {
     this.shiftRing.scale.setScalar(1 + Math.sin(this.t * 6) * 0.08);
 
     for (const mv of this.monsters) this.updateMonster(mv, dt);
-    this.updateCamera();
-    this.pipeline.render(this.scene, this.camera);
+    this.follow.update(sim, dt);
+    this.updateCutaway();
+    this.pipeline.render(this.scene, this.follow.camera);
+  }
+
+  /** Squash walls / doors between the camera and the hero into low stubs. */
+  private updateCutaway(): void {
+    for (const o of this.cut) o.scale.y = 1;
+    this.cut = [];
+    const tall = this.tall[this.sim.dim];
+    for (const [x, y] of this.follow.occluderCells()) {
+      const o = tall.get(`${x},${y}`);
+      if (!o) continue;
+      o.scale.y = 0.12;
+      this.cut.push(o);
+    }
   }
 
   private updateMonster(mv: MonsterView, dt: number): void {
@@ -225,29 +244,11 @@ export class GameView {
     this.shownDim = dim;
     const th = THEMES[dim];
     this.scene.background = new Color(th.background);
+    this.scene.fog = new Fog(th.background, 9, 20);
     this.hemi.color.set(th.hemiSky);
     this.hemi.groundColor.set(th.hemiGround);
     this.sun.color.set(th.sun);
     this.dims[0].visible = dim === 0;
     this.dims[1].visible = dim === 1;
-  }
-
-  private updateCamera(): void {
-    const sim = this.sim;
-    const { w, h } = sim.level.size;
-    const halfW = (this.camera.right - this.camera.left) / 2;
-    const halfD = VIEW_H / 2 / Math.sin(ELEVATION);
-    const axis = (p: number, size: number, half: number) =>
-      size <= half * 2 - 1 ? size / 2 : Math.min(Math.max(p, half - 0.5), size - half + 0.5);
-    let tx = axis(sim.x, w, halfW);
-    let tz = axis(sim.y, h, halfD) + 0.4;
-    // snap to the low-res pixel grid so static geometry does not shimmer
-    const wpp = VIEW_H / this.pipeline.height;
-    tx = Math.round(tx / wpp) * wpp;
-    const zStep = wpp / Math.sin(ELEVATION);
-    tz = Math.round(tz / zStep) * zStep;
-    const dist = 30;
-    this.camera.position.set(tx, Math.sin(ELEVATION) * dist, tz + Math.cos(ELEVATION) * dist);
-    this.camera.lookAt(tx, 0, tz);
   }
 }

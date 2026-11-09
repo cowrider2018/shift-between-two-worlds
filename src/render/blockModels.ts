@@ -23,9 +23,12 @@ export interface ModelCtx {
 
 export type BlockModelFactory = (cell: Cell, ctx: ModelCtx) => BlockView;
 
+/** Wall height in tiles — taller than the troll so walls read as walls from the third-person camera. */
+const WALL_H = 1.6;
+
 const geo = {
   floor: new BoxGeometry(1, 0.1, 1),
-  wall: new BoxGeometry(1, 1.1, 1),
+  wall: new BoxGeometry(1, WALL_H, 1),
 };
 
 function place(o: Object3D, cell: Cell): Object3D {
@@ -62,7 +65,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   wall: (cell, ctx) => {
     const side = toon(ctx.theme.wallSide);
     const top = toon(ctx.theme.wallTop);
-    const w = m(geo.wall, [side, side, top, side, side, side], 0, 0.55, 0);
+    const w = m(geo.wall, [side, side, top, side, side, side], 0, WALL_H / 2, 0);
     return { object: place(w, cell) };
   },
 
@@ -113,18 +116,18 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     const solidAt = (dx: number, dy: number) => ctx.grid.cell(cell.dim, cell.x + dx, cell.y + dy).def.solid === 'always';
     const spanX = solidAt(-1, 0) || solidAt(1, 0) || !(solidAt(0, -1) || solidAt(0, 1));
     const panel = new Group();
-    const slab = m(new BoxGeometry(spanX ? 1 : 0.3, 1.05, spanX ? 0.3 : 1), toon('#7a4e33'), 0, 0.525, 0);
-    const stripe = m(new BoxGeometry(spanX ? 1.01 : 0.31, 0.12, spanX ? 0.31 : 1.01), glow(color), 0, 0.75, 0, false);
+    const slab = m(new BoxGeometry(spanX ? 1 : 0.3, WALL_H - 0.1, spanX ? 0.3 : 1), toon('#7a4e33'), 0, (WALL_H - 0.1) / 2, 0);
+    const stripe = m(new BoxGeometry(spanX ? 1.01 : 0.31, 0.12, spanX ? 0.31 : 1.01), glow(color), 0, 1.1, 0, false);
     panel.add(slab, stripe);
     const g = onFloor(cell, ctx, panel);
     let y = 0;
     return {
       object: g,
       update: (sim, dt) => {
-        const target = sim.doorOpen(cell) ? -1.0 : 0;
+        const target = sim.doorOpen(cell) ? -WALL_H : 0;
         y += (target - y) * Math.min(1, dt * 8);
         panel.position.y = y;
-        panel.visible = y > -0.98;
+        panel.visible = y > -WALL_H + 0.05;
       },
     };
   },

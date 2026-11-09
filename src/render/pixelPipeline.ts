@@ -3,7 +3,7 @@
  * colour quantisation and screen effects. The canvas is CSS-upscaled with nearest filtering.
  */
 import {
-  Camera, DepthTexture, Mesh, NearestFilter, OrthographicCamera, PlaneGeometry, Scene, ShaderMaterial,
+  Camera, DepthTexture, PerspectiveCamera, Mesh, NearestFilter, OrthographicCamera, PlaneGeometry, Scene, ShaderMaterial,
   Color, Vector2, WebGLRenderTarget, WebGLRenderer, PCFShadowMap, UnsignedIntType,
 } from 'three';
 
@@ -41,19 +41,23 @@ export class PixelPipeline {
         ripple: { value: 0 },
         danger: { value: 0 },
         time: { value: 0 },
+        cameraNear: { value: 0.1 },
+        cameraFar: { value: 60 },
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
         void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
       `,
       fragmentShader: /* glsl */ `
+        #include <packing>
         uniform sampler2D tColor;
+        uniform float cameraNear, cameraFar;
         uniform sampler2D tDepth;
         uniform vec2 texel;
         uniform float levels, flash, ripple, danger, time;
         uniform vec3 outline;
         varying vec2 vUv;
-        float depthAt(vec2 uv) { return texture2D(tDepth, uv).x; }
+        float depthAt(vec2 uv) { return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, cameraNear, cameraFar); }
         void main() {
           vec2 uv = vUv;
           if (ripple > 0.0) {
@@ -66,7 +70,7 @@ export class PixelPipeline {
                          max(depthAt(uv + vec2(0.0, texel.y)), depthAt(uv - vec2(0.0, texel.y))));
           c = pow(max(c, 0.0), vec3(1.0 / 2.2));
           c = floor(c * levels + 0.5) / levels;
-          if (dn - d > 0.0035 && d < 0.9999) c = mix(c, outline, 0.8);
+          if ((dn - d) / d > 0.07 && d < cameraFar * 0.99) c = mix(c, outline, 0.8);
           vec2 q = vUv - 0.5;
           float vig = smoothstep(0.25, 0.75, length(q * vec2(1.3, 1.0)));
           c = mix(c, vec3(0.85, 0.08, 0.1), vig * danger * 0.75);
@@ -99,6 +103,10 @@ export class PixelPipeline {
     u.ripple.value = this.fx.ripple;
     u.danger.value = this.fx.danger;
     u.time.value = this.fx.time;
+    if (camera instanceof PerspectiveCamera) {
+      u.cameraNear.value = camera.near;
+      u.cameraFar.value = camera.far;
+    }
     this.renderer.setRenderTarget(this.rt);
     this.renderer.render(scene, camera);
     this.renderer.setRenderTarget(null);

@@ -1,5 +1,6 @@
 import { DIM_NAMES, type Level } from '../core/level';
 import { Sim, TUNING, type SimEvent } from '../core/sim';
+import { CAMERA } from '../render/followCamera';
 import { GameView } from '../render/view';
 import { Input } from './input';
 import { BUILTIN_LEVELS } from './levels';
@@ -15,6 +16,7 @@ let levelIndex = Math.max(0, levels.findIndex((l) => l.id === params.get('level'
 
 const view = new GameView($<HTMLCanvasElement>('game'));
 const input = new Input();
+input.bindPointerLock($<HTMLCanvasElement>('game'));
 let sim: Sim;
 let acc = 0;
 let last = performance.now();
@@ -106,9 +108,13 @@ function loop(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   acc += dt;
+  view.follow.yaw += input.takeTurn(dt, CAMERA.mouseSensitivity, CAMERA.keyTurnSpeed);
   while (acc >= STEP) {
     acc -= STEP;
-    sim.update(input.take(), STEP);
+    // WASD is camera-relative: rotate the stick into grid space before the sim sees it
+    const raw = input.take();
+    const [moveX, moveY] = view.follow.toWorld(raw.moveX, raw.moveY);
+    sim.update({ ...raw, moveX, moveY }, STEP);
     handle(sim.drainEvents());
   }
   if (caughtT > 0) {

@@ -29,7 +29,7 @@
       #overlay.caught #overlay-title { color: #ff5d5d; }
       #overlay.won #overlay-title { color: #c46bff; }
       a.editor { pointer-events: auto; color: var(--ink); opacity: .6; }
-      .keys { position: absolute; right: 16px; bottom: 12px; font-size: 12px; opacity: .55; text-align: right; pointer-events: none; }
+      .keys { position: absolute; right: 16px; top: 44px; font-size: 12px; opacity: .55; text-align: right; pointer-events: none; }
     </style>
   </head>
   <body>
@@ -43,7 +43,7 @@
       <a class="editor" href="./editor.html">編輯器</a>
     </div>
     <div class="hud bottom"><span id="hint"></span></div>
-    <div class="keys">WASD 移動・Shift 按住潛行 / 輕點轉移・E 互動・Space 揮劍・R 重來</div>
+    <div class="keys">WASD 移動・滑鼠 / ←→ 轉視角（點畫面鎖定滑鼠）・Shift 按住潛行 / 輕點轉移・E 互動・Space 揮劍・R 重來</div>
     <div id="toast"></div>
     <div id="overlay" class="hidden"><div id="overlay-title"></div><div id="overlay-sub"></div></div>
     <script type="module" src="/src/game/main.ts"></script>

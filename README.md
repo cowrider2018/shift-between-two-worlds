@@ -10,6 +10,7 @@ npm run dev        # http://localhost:5173/ 遊戲、/editor.html 編輯器
 npm run check      # 型別檢查 + 單元測試 + 關卡驗證
 npm run validate   # 只驗證 levels/*.json（可帶檔名）
 npm run build      # 輸出 dist/（靜態網站，編輯器只能下載 JSON，不能直接存檔）
+npm run models     # 用 Blender 重建角色模型（BLENDER=<blender.exe> 或專案旁的 blender-* 資料夾）
 ```
 
 ## 操作

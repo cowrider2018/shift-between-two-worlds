@@ -187,14 +187,16 @@ def build_head():
 #   azimuth 0 = forward, +90 = the hero's left; elevation 90 = straight up.
 HEAD_R = 0.15 * HEAD_K
 LOCK_RATIO = 2.0  # width : thickness, never flatter than this
-# Fitted numerically: scalp ~98% covered, ~6% double-covered, face and ears clear; every lock >= 0.2 wide
-# and bending >= 70 degrees around the head (big locks, no small filler spikes).
+# Fitted numerically: scalp ~95% covered, ~7% double-covered, face and ears clear; every lock >= 0.2 wide
+# and bending >= 70 degrees around the head (big locks, no small filler spikes). The back hairline sits high and
+# the back stays close to the skull (locks sunk in, not flattened); every tip flicks well outward from 40% along,
+# and forward-facing tips stop above the brow (no bangs over the eyes).
 HAIR = [
-    ("sweep_r", (158, 58), (-54, -2), 0.226, 2.80, 0.30, 0.022),
-    ("sweep_l", (94, 88), (10, 8), 0.329, 3.50, 0.10, 0.064),
-    ("side_l", (136, 36), (34, 6), 0.308, 1.27, 0.30, 0.083),
-    ("side_r", (204, 26), (-64, 6), 0.205, 1.99, 0.27, 0.020),
-    ("back", (129, 18), (268, -29), 0.335, 3.50, -0.01, 0.067),
+    ("sweep_r", (151, 88), (-103, -23), 0.200, 3.50, 0.14, 0.076),
+    ("sweep_l", (56, 52), (-48, 27), 0.224, 3.43, -0.05, 0.138),
+    ("side_l", (97, 16), (-13, 60), 0.200, 2.66, 0.09, 0.127),
+    ("side_r", (241, -10), (-22, 45), 0.200, 3.39, -0.57, 0.092),
+    ("back", (116, 25), (251, -12), 0.280, 2.97, -0.27, 0.114),
 ]
 
 
@@ -226,7 +228,7 @@ def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, steps=7):
         u = k / steps
         n = _slerp(a, b, u).normalized()
         w = width * (1 - u ** taper)
-        lift = flick * max(0.0, (u - 0.55) / 0.45) ** 2            # the tip turns away from the head
+        lift = flick * max(0.0, (u - 0.4) / 0.6) ** 2            # the tip turns away from the head
         pts.append((n, H + n * (HEAD_R + depth * w / LOCK_RATIO + lift), w))
     root = H + a * HEAD_R * 0.3                                     # buried root: the lock grows out of the skull
     rings = [ring(root, (pts[1][1] - root).normalized(), a, width * 1.05)]

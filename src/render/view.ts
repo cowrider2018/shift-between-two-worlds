@@ -75,8 +75,14 @@ interface MonsterView {
   alert: Group;
   lastX: number;
   lastY: number;
+  /** Seconds since the monster last changed position. */
+  stillT: number;
   deathT: number;
 }
+
+/** A monster counts as walking until it has stood still this long: render frames outnumber sim steps on
+ *  high-refresh screens, and a per-frame check would flicker walk/idle and restart the walk every frame. */
+const WALK_HOLD = 0.12;
 
 export class GameView {
   readonly pipeline: PixelPipeline;
@@ -146,7 +152,7 @@ export class GameView {
       alert.position.y = 1.75;
       body.root.add(alert);
       this.world.add(body.root, soul.root, cone.mesh);
-      return { state, body, soul, cone, alert, lastX: state.x, lastY: state.y, deathT: 0 };
+      return { state, body, soul, cone, alert, lastX: state.x, lastY: state.y, stillT: WALK_HOLD, deathT: 0 };
     });
     const { w, h } = sim.level.size;
     const c = new Vector3(w / 2, 0, h / 2);
@@ -222,7 +228,8 @@ export class GameView {
   private updateMonster(mv: MonsterView, dt: number): void {
     const sim = this.sim;
     const m = mv.state;
-    const moved = Math.hypot(m.x - mv.lastX, m.y - mv.lastY) > 1e-4;
+    mv.stillT = Math.hypot(m.x - mv.lastX, m.y - mv.lastY) > 1e-4 ? 0 : mv.stillT + dt;
+    const moved = mv.stillT < WALK_HOLD;
     mv.lastX = m.x;
     mv.lastY = m.y;
     const home = m.dim === sim.dim;

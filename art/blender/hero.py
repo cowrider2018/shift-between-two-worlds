@@ -112,8 +112,10 @@ def build_body():
         # trouser leg: a straight, slim tube from the thigh root to the ankle (the boot is the widest part)
         a.seg(hj, an, PANT_R * 1.05, pants, r2=PANT_R * 0.95)                          # hip to ankle in one, no knee seam
         # boot: a straight shaft one step wider than the trouser leg, worn over it, then one clean shoe
-        a.seg(an, kn.lerp(an, 0.22), BOOT_R, boot)                                     # shaft over the trouser leg
-        a.ell(Vector((0.026, an.y, 0.026)), (0.066, 0.046, 0.03), boot)                 # shoe: one clean long oval
+        # shaft over the trouser leg, dropping straight down to the ground: that is the heel
+        a.seg(Vector((an.x - 0.006, an.y, -0.03)), kn.lerp(an, 0.22), BOOT_R, boot)  # runs into the floor
+        a.seg(Vector((an.x, an.y, 0.01)), Vector((to.x + 0.024, an.y, 0.012)), 0.036, boot, r2=0.03)  # toe, forward
+    a.subtract((0, 0, -1.0), (1.5, 1.5, 1.0))  # flat soles: everything below the floor is sliced off
 
     return a.build(target_tris=BODY_TRIS, voxel=0.006)
 

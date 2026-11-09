@@ -77,11 +77,12 @@ def build_body():
     for s in (1, -1):
         sh = L("shoulder", s)
         a.ell(sh + Vector((0, -0.006 * s, -0.004)), (0.03, 0.03, 0.024), tunic)  # small, dropped shoulder cap
-        a.ell((-0.052, 0.04 * s, 0.208), (0.064, 0.056, 0.058), tunic)     # round bottom cheek, tucked in
-    a.ell((0.015, 0, 0.275), wide((0.08, 0.088, 0.055), 0.94), tunic)       # belly
-    a.ell((0.008, 0, 0.228), wide((0.092, 0.106, 0.052), 0.84), tunic)      # lower belly / hips
-    a.ell((0.002, 0, 0.198), wide((0.096, 0.112, 0.036), 0.8), tunic)       # tunic hem, slight flare
-    a.ell((0.012, 0, 0.25), wide((0.088, 0.099, 0.012), 0.86), belt)        # belt band
+        a.ell((-0.05, 0.042 * s, 0.2), (0.062, 0.056, 0.064), tunic)       # round bottom cheek, flows into the thigh
+    # below the chest the trunk only widens a little, so the hem meets the upper thighs without a step
+    a.ell((0.015, 0, 0.275), wide((0.08, 0.088, 0.055), 0.9), tunic)        # belly
+    a.ell((0.008, 0, 0.228), wide((0.092, 0.106, 0.052), 0.78), tunic)      # lower belly / hips
+    a.ell((0.002, 0, 0.2), wide((0.092, 0.112, 0.034), 0.72), tunic)        # tunic hem, barely flared
+    a.ell((0.012, 0, 0.25), wide((0.088, 0.099, 0.012), 0.8), belt)         # belt band
     a.ell((0.012 + 0.088 * T, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")  # buckle
 
     # --- arms: sleeve, forearm, hand with four fingers + thumb -----------------
@@ -101,7 +102,8 @@ def build_body():
     # --- short legs: leggings, knees, boots ------------------------------------
     for s in (1, -1):
         hj, kn, an, to = L("hip", s), L("knee", s), L("ankle", s), L("toe", s)
-        a.seg(hj, kn, 0.036 * T, pants, r2=0.038 * T)                                     # thigh
+        a.ell(hj + Vector((-0.012, 0.01 * s, -0.022)), (0.062, 0.056, 0.05), pants)  # full upper thigh under the hem
+        a.seg(hj, kn, 0.042 * T, pants, r2=0.034 * T)                                     # thigh, tapering to the knee
         a.ell(kn + Vector((0.014 * T, 0, 0)), (0.02 * T, 0.024 * T, 0.022), pants)            # knee
         a.seg(kn, an, 0.028 * T, pants)                                               # shin
         a.seg(kn.lerp(an, 0.3), an, 0.035 * T, boot)                                  # boot shaft

@@ -21,6 +21,7 @@ from lib import X, Y, Z
 
 HEIGHT = 0.84
 THICK = 1.5  # trunk and leg girth relative to the original slim build (heights unchanged)
+DEPTH = 0.7  # the trunk's front-to-back depth relative to THICK (a flatter, less barrel-chested body)
 H = Vector((0.0, 0.0, 0.555))  # head centre
 
 # Outfit variants: the game shows the listed parts and hides every other part named here.
@@ -68,8 +69,10 @@ def build_body():
     a.seg(L("neck") + Vector((0, 0, -0.02)), h(0.0, 0, -0.12), 0.04, skin)  # neck
     T = THICK
 
-    def wide(semi, side=1.0):  # girth scales (depth x by T, width y by T * side), height z does not
-        return (semi[0] * T, semi[1] * T * side, semi[2])
+    D = T * DEPTH
+
+    def wide(semi, side=1.0):  # girth scales (depth x by T * DEPTH, width y by T * side), height z does not
+        return (semi[0] * D, semi[1] * T * side, semi[2])
 
     # --- trunk: full depth, but the lower body is pulled in sideways so it reads as a rounded egg,
     #     not a wide bell; the bottom is two round, tucked-in cheeks
@@ -77,13 +80,13 @@ def build_body():
     for s in (1, -1):
         sh = L("shoulder", s)
         a.ell(sh + Vector((0, -0.006 * s, -0.004)), (0.03, 0.03, 0.024), tunic)  # small, dropped shoulder cap
-        a.ell((-0.05, 0.042 * s, 0.2), (0.062, 0.056, 0.064), tunic)       # round bottom cheek, flows into the thigh
+        a.ell((-0.05 * D / 1.5, 0.042 * s, 0.2), (0.062 * D / 1.5, 0.056, 0.064), tunic)       # round bottom cheek, flows into the thigh
     # below the chest the trunk only widens a little, so the hem meets the upper thighs without a step
     a.ell((0.015, 0, 0.275), wide((0.08, 0.088, 0.055), 0.9), tunic)        # belly
     a.ell((0.008, 0, 0.228), wide((0.092, 0.106, 0.052), 0.78), tunic)      # lower belly / hips
     a.ell((0.002, 0, 0.2), wide((0.092, 0.112, 0.034), 0.72), tunic)        # tunic hem, barely flared
     a.ell((0.012, 0, 0.25), wide((0.088, 0.099, 0.012), 0.8), belt)         # belt band
-    a.ell((0.012 + 0.088 * T, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")  # buckle
+    a.ell((0.012 + 0.088 * D, 0, 0.25), (0.008, 0.02, 0.016), "hero_buckle")  # buckle
 
     # --- arms: sleeve, forearm, hand with four fingers + thumb -----------------
     for s in (1, -1):
@@ -223,13 +226,14 @@ def build_cape():
     wrap = math.radians(160)  # angle from the back to each front edge (front opening = 2 * 20°)
     cols = 16
     k = THICK / 1.5  # radii below are sized for THICK = 1.5
+    d = 0.8 + 0.2 * (DEPTH - 0.7) / 0.3  # x-radii (depth) shrink with the flatter trunk; sized for DEPTH = 0.7
     rows = [  # (z, x-radius, y-radius, x-centre)
         (0.445, 0.055, 0.062, -0.005),   # collar top
-        (0.385, 0.1, 0.14, -0.005),      # shoulders (dropped with the shoulder caps)
-        (0.33, 0.15 * k, 0.185, 0.0),
-        (0.25, 0.165 * k, 0.19 * k, 0.0),  # hips
-        (0.16, 0.17 * k, 0.2 * k, 0.0),
-        (0.065, 0.175 * k, 0.21 * k, 0.0),  # hem, just above the ankles
+        (0.385, 0.085, 0.14, -0.005),    # shoulders (dropped with the shoulder caps)
+        (0.33, 0.15 * k * d, 0.185, 0.0),
+        (0.25, 0.165 * k * d, 0.19 * k, 0.0),  # hips
+        (0.16, 0.17 * k * d, 0.2 * k, 0.0),
+        (0.065, 0.175 * k * d, 0.21 * k, 0.0),  # hem, just above the ankles
     ]
     rings = []
     for r, (z, rx, ry, cx) in enumerate(rows):
@@ -242,7 +246,7 @@ def build_cape():
             ring.append((cx - math.cos(a) * rx * fold, math.sin(a) * ry * fold, z - hem))
         rings.append(ring)
     cloak = lib.loft("cape", rings, "hero_cape", closed=False)
-    clasp = lib.ico("clasp", (0.09, 0.0, 0.395), 0.014, "hero_buckle", 0)
+    clasp = lib.ico("clasp", (0.078, 0.0, 0.395), 0.014, "hero_buckle", 0)
     return cloak, clasp
 
 
@@ -276,8 +280,8 @@ def build_rig():
         ("chest", J["chest"], J["neck"], "spine"),
         ("neck", J["neck"], tuple(h(0, 0, -0.1)), "chest"),
         ("head", tuple(h(0, 0, -0.1)), tuple(h(0, 0, 0.2)), "neck"),
-        ("cape.1", (-0.1, 0, 0.4), (-0.15, 0, 0.24), "chest"),
-        ("cape.2", (-0.15, 0, 0.24), (-0.18, 0, 0.065), "cape.1"),
+        ("cape.1", (-0.08, 0, 0.4), (-0.12, 0, 0.24), "chest"),
+        ("cape.2", (-0.12, 0, 0.24), (-0.145, 0, 0.065), "cape.1"),
     ]
     for s, side in ((1, "L"), (-1, "R")):
         P = lambda n: tuple(L(n, s))

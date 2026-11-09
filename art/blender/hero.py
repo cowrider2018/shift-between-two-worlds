@@ -20,6 +20,8 @@ import lib
 from lib import X, Y, Z
 
 HEIGHT = 0.84
+# Facet density outside the head matches the primitive head (10x8 sphere): coarse planes, few turns.
+BODY_TRIS = 900
 THICK = 1.5  # trunk and leg girth relative to the original slim build (heights unchanged)
 DEPTH = 0.7  # the trunk's front-to-back depth relative to THICK (a flatter, less barrel-chested body)
 H = Vector((0.0, 0.0, 0.555))  # head centre
@@ -96,9 +98,7 @@ def build_body():
         a.ell(el, (0.022, 0.022, 0.022), skin)                                    # elbow
         a.seg(el, wr, 0.022, skin, r2=0.024)                                      # forearm
         a.seg(wr, ha, 0.019, skin, r2=0.028)                                      # palm
-        for dx in (-0.015, -0.005, 0.005, 0.015):                                 # four short fingers
-            base = ha + Vector((dx, -0.004 * s, -0.005))
-            a.seg(base, base + Vector((0.004, -0.006 * s, -0.027)), 0.0085, skin)
+        a.seg(ha, ha + Vector((0.004, -0.008 * s, -0.026)), 0.02, skin, r2=0.014)  # fingers as one mitten block
         tb = wr.lerp(ha, 0.5) + Vector((0.024, -0.006 * s, 0))
         a.seg(tb, tb + Vector((0.018, -0.01 * s, -0.02)), 0.0095, skin)          # thumb
 
@@ -115,7 +115,7 @@ def build_body():
         a.ell(an + Vector((-0.028 * T, 0, -0.022)), (0.028 * T, 0.033 * 1.25, 0.026), boot)      # heel
         a.ell(to + Vector((0.005, 0, 0.004)), (0.028 * 1.25, 0.034 * 1.25, 0.02), boot)         # toe cap
 
-    return a.build(target_tris=3600, voxel=0.0035)
+    return a.build(target_tris=BODY_TRIS, voxel=0.006)
 
 
 # ---------------------------------------------------------------------------
@@ -250,10 +250,10 @@ def build_hood():
     the rings grow around the skull, then taper smoothly down the back to a pointed tip.
     """
     spine = lib.catmull_rom([h(0.16, 0, 0.0), h(0.02, 0, 0.035), h(-0.14, 0, 0.045), h(-0.25, 0, -0.01),
-                             h(-0.31, 0, -0.12), h(-0.33, 0, -0.25)], samples_per_segment=3)
+                             h(-0.31, 0, -0.12), h(-0.33, 0, -0.25)], samples_per_segment=2)
     #            (half-width across, half-height) at each control point, interpolated along the spine
     radii = [(0.175, 0.2), (0.205, 0.215), (0.165, 0.17), (0.1, 0.1), (0.055, 0.055), (0.0, 0.0)]
-    sides = 14
+    sides = 8
     rings = []
     m = len(spine) - 1
     for k, c in enumerate(spine[:-1]):
@@ -276,7 +276,7 @@ def build_cape():
     leaving only a narrow opening at the front. Gentle folds, flared hem. Weighted down the cape chain.
     """
     wrap = math.radians(160)  # angle from the back to each front edge (front opening = 2 * 20°)
-    cols = 16
+    cols = 10
     k = THICK / 1.5  # radii below are sized for THICK = 1.5
     d = 0.8 + 0.2 * (DEPTH - 0.7) / 0.3  # x-radii (depth) shrink with the flatter trunk; sized for DEPTH = 0.7
     rows = [  # (z, x-radius, y-radius, x-centre)
@@ -293,7 +293,7 @@ def build_cape():
         ring = []
         for c in range(cols + 1):
             a = -wrap + 2 * wrap * c / cols          # 0 = straight back
-            fold = 1 + 0.06 * t * math.sin(a * 5)    # cloth folds, deeper towards the hem
+            fold = 1 + 0.06 * t * math.sin(a * 3)    # cloth folds, deeper towards the hem
             hem = (0.012 if c % 2 else -0.004) if r == len(rows) - 1 else 0.0
             ring.append((cx - math.cos(a) * rx * fold, math.sin(a) * ry * fold, z - hem))
         rings.append(ring)

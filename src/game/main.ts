@@ -2,7 +2,8 @@ import { DIM_NAMES, type Level } from '../core/level';
 import { Sim, TUNING, type SimEvent } from '../core/sim';
 import { GameView } from '../render/view';
 import { Input } from './input';
-import { BUILTIN_LEVELS, loadPlaytest } from './levels';
+import { BUILTIN_LEVELS } from './levels';
+import { loadPlaytest } from './playtest';
 
 const STEP = 1 / 60;
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;

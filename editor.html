@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SHIFT 編輯器</title>
+    <style>
+      :root { --bg: #16131c; --panel: #211d29; --line: #352f40; --ink: #ece6f5; --muted: #9a92a8; --accent: #7ff0ff;
+        --err: #ff5d5d; --warn: #ffb020; --ok: #6be08a; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+        font: 13px/1.45 system-ui, "Microsoft JhengHei", sans-serif; }
+      body { display: grid; grid-template-columns: 190px 1fr 300px; grid-template-rows: 44px 1fr 26px; height: 100vh; }
+      header { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+      header .brand { font-weight: 800; letter-spacing: 3px; margin-right: 8px; }
+      header .grow { flex: 1; }
+      #file-name { color: var(--muted); font-family: ui-monospace, monospace; }
+      aside { background: var(--panel); overflow: auto; padding: 10px; }
+      aside.left { border-right: 1px solid var(--line); }
+      aside.right { border-left: 1px solid var(--line); }
+      h3 { margin: 12px 0 6px; font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+      h3:first-child { margin-top: 0; }
+      button, select, input { font: inherit; color: var(--ink); background: #2c2736; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+      button { cursor: pointer; }
+      button:hover { border-color: #5a5068; }
+      button.active { background: #3a3150; border-color: var(--accent); }
+      button.primary { background: #2f5d66; border-color: #3f8a96; }
+      button.danger { border-color: #7a3540; color: #ffb3bb; margin-top: 8px; }
+      button.mini { padding: 0 5px; font-size: 11px; }
+      #tools, #palette { display: grid; gap: 4px; }
+      #tools button, #palette button { display: flex; align-items: center; gap: 8px; text-align: left; }
+      kbd { margin-left: auto; font: 11px ui-monospace, monospace; color: var(--muted); }
+      .swatch { width: 20px; height: 20px; display: grid; place-content: center; border-radius: 3px; color: #1a1620; font: 700 12px ui-monospace, monospace; }
+      #overlays label { display: flex; gap: 6px; align-items: center; margin: 3px 0; }
+      main { overflow: hidden; position: relative; }
+      #panes { position: absolute; inset: 0; display: flex; gap: 24px; justify-content: center; align-items: center; padding: 20px; }
+      #panes.stacked { flex-direction: column; }
+      .pane-title { font-weight: 700; margin-bottom: 4px; }
+      .pane.dim0 .pane-title { color: #e0b878; } .pane.dim1 .pane-title { color: #9aa6ff; }
+      .pane canvas { display: block; cursor: crosshair; box-shadow: 0 0 0 1px var(--line), 0 6px 24px #0008; }
+      .field { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 6px; margin: 4px 0; }
+      .field span { color: var(--muted); }
+      .field input:not([type=checkbox]), .field select { width: 100%; }
+      .row { display: flex; gap: 6px; align-items: end; }
+      .row .field { grid-template-columns: auto 60px; }
+      .sel-title { font-weight: 700; margin-bottom: 2px; }
+      .muted { color: var(--muted); margin: 4px 0; }
+      .waypoints { margin: 4px 0; padding-left: 28px; font-family: ui-monospace, monospace; }
+      #verdict { font-weight: 700; }
+      #verdict.good { color: var(--ok); } #verdict.warn { color: var(--warn); } #verdict.bad { color: var(--err); }
+      #issues { list-style: none; padding: 0; margin: 6px 0; }
+      #issues li { padding: 3px 6px; border-left: 3px solid; margin: 3px 0; background: #ffffff08; }
+      #issues li.error { border-color: var(--err); } #issues li.warning { border-color: var(--warn); } #issues li.info { border-color: var(--ok); }
+      #issues li.link { cursor: pointer; } #issues li.link:hover { background: #ffffff14; }
+      footer { grid-column: 1 / -1; display: flex; gap: 16px; align-items: center; padding: 0 12px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+      #toast { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); background: #000d; padding: 6px 14px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+      #toast.show { opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="brand">SHIFT</span><span>關卡編輯器</span>
+      <span id="file-name"></span>
+      <span class="grow"></span>
+      <select id="level-list"></select>
+      <button id="btn-new">新增</button>
+      <button id="btn-open">開啟檔案…</button>
+      <input id="file-input" type="file" accept=".json,application/json" hidden />
+      <button id="btn-undo" title="Ctrl+Z">↶</button>
+      <button id="btn-redo" title="Ctrl+Y">↷</button>
+      <button id="btn-download">下載 JSON</button>
+      <button id="btn-save" class="primary" title="Ctrl+S">存檔</button>
+      <button id="btn-play" class="primary" title="Ctrl+Enter">▶ 試玩</button>
+      <a href="./index.html" style="color: var(--muted)">遊戲</a>
+    </header>
+    <aside class="left">
+      <h3>工具</h3>
+      <div id="tools"></div>
+      <h3>方塊</h3>
+      <div id="palette"></div>
+      <h3>顯示</h3>
+      <div id="overlays"></div>
+    </aside>
+    <main><div id="panes"></div></main>
+    <aside class="right">
+      <h3>關卡</h3>
+      <div id="level-props"></div>
+      <h3>選取</h3>
+      <div id="selection"></div>
+      <h3>驗證 <span id="verdict"></span></h3>
+      <ul id="issues"></ul>
+    </aside>
+    <footer>
+      <span id="status"></span>
+      <span style="margin-left:auto">B 畫筆・V 選取・M 怪物・P 路徑・1-8 方塊・Ctrl+Z/Y 復原/重做・Ctrl+S 存檔・Ctrl+Enter 試玩・Del 刪怪物</span>
+    </footer>
+    <div id="toast"></div>
+    <script type="module" src="/src/editor/main.ts"></script>
+  </body>
+</html>

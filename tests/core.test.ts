@@ -128,6 +128,48 @@ describe('simulation on level01', () => {
     expect(open.status).toBe('caught');
   });
 
+  it('can be completed along the intended route with monsters active', () => {
+    const sim = new Sim(level01());
+    const step = (extra: Partial<SimInput> = {}) => sim.update({ ...NO_INPUT, ...extra }, 1 / 60);
+    const chase = (id: string) => {
+      const m = sim.monsters.find((mm) => mm.def.id === id)!;
+      for (let i = 0; i < 1200 && Math.hypot(m.x - sim.x, m.y - sim.y) > 1.1; i++) {
+        const dx = m.x - sim.x, dy = m.y - sim.y, d = Math.hypot(dx, dy);
+        step({ moveX: dx / d, moveY: dy / d });
+      }
+      tap(sim, 'attack');
+      expect(m.alive).toBe(false);
+    };
+    const guard = sim.monsters.find((m) => m.def.id === 'guard')!;
+    const waitGuardEast = (minX: number, sneak = false) => {
+      let px = guard.x;
+      for (let i = 0; i < 2000; i++) {
+        step({ sneak });
+        if (guard.x > minX && guard.x > px) return;
+        px = guard.x;
+      }
+      throw new Error(`guard never came by: status=${sim.status} p=${sim.x.toFixed(2)},${sim.y.toFixed(2)} g=${guard.x.toFixed(2)},${guard.y.toFixed(2)} ${guard.detect}`);
+    };
+
+    chase('keeper');                // soul kill (B's keeper is a soul in A)
+    walkTo(sim, 1, 2); tap(sim, 'shift'); expect(sim.dim).toBe(1);
+    walkTo(sim, 2, 2); tap(sim, 'interact');      // lever ch1 → A door opens
+    walkTo(sim, 1, 2); tap(sim, 'shift'); expect(sim.dim).toBe(0);
+    walkTo(sim, 5, 1);
+    waitGuardEast(10);
+    walkTo(sim, 5, 3); walkTo(sim, 7, 3); walkTo(sim, 7, 6);
+    waitGuardEast(9, true); // hide in the corner, holding Shift
+    walkTo(sim, 9, 5, { sneak: true }); tap(sim, 'interact'); // lever ch2 → B door opens
+    walkTo(sim, 8, 6, { sneak: true }); tap(sim, 'shift'); expect(sim.dim).toBe(1);
+    walkTo(sim, 11, 6);             // core B
+    chase('guard');                 // A's guard is a soul in B
+    walkTo(sim, 11, 5); tap(sim, 'shift'); expect(sim.dim).toBe(0);
+    walkTo(sim, 12, 2);             // core A
+    expect(sim.cores).toBe(2);
+    walkTo(sim, 7, 3); walkTo(sim, 5, 3); walkTo(sim, 3, 4);
+    expect(sim.status).toBe('won');
+  });
+
   it('requires both cores to win', () => {
     const l = createEmptyLevel('t', 8, 3);
     setCell(l, 0, 3, 1, 'C');

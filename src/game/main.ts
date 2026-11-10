@@ -110,6 +110,7 @@ function loop(now: number): void {
   last = now;
   acc += dt;
   view.follow.yaw += input.takeTurn(dt, CAMERA.mouseSensitivity, CAMERA.keyTurnSpeed);
+  view.follow.zoom(input.takeZoom());
   while (acc >= STEP) {
     acc -= STEP;
     // WASD is camera-relative: rotate the stick into grid space before the sim sees it

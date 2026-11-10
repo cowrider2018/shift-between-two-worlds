@@ -10,7 +10,7 @@ import type { MonsterState, Sim, SimEvent } from '../core/sim';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE } from './cutaway';
 import { CharacterInstance } from './models';
-import { FollowCamera } from './followCamera';
+import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
 import { THEMES } from './palette';
 import { PixelPipeline } from './pixelPipeline';
@@ -85,9 +85,11 @@ interface MonsterView {
  *  high-refresh screens, and a per-frame check would flicker walk/idle and restart the walk every frame. */
 const WALK_HOLD = 0.12;
 
-/** Camera hole: radius as a fraction of screen height, aimed at the hero's mid-body; geometry closer to the
+/** Camera hole: radius as a fraction of screen height at the farthest zoom (grows as the camera closes in so it
+ *  keeps framing the hero, capped at HOLE_RADIUS_MAX), aimed at the hero's mid-body; geometry closer to the
  *  camera than the hero by more than the margin is cut. */
 const HOLE_RADIUS = 0.2;
+const HOLE_RADIUS_MAX = 0.6;
 const HOLE_BODY_Y = 0.75;
 const HOLE_DEPTH_MARGIN = 0.25;
 
@@ -222,7 +224,7 @@ export class GameView {
     const depth = -p.clone().applyMatrix4(cam.matrixWorldInverse).z;
     p.project(cam);
     const { width, height } = this.pipeline;
-    const r = height * HOLE_RADIUS;
+    const r = height * Math.min(HOLE_RADIUS_MAX, (HOLE_RADIUS * CAMERA.distance) / this.follow.distance);
     HOLE.uHoleCenter.value.set((p.x * 0.5 + 0.5) * width, (p.y * 0.5 + 0.5) * height);
     HOLE.uHoleRadius.value = r;
     HOLE.uHoleDepth.value = depth - HOLE_DEPTH_MARGIN;

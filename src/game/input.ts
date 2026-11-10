@@ -1,6 +1,6 @@
 /**
  * Keyboard + mouse → abstract SimInput (camera-relative; main converts to grid space).
- * Mouse movement while pointer-locked and ← / → turn the camera. Shift is dual-purpose (DESIGN §2):
+ * Mouse movement while pointer-locked and ← / → turn the camera; the wheel and + / − zoom it. Shift is dual-purpose (DESIGN §2):
  * held = sneak, tapped (< TAP_MS between press and release) = dimension shift.
  */
 import type { SimInput } from '../core/sim';
@@ -13,6 +13,7 @@ export class Input {
   private pending = { shift: false, interact: false, attack: false };
   readonly onKey = new Map<string, () => void>();
   private mouseDX = 0;
+  private zoomNotches = 0;
 
   constructor(target: Window = window) {
     target.addEventListener('keydown', (e) => {
@@ -21,6 +22,8 @@ export class Input {
       if (e.key === 'Shift') this.shiftDownAt = performance.now();
       if (e.code === 'KeyE') this.pending.interact = true;
       if (e.code === 'Space' || e.code === 'KeyJ') this.pending.attack = true;
+      if (e.code === 'Equal' || e.code === 'NumpadAdd') this.zoomNotches -= 1;
+      if (e.code === 'Minus' || e.code === 'NumpadSubtract') this.zoomNotches += 1;
       this.onKey.get(e.code)?.();
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
     });
@@ -36,6 +39,16 @@ export class Input {
     target.addEventListener('mousemove', (e) => {
       if (document.pointerLockElement) this.mouseDX += e.movementX;
     });
+    target.addEventListener(
+      'wheel',
+      (e) => {
+        // normalise to notches: pixel mode ≈ 100 px per notch, line mode ≈ 3 lines per notch
+        const px = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;
+        this.zoomNotches += px / 100;
+        e.preventDefault();
+      },
+      { passive: false },
+    );
   }
 
   private any(...codes: string[]): boolean {
@@ -55,6 +68,13 @@ export class Input {
     const turn = this.mouseDX * mouseSensitivity + keys * keySpeed * dt;
     this.mouseDX = 0;
     return turn;
+  }
+
+  /** Zoom notches since the last call (positive = zoom out). */
+  takeZoom(): number {
+    const z = this.zoomNotches;
+    this.zoomNotches = 0;
+    return z;
   }
 
   /** Read the current frame's input; edge-triggered actions are consumed. */

@@ -1,7 +1,6 @@
 /** One dimension's 2D editing canvas: drawing and hit-testing. Holds no editing logic. */
 import { WALL } from '../core/blocks';
 import { LevelGrid, castRay } from '../core/grid';
-import { TUNING } from '../core/sim';
 import { DIM_IDS, DIM_NAMES, type DimIndex, type MonsterDef } from '../core/level';
 import type { Issue } from '../core/validate';
 import { channelColor } from '../render/palette';
@@ -143,18 +142,15 @@ export class Pane {
       const oy = sy + 0.5;
       const facing = m.path.length > 1 ? Math.atan2(m.path[1][1] - sy, m.path[1][0] - sx) : (m.facing * Math.PI) / 180;
       const half = ((m.viewAngle / 2) * Math.PI) / 180;
-      const touch = TUNING.touchRadius;
       ctx.fillStyle = '#ffffff40';
       ctx.beginPath();
+      ctx.moveTo(ox * c, oy * c);
       const n = 24;
       for (let i = 0; i <= n; i++) {
         const a = facing - half + (2 * half * i) / n;
         const ray = castRay(ox, oy, Math.cos(a), Math.sin(a), m.viewRadius, (cx, cy) => s.grid.opaque(this.dim, cx, cy, () => false));
-        const d = Math.max(touch, ray);
-        ctx.lineTo((ox + Math.cos(a) * d) * c, (oy + Math.sin(a) * d) * c);
+        ctx.lineTo((ox + Math.cos(a) * ray) * c, (oy + Math.sin(a) * ray) * c);
       }
-      // the touch circle at the monster's feet, round the back of the cone
-      ctx.arc(ox * c, oy * c, touch * c, facing + half, facing - half + 2 * Math.PI);
       ctx.closePath();
       ctx.fill();
     }

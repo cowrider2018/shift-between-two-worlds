@@ -91,17 +91,17 @@ describe('ray cast', () => {
 });
 
 describe('simulation on level01', () => {
-  it('notices the player inside the one-cell circle at its feet, even behind it', () => {
+  it('sees only along its cone: right behind it, however close, the player goes unnoticed', () => {
     const sim = new Sim(level01());
     const m = sim.monsters[0];
     sim.dim = m.dim;
     const behind = m.angle + Math.PI;
-    sim.x = m.x + Math.cos(behind) * 0.45;
-    sim.y = m.y + Math.sin(behind) * 0.45;
-    expect(sim.monsterSeesPlayer(m)).toBe(true);
-    sim.x = m.x + Math.cos(behind) * 0.55;
-    sim.y = m.y + Math.sin(behind) * 0.55;
+    sim.x = m.x + Math.cos(behind) * 0.3;
+    sim.y = m.y + Math.sin(behind) * 0.3;
     expect(sim.monsterSeesPlayer(m)).toBe(false);
+    sim.x = m.x + Math.cos(m.angle) * 0.3;
+    sim.y = m.y + Math.sin(m.angle) * 0.3;
+    expect(sim.monsterSeesPlayer(m)).toBe(true);
   });
 
   it('shifts on any cell, including non-floor ones', () => {

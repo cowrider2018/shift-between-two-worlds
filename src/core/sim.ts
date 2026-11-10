@@ -13,8 +13,6 @@ export const TUNING = {
   playerHalfSize: 0.26,
   detectRise: 10,
   detectFall: 1,
-  /** A circle one cell across at the monster's feet: inside it the player is noticed regardless of the cone or walls. */
-  touchRadius: 0.5,
   /** Reach of the throat-cut takedown: the hero leaps from up to this far onto the monster's head. */
   attackRange: 1.3,
   /** Seconds the hero is busy with a takedown (leap on, ride out the troll's thrashing, cut, hop back off) and takes
@@ -469,7 +467,6 @@ export class Sim {
     const dx = this.x - m.x;
     const dy = this.y - m.y;
     const dist = Math.hypot(dx, dy);
-    if (dist < TUNING.touchRadius) return true;
     if (dist > this.viewRadius(m)) return false;
     const a = Math.atan2(dy, dx);
     if (Math.abs(angleDiff(a, m.angle)) > m.halfAngle) return false;

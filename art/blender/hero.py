@@ -308,16 +308,33 @@ def build_hair(name):
     return lib.join(name, objs)
 
 
+# Hood cross-section: an egg — narrower toward the top, fuller toward the bottom — on a gentle superellipse, so the
+# face opening tapers upward yet its crown stays round (no apex). HOOD_EGG is how much the width shrinks at the top
+# and grows at the bottom; HOOD_SQUARE > 2 fills the shoulders of the curve out a little.
+HOOD_EGG = 0.24
+HOOD_SQUARE = 2.4
+# Drape: behind the face opening the lower half of the hood is pulled down to the cloak's collar, so the cloth
+# hangs from the skull onto the back instead of leaving the nape and the back of the head bare.
+HOOD_DRAPE_Z = 0.40  # how far down the hood's lower rim is drawn (well under the collar top at z = 0.445)
+
+
+def _smoothstep(a, b, x):
+    t = max(0.0, min(1.0, (x - a) / (b - a)))
+    return t * t * (3 - 2 * t)
+
+
 def build_hood():
     """
-    Streamlined hood: one lofted tube along a smooth spine. The front ring is the face opening,
-    the rings grow around the skull, then taper smoothly down the back to a pointed tip.
+    Streamlined hood: one lofted tube along a smooth spine. The front ring is the face opening (an egg, narrower at
+    the top), the rings grow around the skull, then taper smoothly down the back to a pointed tip. Behind the
+    opening the lower half of every ring is drawn down to the collar, draping the cloth over the nape.
     """
     spine = lib.catmull_rom([h(0.16, 0, 0.0), h(0.02, 0, 0.035), h(-0.14, 0, 0.045), h(-0.25, 0, -0.01),
                              h(-0.31, 0, -0.12), h(-0.33, 0, -0.25)], samples_per_segment=2)
     #            (half-width across, half-height) at each control point, interpolated along the spine
     radii = [(0.175, 0.2), (0.205, 0.215), (0.165, 0.17), (0.1, 0.1), (0.055, 0.055), (0.0, 0.0)]
-    sides = 8
+    sides = 12
+    exp = 2 / HOOD_SQUARE
     rings = []
     m = len(spine) - 1
     for k, c in enumerate(spine[:-1]):
@@ -329,8 +346,19 @@ def build_hood():
         tangent = (spine[k + 1] - c).normalized()
         up = Y.cross(tangent).normalized()
         side = tangent.cross(up).normalized()
-        rings.append([c + side * (math.cos(2 * math.pi * a / sides) * ry) + up * (math.sin(2 * math.pi * a / sides) * rz)
-                      for a in range(sides)])
+        drape = _smoothstep(0.05, 0.35, k / m)  # none at the face opening, full from the crown back
+        ring = []
+        for a in range(sides):
+            t = 2 * math.pi * a / sides
+            ct, st = math.cos(t), math.sin(t)
+            across = math.copysign(abs(ct) ** exp, ct) * (1 - HOOD_EGG * st)
+            along_up = math.copysign(abs(st) ** exp, st)
+            p = c + side * (across * ry) + up * (along_up * rz)
+            if st < 0 and drape > 0:
+                w = drape * (-st) ** 0.8  # the lowest point of the ring drops the most
+                p.z += (min(p.z, HOOD_DRAPE_Z) - p.z) * w
+            ring.append(p)
+        rings.append(ring)
     return lib.loft("hood", rings, "hero_cape", tip=spine[-1])
 
 

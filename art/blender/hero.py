@@ -650,6 +650,59 @@ def build_actions(rig):
 
     lib.action(rig, "crouch_walk", {f: crouch_walk((f - 1) / 24) for f in range(1, 26, 3)})
 
+    # takedown (1.125 s): the game moves the root along the leap onto the troll's shoulders and back off
+    # (view.ts TAKEDOWN); the clip only poses the body. coil -> tuck in the air -> land crouched on the
+    # shoulders, left hand clamps the brow, sword drawn out to the right -> cut across under the jaw
+    # (frame 13) -> hold -> push off backwards -> tuck -> land.
+    coil = merge(legs(-60, -60, 100, 100, -35, -35), {
+        "spine": [(Y, 30)], "chest": [(Y, 16)], "head": [(Y, -30)],
+        "upper_arm.L": [(Y, 40), (X, 20)], "upper_arm.R": [(Y, 45), (X, -20)],
+        "forearm.L": [(Y, -20)], "forearm.R": [(Y, -20)],
+        "cape.1": [(Y, -10)], "cape.2": [(Y, -6)], "_lift": -0.06,
+    })
+    tuck = merge(legs(-95, -95, 125, 125, -20, -20), {
+        "spine": [(Y, 20)], "chest": [(Y, 10)], "head": [(Y, -20)],
+        "upper_arm.L": [(Y, -60), (X, 25)], "upper_arm.R": [(Y, -40), (X, -40)],
+        "forearm.L": [(Y, -40)], "forearm.R": [(Y, -60)],
+        "cape.1": [(Y, 40)], "cape.2": [(Y, 30)], "_lift": 0.05,
+    })
+    perch = {  # knees deep on the crown, leaning out over the troll's face
+        "spine": [(Y, 30)], "chest": [(Y, 20)], "head": [(Y, -40)],
+        "cape.1": [(Y, 10)], "cape.2": [(Y, 6)], "_lift": -0.07,
+    }
+    perch_legs = legs(-80, -80, 120, 120, -40, -40)
+    grab = {"upper_arm.L": [(Y, -70), (X, 10)], "forearm.L": [(Y, -40)], "hand.L": [(Y, 40)]}  # clamping the brow
+    land = merge(perch_legs, perch, grab, {
+        "upper_arm.R": [(Y, -20), (X, -70)], "forearm.R": [(Y, -40)], "hand.R": [(Y, 20)],  # sword drawn out right
+    })
+    # the blade comes across from the troll's left jaw, down under its chin, and is flung out to the right
+    draw = merge(perch_legs, perch, grab, {
+        "hips": [(Z, 10)], "chest": [(Z, 16)],
+        "upper_arm.R": [(Y, -60), (Z, 40)], "forearm.R": [(Y, -40)], "hand.R": [(Y, -10)],
+    })
+    cut = merge(perch_legs, perch, grab, {
+        "spine": [(Y, 18)], "chest": [(Y, 10)], "head": [(Y, -20)],
+        "upper_arm.R": [(Y, -55), (Z, -5)], "forearm.R": [(Y, -10)], "hand.R": [(Y, -45)],
+    })
+    through = merge(perch_legs, perch, grab, {
+        "hips": [(Z, -12)], "chest": [(Z, -18)],
+        "upper_arm.R": [(Y, -35), (X, -60), (Z, -35)], "forearm.R": [(Y, -20)], "hand.R": [(Y, -15)],
+    })
+    push = merge(legs(-90, -90, 130, 130, -45, -45), {
+        "spine": [(Y, 10)], "chest": [(Y, 6)], "head": [(Y, -14)],
+        "upper_arm.L": [(Y, 30), (X, 25)], "upper_arm.R": [(Y, 35), (X, -25)],
+        "forearm.L": [(Y, -20)], "forearm.R": [(Y, -30)],
+        "cape.1": [(Y, 4)], "_lift": -0.08,
+    })
+    flip = merge(legs(-100, -100, 130, 130, -20, -20), {
+        "spine": [(Y, -10)], "chest": [(Y, -10)], "head": [(Y, 10)],
+        "upper_arm.L": [(Y, -120), (X, 30)], "upper_arm.R": [(Y, -110), (X, -30)],
+        "forearm.L": [(Y, -20)], "forearm.R": [(Y, -30)],
+        "cape.1": [(Y, 50)], "cape.2": [(Y, 30)], "_lift": 0.06,
+    })
+    lib.action(rig, "takedown", {1: idle(0), 4: coil, 7: tuck, 10: land, 12: draw, 14: cut, 16: through, 19: through,
+                                 21: push, 23: flip, 25: crouch_base(), 28: idle(0)})
+
 
 # ---------------------------------------------------------------------------
 
@@ -682,7 +735,9 @@ def build(out_glb, out_preview):
     lib.export_glb(out_glb, [rig, body] + clothes + head_parts + list(parts.values()) + [o for o, _ in props.values()])
 
     poses = [("idle", 1), ("walk", 1), ("walk", 5), ("walk", 9), ("walk", 13), ("attack", 3),
-             ("attack", 5), ("attack", 7), ("crouch", 1), ("crouch_walk", 1), ("crouch_walk", 7), ("crouch_walk", 13)]
+             ("attack", 5), ("attack", 7), ("crouch", 1), ("crouch_walk", 1), ("crouch_walk", 7), ("crouch_walk", 13),
+             ("takedown", 4), ("takedown", 7), ("takedown", 10), ("takedown", 12), ("takedown", 14), ("takedown", 16),
+             ("takedown", 21), ("takedown", 23)]
     for variant, shown in VARIANTS.items():
         for name, obj in parts.items():
             obj.hide_render = name not in shown

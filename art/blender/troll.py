@@ -303,6 +303,51 @@ def build_actions(rig):
               "ear.L": [(X, 8)], "ear.R": [(X, -8)], "_lift": -0.045}
     lib.action(rig, "attack", {1: rest, 7: wind, 10: strike, 13: follow, 22: rest})
 
+    # death (2.5 s, starts with the hero's takedown): the hero lands on the shoulders (frame 9) and wrenches the
+    # head back, the cut lands (13); both hands fly to the throat, the troll staggers swaying left and right,
+    # knees give, and it topples forward onto its face and settles.
+    def clutch(roll, knee=0.0, lean=0.0, twist=0.0):
+        """Both hands clamped on the throat, the body rolled `roll` degrees towards its left (+) / right (-)."""
+        return {
+            "hips": [(X, roll * 0.5), (Z, twist * 0.5)], "spine": [(X, roll * 0.4), (Y, 6 + lean * 0.5)],
+            "chest": [(X, roll * 0.6), (Y, 4 + lean), (Z, twist)], "neck": [(Y, 10)], "head": [(Y, 18), (X, -roll * 0.5)],
+            "upper_arm.L": [(Y, -40), (X, -20)], "forearm.L": [(Y, -100), (Z, -35)], "hand.L": [(Z, -40)],
+            "upper_arm.R": [(Y, -40), (X, 20)], "forearm.R": [(Y, -100), (Z, 35)], "hand.R": [(Z, 40)],
+            "thigh.L": [(Y, -knee), (X, roll * 0.3)], "thigh.R": [(Y, -knee), (X, roll * 0.3)],
+            "shin.L": [(Y, knee * 1.6)], "shin.R": [(Y, knee * 1.6)], "foot.L": [(Y, -knee * 0.6)], "foot.R": [(Y, -knee * 0.6)],
+            "ear.L": [(X, -10 - roll * 0.8)], "ear.R": [(X, 10 - roll * 0.8)],
+            "_lift": -0.0035 * knee,
+        }
+
+    grabbed = {**rest, "chest": [(Y, -8)], "neck": [(Y, -18)], "head": [(Y, -22)],
+               "upper_arm.L": [(Y, -25), (X, 16)], "upper_arm.R": [(Y, -25), (X, -16)],
+               "forearm.L": [(Y, -30)], "forearm.R": [(Y, -30)],
+               "thigh.L": [(Y, -8)], "thigh.R": [(Y, -8)], "shin.L": [(Y, 14)], "shin.R": [(Y, 14)],
+               "ear.L": [(X, -16)], "ear.R": [(X, 16)], "_lift": -0.03}
+    cut_pose = {**grabbed, "neck": [(Y, -22)], "head": [(Y, -28)], "ear.L": [(X, 18)], "ear.R": [(X, -18)]}
+
+    def topple(pitch, lift, knee, reach, spread, hunch):
+        """Falling forward with the arms flung open: `reach` swings them up towards overhead (ahead once the body
+        is down), `spread` opens them sideways; `hunch` is how curled the back still is."""
+        p = clutch(0, knee, 0)
+        p.update({
+            "root": [(Y, pitch)], "hips": [], "spine": [(Y, hunch * 0.5)], "chest": [(Y, hunch)],
+            "neck": [(Y, -6)], "head": [(Y, -14)],
+            "upper_arm.L": [(Y, -reach), (X, spread)], "forearm.L": [(Y, -10)], "hand.L": [(Y, -10)],
+            "upper_arm.R": [(Y, -reach), (X, -spread)], "forearm.R": [(Y, -10)], "hand.R": [(Y, -10)],
+            "ear.L": [(X, 20)], "ear.R": [(X, -20)],
+            "_lift": lift,
+        })
+        return p
+
+    lib.action(rig, "death", {
+        1: rest, 9: grabbed, 13: cut_pose,
+        16: clutch(0, 6, -4), 20: clutch(16, 10, 0, 10), 26: clutch(-18, 14, 4, -12), 32: clutch(14, 18, 8, 8),
+        38: clutch(-12, 24, 12, -6), 44: clutch(4, 32, 22),
+        47: topple(10, -0.1, 26, 30, 85, 20), 50: topple(45, -0.06, 12, 120, 70, 10),
+        53: topple(84, 0.0, 0, 165, 50, 0), 56: topple(76, 0.04, 0, 160, 50, 0), 60: topple(82, 0.01, 0, 165, 50, 0),
+    })
+
 
 def build(out_glb, out_preview):
     lib.reset()
@@ -318,5 +363,6 @@ def build(out_glb, out_preview):
     lib.previews(out_preview, HEIGHT, head=hp((0.22, 0, 1.12)))
     lib.pose_sheet(rig, out_preview.replace(".png", "_poses.png"), HEIGHT,
                    [("idle", 1), ("alert", 1)] + [("walk", f) for f in range(1, 24, 3)]
-                   + [("attack", f) for f in (7, 10, 13)], cols=5)
+                   + [("attack", f) for f in (7, 10, 13)]
+                   + [("death", f) for f in (9, 13, 16, 20, 26, 44, 47, 50, 53, 60)], cols=5)
     print(f"troll: {lib.tri_count(body)} body tris, {sum(lib.tri_count(o) for o, _ in props.values())} prop tris")

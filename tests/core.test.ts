@@ -167,13 +167,11 @@ describe('simulation on level01', () => {
     walkTo(sim, 1, 2); tap(sim, 'shift'); expect(sim.dim).toBe(0);
     walkTo(sim, 5, 1);
     waitGuardEast(10);
-    walkTo(sim, 5, 3); walkTo(sim, 7, 3); walkTo(sim, 7, 6);
-    waitGuardEast(9, true); // hide in the corner, holding Shift
-    walkTo(sim, 9, 5, { sneak: true }); tap(sim, 'interact'); // lever ch2 → B door opens
-    walkTo(sim, 8, 6, { sneak: true }); tap(sim, 'shift'); expect(sim.dim).toBe(1);
-    walkTo(sim, 11, 6);             // core B
+    walkTo(sim, 5, 3); walkTo(sim, 7, 3);   // through the door behind the guard's back
+    tap(sim, 'shift'); expect(sim.dim).toBe(1); // shifting works anywhere: slip into B's closed-off room
     chase('guard');                 // A's guard is a soul in B
-    walkTo(sim, 11, 5); tap(sim, 'shift'); expect(sim.dim).toBe(0);
+    walkTo(sim, 11, 6);             // core B
+    tap(sim, 'shift'); expect(sim.dim).toBe(0);
     walkTo(sim, 12, 2);             // core A
     expect(sim.cores).toBe(2);
     walkTo(sim, 7, 3); walkTo(sim, 5, 3); walkTo(sim, 3, 4);

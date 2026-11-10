@@ -11,7 +11,7 @@ export const TUNING = {
   sneakSpeedMul: 0.6,
   sneakRadiusMul: 0.5,
   playerHalfSize: 0.26,
-  detectRise: 2,
+  detectRise: 10,
   detectFall: 1,
   /** A circle one cell across at the monster's feet: inside it the player is noticed regardless of the cone or walls. */
   touchRadius: 0.5,

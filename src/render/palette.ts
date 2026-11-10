@@ -11,27 +11,27 @@ export interface DimTheme {
   sun: string;
 }
 
-/** DESIGN §4.3 — A is warm stone, B is cool violet. */
+/** DESIGN §4.3 — A is warm orange-yellow stone, B is cool blue-grey. */
 export const THEMES: readonly [DimTheme, DimTheme] = [
   {
     name: '表',
-    background: '#1d1612',
-    floor: ['#c8b48e', '#bca883'],
-    wallSide: '#4a382d',
-    wallTop: '#6e5747',
-    hemiSky: '#fff1d6',
-    hemiGround: '#3a2a20',
-    sun: '#ffe2b0',
+    background: '#22160a',
+    floor: ['#d8a65a', '#cc9a4f'],
+    wallSide: '#5c3a1a',
+    wallTop: '#86592b',
+    hemiSky: '#ffe2a6',
+    hemiGround: '#3f2712',
+    sun: '#ffca7a',
   },
   {
     name: '裏',
-    background: '#0d1020',
-    floor: ['#6c74ab', '#646ca2'],
-    wallSide: '#1d1f44',
-    wallTop: '#33376b',
-    hemiSky: '#d4e2ff',
-    hemiGround: '#1a1530',
-    sun: '#b8caff',
+    background: '#0e1218',
+    floor: ['#7d8a99', '#75828f'],
+    wallSide: '#29313c',
+    wallTop: '#46505e',
+    hemiSky: '#dce6f2',
+    hemiGround: '#192029',
+    sun: '#c2d2e4',
   },
 ];
 

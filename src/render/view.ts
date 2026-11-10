@@ -3,8 +3,10 @@
  */
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, Color, DirectionalLight, Fog, Group, HemisphereLight, Mesh, MeshBasicMaterial,
-  type Object3D, Scene, Vector3,
+  Matrix4, type Object3D, Quaternion, Scene, Vector3,
 } from 'three';
+
+const UP = new Vector3(0, 1, 0);
 import { angleDiff } from '../core/grid';
 import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
@@ -88,9 +90,10 @@ interface MonsterView {
   lastY: number;
   /** Seconds since the monster last changed position. */
   stillT: number;
-  /** The troll's head bone and the crown point in its frame: the hero perches there during a takedown. */
-  head: Object3D;
-  crown: Vector3;
+  /** The troll's chest bone and the inverse of its rest transform: during a takedown the hero lies on its back,
+   *  carried by the chest's motion (position and rotation). */
+  chest: Object3D;
+  chestRestInv: Matrix4;
 }
 
 /** A monster counts as walking until it has stood still this long: render frames outnumber sim steps on
@@ -111,7 +114,7 @@ const CATCH = {
 /** Takedown choreography, in seconds from the kill, matched to the hero's `takedown` clip (24 fps, art/blender/hero.py)
  *  and the troll's `death` clip. The clips pose the bodies; this moves the hero's root along the leap. */
 const TAKEDOWN = {
-  /** Feet leave the ground (frame 5), land on the troll's crown (frame 10). */
+  /** Feet leave the ground (frame 5), land on the troll's back (frame 10). */
   jump: 4 / 24,
   perch: 9 / 24,
   /** After a standoff with the blade held at the thrashing troll's throat (0.4-1.2 s), it slices across (frame 30). */
@@ -121,10 +124,9 @@ const TAKEDOWN = {
   land: 40 / 24,
   /** Extra height of each leap's arc at its middle. */
   arc: 0.35,
-  /** Where the hero's feet sit on the troll's brow ridge, in the troll model's rest pose (x forward, y up): close
-   *  enough to the face for the short sword to reach under the jaw. The point rides the head bone, so the hero
-   *  lurches with the troll's head. */
-  crown: new Vector3(0.27, 1.17, 0),
+  /** The hero's root while lying on the troll's back, chin over its crown, in the troll model's rest pose (x forward,
+   *  y up). The hero clip pitches the body forward from there (art/blender/hero.py PRONE). */
+  back: new Matrix4().makeTranslation(-0.42, 1.06, 0),
 };
 
 interface Takedown {
@@ -168,7 +170,11 @@ export class GameView {
   private sim!: Sim;
   private catching: CatchSequence | null = null;
   private takedown: Takedown | null = null;
-  private readonly perchAt = new Vector3();
+  private readonly perchM = new Matrix4();
+  private readonly perchPos = new Vector3();
+  private readonly perchQuat = new Quaternion();
+  private readonly perchScale = new Vector3();
+  private readonly yawQuat = new Quaternion();
   private shownDim: DimIndex | -1 = -1;
   private t = 0;
 
@@ -215,11 +221,11 @@ export class GameView {
       alert.position.y = 1.75;
       body.root.add(alert);
       this.world.add(body.root, soul.root, cone.mesh);
-      // still in its rest pose (no clip has played): pin the crown point to the head bone
-      const head = body.root.getObjectByName('head') ?? body.root;
+      // still in its rest pose at the origin (no clip has played): remember the chest's rest transform
+      const chest = body.root.getObjectByName('chest') ?? body.root;
       body.root.updateMatrixWorld(true);
-      const crown = head.worldToLocal(TAKEDOWN.crown.clone());
-      return { state, body, soul, cone, alert, lastX: state.x, lastY: state.y, stillT: WALK_HOLD, head, crown };
+      const chestRestInv = chest.matrixWorld.clone().invert();
+      return { state, body, soul, cone, alert, lastX: state.x, lastY: state.y, stillT: WALK_HOLD, chest, chestRestInv };
     });
     const { w, h } = sim.level.size;
     const c = new Vector3(w / 2, 0, h / 2);
@@ -282,7 +288,7 @@ export class GameView {
     for (const b of this.blocks) b.update?.(sim, dt, this.t);
 
     this.hero.root.position.set(sim.x, 0, sim.y);
-    this.hero.root.rotation.y = -sim.facing;
+    this.hero.root.rotation.set(0, -sim.facing, 0);
     if (this.catching) this.updateCatch(this.catching, dt);
     this.hero.setOutfit(sim.sneaking ? 'hooded' : 'plain'); // cloak up while sneaking, off when standing
     const moving = sim.moving && !this.catching; // the sim froze mid-stride when caught
@@ -320,7 +326,8 @@ export class GameView {
     if (c.hit) c.lean += (CATCH.lean * 0.6 - c.lean) * Math.min(1, dt * CATCH.leanRate);
   }
 
-  /** Carry the hero along the leap onto the troll's crown, hold it there for the cut, and back off again. */
+  /** Carry the hero along the leap onto the troll's back, hold it there through the standoff and the cut, and back
+   *  off again. */
   private updateTakedown(td: Takedown, dt: number): void {
     td.t += dt;
     const T = TAKEDOWN;
@@ -333,35 +340,39 @@ export class GameView {
       this.takedown = null;
       return;
     }
-    // the perch rides the troll's head as it ducks and thrashes
+    // lying on the troll's back: the chest's current transform relative to its rest pose carries the hero along,
+    // twisting and lurching with it
     td.mv.body.root.updateMatrixWorld(true);
-    const p = td.mv.head.localToWorld(this.perchAt.copy(td.mv.crown));
-    const ground = { x: td.x, y: 0, z: td.y };
+    this.perchM.multiplyMatrices(td.mv.chest.matrixWorld, td.mv.chestRestInv).multiply(T.back);
+    this.perchM.decompose(this.perchPos, this.perchQuat, this.perchScale);
+    const p = this.perchPos;
     const hero = this.hero.root;
-    // facing the troll on the way up, facing where it faces while on its head and on the way back off
+    // facing the troll on the way up, then turning with it; back off facing where it faced
     const toward = Math.atan2(m.y - td.y, m.x - td.x);
+    const ground = { x: td.x, y: 0, z: td.y };
+    const yaw = (a: number) => this.yawQuat.setFromAxisAngle(UP, -a);
     let from = ground;
     let to = ground;
     let k = 0;
-    let yaw = m.angle;
     if (td.t < T.jump) {
-      yaw = toward;
+      hero.quaternion.copy(yaw(toward));
     } else if (td.t < T.perch) {
       to = p;
       k = (td.t - T.jump) / (T.perch - T.jump);
-      yaw = toward + angleDiff(m.angle, toward) * k;
+      hero.quaternion.copy(yaw(toward)).slerp(this.perchQuat, k);
     } else if (td.t < T.leave) {
       from = to = p;
+      hero.quaternion.copy(this.perchQuat);
     } else {
       from = p;
       k = (td.t - T.leave) / (T.land - T.leave);
+      hero.quaternion.copy(this.perchQuat).slerp(yaw(m.angle), k);
     }
     hero.position.set(
       from.x + (to.x - from.x) * k,
       from.y + (to.y - from.y) * k + T.arc * 4 * k * (1 - k),
       from.z + (to.z - from.z) * k,
     );
-    hero.rotation.y = -yaw;
   }
 
   /** Centre the camera hole (cutaway.ts) on the hero's body and cut everything nearer than the hero. */

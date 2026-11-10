@@ -35,6 +35,7 @@ BOOT_TOP = 0.34  # boot rim height between ankle and knee: low, so the trouser l
 THICK = 1.5  # trunk and leg girth relative to the original slim build (heights unchanged)
 DEPTH = 0.7  # the trunk's front-to-back depth relative to THICK (a flatter, less barrel-chested body)
 H = Vector((0.0, 0.0, 0.555))  # head centre
+PRONE = 60  # forward pitch (degrees) of the whole body lying on the troll's back during a takedown
 
 # Outfit variants: the game shows the listed parts and hides every other part named here.
 VARIANTS = {
@@ -650,11 +651,11 @@ def build_actions(rig):
 
     lib.action(rig, "crouch_walk", {f: crouch_walk((f - 1) / 24) for f in range(1, 26, 3)})
 
-    # takedown (1.75 s): the game moves the root along the leap onto the troll's head and back off
-    # (view.ts TAKEDOWN); the clip only poses the body. coil -> tuck in the air -> land crouched on the troll's
-    # crown, left hand clamps its brow, blade goes straight to its throat -> ride out its thrashing with the blade
-    # held under the jaw (the standoff, 0.4-1.2 s) -> release: slice across and out to the right (frame 30), sheathe
-    # the blade down by the side -> push off backwards -> tuck -> land.
+    # takedown (1.75 s): the game moves the root along the leap onto the troll's back and off again
+    # (view.ts TAKEDOWN); the clip poses the body. coil -> tuck in the air -> land lying on the troll's back, left
+    # hand clamps its brow, blade goes straight round to its throat -> ride out its thrashing with the blade held
+    # under the jaw (the standoff, 0.4-1.2 s) -> release: a quick thrust in and back out (frame 30), then
+    # the blade lowered -> push off backwards -> tuck -> land.
     coil = merge(legs(-60, -60, 100, 100, -35, -35), {
         "spine": [(Y, 30)], "chest": [(Y, 16)], "head": [(Y, -30)],
         "upper_arm.L": [(Y, 40), (X, 20)], "upper_arm.R": [(Y, 45), (X, -20)],
@@ -667,31 +668,27 @@ def build_actions(rig):
         "forearm.L": [(Y, -40)], "forearm.R": [(Y, -60)],
         "cape.1": [(Y, 40)], "cape.2": [(Y, 30)], "_lift": 0.05,
     })
-    perch = {  # knees deep on the crown, leaning out over the troll's face
-        "spine": [(Y, 30)], "chest": [(Y, 20)], "head": [(Y, -40)],
-        "cape.1": [(Y, 10)], "cape.2": [(Y, 6)], "_lift": -0.07,
-    }
-    perch_legs = legs(-80, -80, 120, 120, -40, -40)
-    grab = {"upper_arm.L": [(Y, -70), (X, 10)], "forearm.L": [(Y, -40)], "hand.L": [(Y, 40)]}  # clamping the brow
-    land = merge(perch_legs, perch, grab, {
-        "upper_arm.R": [(Y, -20), (X, -70)], "forearm.R": [(Y, -40)], "hand.R": [(Y, 20)],  # sword drawn out right
-    })
-    # the blade comes across from the troll's left jaw, down under its chin, and is flung out to the right
-    # pinning the troll: crouched on its brow ridge, the sword arm reaching down in front of its face so the blade
-    # lies under the jaw
-    draw = merge(perch_legs, grab, {
-        "spine": [(Y, 20)], "chest": [(Y, 14), (Z, 8)], "head": [(Y, -14)],
-        "upper_arm.R": [(Y, -40), (Z, 15)], "forearm.R": [(Y, -10)], "hand.R": [(Y, 40)],  # + tips the blade down
-        "cape.1": [(Y, 10)], "cape.2": [(Y, 6)], "_lift": -0.07,
-    })
-    cut = merge(perch_legs, perch, grab, {
-        "spine": [(Y, 18)], "chest": [(Y, 10)], "head": [(Y, -20)],
-        "upper_arm.R": [(Y, -55), (Z, -5)], "forearm.R": [(Y, -10)], "hand.R": [(Y, -45)],
-    })
-    through = merge(perch_legs, perch, grab, {
-        "hips": [(Z, -12)], "chest": [(Z, -18)],
-        "upper_arm.R": [(Y, -35), (X, -60), (Z, -35)], "forearm.R": [(Y, -20)], "hand.R": [(Y, -15)],
-    })
+    # lying chest-down on the troll's hunched back, chin over its crown: the whole body is pitched forward by the root
+    # (the game pins the root to the troll's chest bone, rotation included); knees bent, hugging its sides.
+    def prone(extra):
+        return merge({
+            "root": [(Y, PRONE)],
+            "thigh.L": [(Y, -50), (X, 18)], "thigh.R": [(Y, -50), (X, -18)], "shin.L": [(Y, 90)], "shin.R": [(Y, 90)],
+            "foot.L": [(Y, -20)], "foot.R": [(Y, -20)],
+            "spine": [(Y, 12)], "chest": [(Y, 15)], "head": [(Y, -75)],  # curled down over its crown, face forward
+            # arm angles are relative to a body pitched ~87 degrees: about -90 points the arm straight down
+            "upper_arm.L": [(X, 35), (Y, -110)], "forearm.L": [(Y, -30)], "hand.L": [(Y, 30)],  # clamping its brow
+            "cape.1": [(Y, -30)], "cape.2": [(Y, -20)],
+        }, extra)
+
+    land = prone({"upper_arm.R": [(X, -60), (Y, -100)], "forearm.R": [(Y, -30)], "hand.R": [(Y, 20)]})
+    # held through the standoff: the sword arm hangs down the right side of the troll's head, blade by its neck.
+    # (The arms are far too short to really reach the throat; the cut is sold by the quick thrust below.)
+    draw = prone({"upper_arm.R": [(X, -40), (Y, -120)], "forearm.R": [(Y, -10)], "hand.R": [(Y, 20), (Z, 70)]})
+    # release: a quick thrust forward through the throat and straight back out. The blade clips through the troll's
+    # head only on this one key, so the clipping lasts a couple of frames.
+    thrust = prone({"chest": [(Y, 10)], "upper_arm.R": [(X, -30), (Y, -140)], "forearm.R": [(Y, -10)],
+                    "hand.R": [(Y, -40), (Z, 50)]})
     push = merge(legs(-90, -90, 130, 130, -45, -45), {
         "spine": [(Y, 10)], "chest": [(Y, 6)], "head": [(Y, -14)],
         "upper_arm.L": [(Y, 30), (X, 25)], "upper_arm.R": [(Y, 35), (X, -25)],
@@ -705,21 +702,13 @@ def build_actions(rig):
         "cape.1": [(Y, 50)], "cape.2": [(Y, 30)], "_lift": 0.06,
     })
     def ride(lean, bob=0.0):
-        """Holding on through the troll's thrashing, blade pressed under its jaw: knees wide, leaning `lean` degrees
-        (+ left) against each lurch."""
-        return merge(draw, {
-            "thigh.L": [(X, 12)], "thigh.R": [(X, -12)],
-            "spine": [(X, lean)], "chest": [(X, lean * 0.6)], "head": [(X, -lean * 0.5)],
-            "_lift": bob,
-        })
+        """Holding on through the troll's thrashing with the blade at its throat, leaning `lean` degrees (+ left)."""
+        return merge(draw, {"spine": [(X, lean)], "chest": [(X, lean * 0.6)], "head": [(X, -lean * 0.5)], "_lift": bob})
 
-    sheathe = merge(perch_legs, perch, grab, {  # blade lowered, point down by the right hip
-        "hips": [(Z, -6)], "chest": [(Z, -8)],
-        "upper_arm.R": [(Y, 10), (X, -20)], "forearm.R": [(Y, -15)], "hand.R": [(Y, 25)],
-    })
+    sheathe = prone({"upper_arm.R": [(X, -30), (Y, -80)], "forearm.R": [(Y, -15)], "hand.R": [(Y, 25)]})  # blade lowered
     lib.action(rig, "takedown", {1: idle(0), 4: coil, 7: tuck, 10: land, 12: ride(0),
                                  15: ride(-14, -0.01), 19: ride(16), 23: ride(-12, -0.01), 27: ride(10), 29: ride(0),
-                                 30: through, 32: through, 34: sheathe, 35: push, 38: flip, 41: crouch_base(), 43: idle(0)})
+                                 30: thrust, 31: ride(0), 34: sheathe, 35: push, 38: flip, 41: crouch_base(), 43: idle(0)})
 
 
 # ---------------------------------------------------------------------------

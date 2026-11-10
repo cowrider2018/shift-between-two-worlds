@@ -1,6 +1,7 @@
 /**
- * Procedural cobblestone texture: rounded stones in dark mortar, lit from the top-left.
- * Neutral grey so a material colour tints it per dimension. Tiles seamlessly over COBBLE_SPAN world units.
+ * Procedural flagstone texture: irregular, flat, angular stones split by thin dark mortar, each stone with
+ * its own tone and a mottled surface. Neutral grey so a material colour tints it per dimension.
+ * Tiles seamlessly over COBBLE_SPAN world units.
  */
 import { DataTexture, NearestFilter, NearestMipmapNearestFilter, RGBAFormat, RepeatWrapping, SRGBColorSpace } from 'three';
 
@@ -8,7 +9,11 @@ import { DataTexture, NearestFilter, NearestMipmapNearestFilter, RGBAFormat, Rep
 export const COBBLE_SPAN = 2;
 /** Texels per repeat (power of two for mipmaps) and stones per repeat edge. */
 const SIZE = 128;
-const STONES = 10;
+const STONES = 6;
+/** Mortar where the two nearest stone centres are this close in distance (in stone-cell units). */
+const MORTAR = 0.07;
+/** Stones darken toward their edge across this band. */
+const EDGE = 0.3;
 
 let tex: DataTexture | null = null;
 
@@ -22,17 +27,39 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-interface Stone { x: number; y: number; r: number; tone: number }
+interface Stone { x: number; y: number; tone: number; hue: number }
+
+/** Tileable value noise with `period` lattice cells across the texture. */
+function valueNoise(seed: number, period: number): (u: number, v: number) => number {
+  const r = mulberry32(seed);
+  const lat = Array.from({ length: period * period }, r);
+  const at = (i: number, j: number) => lat[((j % period) + period) % period * period + (((i % period) + period) % period)];
+  return (u, v) => {
+    const x = u * period;
+    const y = v * period;
+    const i = Math.floor(x);
+    const j = Math.floor(y);
+    const fx = x - i;
+    const fy = y - j;
+    const sx = fx * fx * (3 - 2 * fx);
+    const sy = fy * fy * (3 - 2 * fy);
+    const top = at(i, j) + (at(i + 1, j) - at(i, j)) * sx;
+    const bot = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * sx;
+    return top + (bot - top) * sy;
+  };
+}
 
 export function cobbleTexture(): DataTexture {
   if (tex) return tex;
-  const rand = mulberry32(7);
+  const rand = mulberry32(11);
   const stones: Stone[] = [];
   for (let cy = 0; cy < STONES; cy++) {
     for (let cx = 0; cx < STONES; cx++) {
-      stones.push({ x: cx + 0.3 + rand() * 0.4, y: cy + 0.3 + rand() * 0.4, r: 0.5 + rand() * 0.12, tone: rand() });
+      stones.push({ x: cx + 0.1 + rand() * 0.8, y: cy + 0.1 + rand() * 0.8, tone: rand(), hue: rand() - 0.5 });
     }
   }
+  const coarse = valueNoise(3, 8);
+  const fine = valueNoise(5, 32);
   const data = new Uint8Array(SIZE * SIZE * 4);
   const cell = SIZE / STONES;
   for (let py = 0; py < SIZE; py++) {
@@ -42,44 +69,43 @@ export function cobbleTexture(): DataTexture {
       let f1 = Infinity;
       let f2 = Infinity;
       let best: Stone = stones[0];
-      let bdx = 0;
-      let bdy = 0;
       const gx = Math.floor(fx);
       const gy = Math.floor(fy);
-      for (let oy = -1; oy <= 1; oy++) {
-        for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -2; oy <= 2; oy++) {
+        for (let ox = -2; ox <= 2; ox++) {
           const sx = gx + ox;
           const sy = gy + oy;
-          const s = stones[((sy + STONES) % STONES) * STONES + ((sx + STONES) % STONES)];
-          const dx = fx - (s.x + (sx - ((sx + STONES) % STONES)));
-          const dy = fy - (s.y + (sy - ((sy + STONES) % STONES)));
-          const d = Math.hypot(dx, dy);
+          const wx = ((sx % STONES) + STONES) % STONES;
+          const wy = ((sy % STONES) + STONES) % STONES;
+          const s = stones[wy * STONES + wx];
+          const d = Math.hypot(fx - (s.x + sx - wx), fy - (s.y + sy - wy));
           if (d < f1) {
             f2 = f1;
             f1 = d;
             best = s;
-            bdx = dx;
-            bdy = dy;
           } else if (d < f2) {
             f2 = d;
           }
         }
       }
+      const gap = f2 - f1;
+      const u = px / SIZE;
+      const v = py / SIZE;
       let lum: number;
-      if (f2 - f1 < 0.16 || f1 > best.r) {
-        lum = 0.4; // mortar
+      let hue = 0;
+      if (gap < MORTAR) {
+        lum = 0.26 + fine(u, v) * 0.06;
       } else {
-        lum = 0.8 + best.tone * 0.14;
-        const rim = f1 / best.r;
-        if (rim > 0.55) {
-          const k = (rim - 0.55) / 0.45;
-          lum += (((-bdx - bdy) / Math.SQRT2) / Math.max(f1, 1e-6)) * 0.12 * k; // lit top-left, shaded bottom-right
-        }
-        if (rand() < 0.05) lum -= 0.06; // grit
+        lum = 0.6 + best.tone * 0.26;
+        lum += (coarse(u + best.tone, v) - 0.5) * 0.14 + (fine(u, v) - 0.5) * 0.1; // mottling
+        if (gap < EDGE) lum -= ((EDGE - gap) / (EDGE - MORTAR)) * 0.1; // worn edges
+        hue = best.hue * 0.06;
       }
-      const v = Math.round(Math.min(1, Math.max(0, Math.round(lum / 0.04) * 0.04)) * 255);
+      const q = (x: number) => Math.round(Math.min(1, Math.max(0, Math.round(x / 0.03) * 0.03)) * 255);
       const i = (py * SIZE + px) * 4;
-      data[i] = data[i + 1] = data[i + 2] = v;
+      data[i] = q(lum * (1 + hue));
+      data[i + 1] = q(lum);
+      data[i + 2] = q(lum * (1 - hue));
       data[i + 3] = 255;
     }
   }

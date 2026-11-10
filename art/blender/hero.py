@@ -324,56 +324,70 @@ def _smoothstep(a, b, x):
     return t * t * (3 - 2 * t)
 
 
-# Side profile: the top runs in one convex arc from the crown all the way out to a slim peak behind the skull, about
-# level with the head centre, its end lifting slightly. All the turning happens under the peak: the underside runs in
-# from the peak and bends down in one concave curve onto the upper back (see HOOD_DRAPE_SPAN).
-HOOD_SPINE = [h(0.16, 0, 0.0), h(0.01, 0, 0.06), h(-0.15, 0, 0.06), h(-0.25, 0, 0.04), h(-0.34, 0, 0.045)]
-#            (half-width across, half-height above the spine, half-height below) at each spine control point;
-#            near the peak the upper half stays tall so the top keeps following the arc, the lower half is short
-HOOD_RADII = [(0.175, 0.2, 0.2), (0.21, 0.225, 0.225), (0.185, 0.18, 0.19), (0.075, 0.11, 0.04), (0.0, 0.0, 0.0)]
-# Along the spine (0 = face opening, 1 = peak): the drape ramps in behind the opening, holds over the head, and fades
-# out before the peak, so the peak stays slim and the underside rises from the collar up to it.
-HOOD_DRAPE_SPAN = (0.05, 0.35, 0.45, 0.75)
+# The hood is built from its side profile (x forward, z up, relative to the head centre), sliced into vertical rings:
+#   HOOD_TOP   — the top surface: one smooth convex curve from the top of the face opening, over the crown, down to a
+#                slim peak close behind the skull. It never turns: its slope only steepens toward the peak.
+#   HOOD_UNDER — the underside along the middle: under the chin and the head (hidden by the body), then the turn —
+#                in from the peak almost level, bending down in one concave curve to the collar on the upper back.
+#   HOOD_WIDTH — half-width across at each x.
+HOOD_PEAK = (-0.31, 0.06)
+HOOD_TOP = [(0.16, 0.2), (0.02, 0.238), (-0.12, 0.2), (-0.24, 0.12), HOOD_PEAK]
+HOOD_UNDER = [(0.16, -0.2), (0.0, -0.22), (-0.1, -0.2), (-0.19, -0.155), (-0.215, -0.08), (-0.24, -0.005),
+              (-0.275, 0.04), HOOD_PEAK]
+HOOD_WIDTH = [(0.16, 0.175), (0.02, 0.21), (-0.1, 0.2), (-0.17, 0.17), (-0.22, 0.12), (-0.27, 0.06), (HOOD_PEAK[0], 0.0)]
+HOOD_SIDES = 12
+# Ring positions (x): dense where the underside turns.
+HOOD_SLICES = [0.16, 0.1, 0.03, -0.04, -0.1, -0.15, -0.185, -0.205, -0.225, -0.245, -0.265, -0.285]
+# Behind the face opening and in front of the turn, the lower sides of the hood are drawn down to the collar, so the
+# cloth hangs from the skull onto the shoulders and back (the turn under the peak is left exactly as profiled).
+HOOD_DRAPE_X = (0.12, 0.0, -0.17, -0.2)  # drape ramps in over the first pair of x, out over the second
 # The draped cloth keeps at least this far off the head centre, so it slides down the back of the skull.
 HOOD_SKULL_CLEAR = HEAD_R + 0.025
-HOOD_SIDES = 12
 # How far inside the cloth the hair is cut, so no lock pokes through a facet of the low-poly hood.
 HOOD_HAIR_INSET = 0.03
 # How far in front of the face opening the hair may still reach (locks peeking out of the hood).
 HOOD_HAIR_LIP = 0.025
 
 
+def _pchip(pts, x):
+    """Monotone cubic (Fritsch-Carlson) through [(x, y)] sorted by descending x: smooth, never overshoots."""
+    xs = [p[0] for p in reversed(pts)]
+    ys = [p[1] for p in reversed(pts)]
+    n = len(xs)
+    d = [(ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) for i in range(n - 1)]
+    m = [d[0]] + [0.0 if d[i - 1] * d[i] <= 0 else
+                  3 * (xs[i + 1] - xs[i - 1]) / ((2 * xs[i + 1] - xs[i] - xs[i - 1]) / d[i - 1] +
+                                                 (xs[i + 1] + xs[i] - 2 * xs[i - 1]) / d[i])
+                  for i in range(1, n - 1)] + [d[-1]]
+    x = max(xs[0], min(xs[-1], x))
+    i = max(0, min(n - 2, next((j for j in range(n - 1) if x <= xs[j + 1]), n - 2)))
+    hh = xs[i + 1] - xs[i]
+    t = (x - xs[i]) / hh
+    h00, h10, h01, h11 = 2 * t ** 3 - 3 * t ** 2 + 1, t ** 3 - 2 * t ** 2 + t, -2 * t ** 3 + 3 * t ** 2, t ** 3 - t ** 2
+    return h00 * ys[i] + h10 * hh * m[i] + h01 * ys[i + 1] + h11 * hh * m[i + 1]
+
+
 def _hood_rings(draped=True):
     """
-    The hood's rings (egg cross-sections, lower halves draped to the collar unless `draped` is False), their spine
-    centres, and the tip.
+    The hood's vertical rings, front (face opening) to back, their centres, and the peak. Each ring is an egg spanning
+    HOOD_TOP to HOOD_UNDER at its x; with `draped`, the lower sides in front of the turn are drawn down to the collar.
     """
-    spine = lib.catmull_rom(HOOD_SPINE, samples_per_segment=2)
-    radii = HOOD_RADII
     exp = 2 / HOOD_SQUARE
     rings, centres = [], []
-    m = len(spine) - 1
-    for k, c in enumerate(spine[:-1]):
-        u = k / m * (len(radii) - 1)
-        i0 = min(int(u), len(radii) - 2)
-        f = u - i0
-        ry, rz_up, rz_down = (radii[i0][j] * (1 - f) + radii[i0 + 1][j] * f for j in range(3))
-        tangent = (spine[k + 1] - c).normalized()
-        up = Y.cross(tangent).normalized()
-        side = tangent.cross(up).normalized()
-        a0, a1, b0, b1 = HOOD_DRAPE_SPAN
-        drape = _smoothstep(a0, a1, k / m) * (1 - _smoothstep(b0, b1, k / m)) if draped else 0.0
+    for x in HOOD_SLICES:
+        top, under, half_w = _pchip(HOOD_TOP, x), _pchip(HOOD_UNDER, x), _pchip(HOOD_WIDTH, x)
+        c = h(x, 0, (top + under) / 2)
+        half_h = (top - under) / 2
+        a0, a1, b0, b1 = HOOD_DRAPE_X
+        drape = _smoothstep(a0, a1, x) * (1 - _smoothstep(b0, b1, x)) if draped else 0.0
         ring = []
         for a in range(HOOD_SIDES):
             t = 2 * math.pi * a / HOOD_SIDES
             ct, st = math.cos(t), math.sin(t)
             across = math.copysign(abs(ct) ** exp, ct) * (1 - HOOD_EGG * st)
-            along_up = math.copysign(abs(st) ** exp, st)
-            p = c + side * (across * ry) + up * (along_up * (rz_up if st > 0 else rz_down))
+            p = c + Y * (across * half_w) + Z * (math.copysign(abs(st) ** exp, st) * half_h)
             if st < 0 and drape > 0:
-                # the lowest point of the ring drops the most; near the peak this hangs the cloth straight down
-                # the back of the head, turning once along the line from the peak to the collar
-                w = drape * (-st) ** 0.8
+                w = drape * (-st) ** 0.8  # the lowest point of the ring drops the most
                 p.z += (min(p.z, HOOD_DRAPE_Z) - p.z) * w
                 off = p - H
                 if off.length < HOOD_SKULL_CLEAR:
@@ -381,7 +395,7 @@ def _hood_rings(draped=True):
             ring.append(p)
         rings.append(ring)
         centres.append(c)
-    return rings, centres, spine[-1]
+    return rings, centres, h(HOOD_PEAK[0], 0, HOOD_PEAK[1])
 
 
 def build_hood():

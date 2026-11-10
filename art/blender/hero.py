@@ -232,6 +232,7 @@ def build_head():
 #    centre depth relative to the scalp in thicknesses (negative = sunk in), tip flick outward)
 #   azimuth 0 = forward, +90 = the hero's left; elevation 90 = straight up.
 HEAD_R = 0.15 * HEAD_K
+EAR_TOP = 0.028  # top of the ears above the head centre: locks that would hide an ear are cut level here
 LOCK_RATIO = 2.0  # width : thickness, never flatter than this
 # Fitted numerically: scalp ~95% covered, ~7% double-covered, face and ears clear; every lock >= 0.2 wide
 # and bending >= 70 degrees around the head (big locks, no small filler spikes). The back hairline sits high and
@@ -241,7 +242,7 @@ HAIR = [
     ("sweep_r", (151, 88), (-96, 14), 0.200, 3.50, 0.14, 0.045, 0.085),  # right of the face: short, tip turned up
     ("sweep_l", (56, 52), (-48, 27), 0.224, 3.43, -0.05, 0.138),
     ("side_l", (97, 16), (-13, 60), 0.200, 2.66, 0.09, 0.127),
-    ("side_r", (241, -10), (-22, 45), 0.200, 3.39, -0.57, 0.092),
+    ("side_r", (236, 0), (-22, 45), 0.300, 3.39, -0.45, 0.035, 0.0, EAR_TOP),  # filler above the right ear: flat on the scalp, cut level at the ear top
     ("back", (116, 25), (243, 4), 0.280, 2.97, -0.27, 0.06, 0.07),  # wraps the back, tip turned up behind the right ear
 ]
 
@@ -258,9 +259,10 @@ def _slerp(a, b, t):
     return (a * math.sin((1 - t) * om) + b * math.sin(t * om)) / math.sin(om)
 
 
-def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, curl=0.0, steps=7):
+def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, curl=0.0, cut=None, steps=7):
     """One thick turning cone: hexagonal cross-section width:thickness = LOCK_RATIO, root buried in the skull.
-    curl lifts the tip straight up (on top of the outward flick), so a side lock ends turned upward."""
+    curl lifts the tip straight up (on top of the outward flick), so a side lock ends turned upward.
+    cut (height relative to the head centre) slices the lock level and drops everything below it."""
     a, b = _sph(*exit_dir), _sph(*end_dir)
 
     def ring(centre, along, normal, w):
@@ -282,7 +284,22 @@ def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, curl=0.0, st
     for k, (n, c, w) in enumerate(pts):
         nxt = pts[k + 1][1] if k + 1 < len(pts) else tip
         rings.append(ring(c, (nxt - c).normalized(), n, w))
-    return lib.loft(name, rings, "hero_hair", tip=tip)
+    obj = lib.loft(name, rings, "hero_hair", tip=tip)
+    if cut is not None:
+        _cut_below(obj, H.z + cut)
+    return obj
+
+
+def _cut_below(obj, z):
+    """Slice a mesh with a level plane, delete the part below and cap the cut."""
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+    bmesh.ops.bisect_plane(bm, geom=geom, plane_co=(0, 0, z), plane_no=(0, 0, 1), clear_inner=True)
+    bmesh.ops.holes_fill(bm, edges=[e for e in bm.edges if e.is_boundary])
+    bm.to_mesh(obj.data)
+    bm.free()
 
 
 def build_hair(name):

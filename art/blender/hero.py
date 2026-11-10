@@ -238,11 +238,11 @@ LOCK_RATIO = 2.0  # width : thickness, never flatter than this
 # the back stays close to the skull (locks sunk in, not flattened); every tip flicks well outward from 40% along,
 # and forward-facing tips stop above the brow (no bangs over the eyes).
 HAIR = [
-    ("sweep_r", (151, 88), (-103, -23), 0.200, 3.50, 0.14, 0.076),
+    ("sweep_r", (151, 88), (-96, 14), 0.200, 3.50, 0.14, 0.045, 0.085),  # right of the face: short, tip turned up
     ("sweep_l", (56, 52), (-48, 27), 0.224, 3.43, -0.05, 0.138),
     ("side_l", (97, 16), (-13, 60), 0.200, 2.66, 0.09, 0.127),
     ("side_r", (241, -10), (-22, 45), 0.200, 3.39, -0.57, 0.092),
-    ("back", (116, 25), (251, -12), 0.280, 2.97, -0.27, 0.114),
+    ("back", (116, 25), (243, 4), 0.280, 2.97, -0.27, 0.06, 0.07),  # wraps the back, tip turned up behind the right ear
 ]
 
 
@@ -258,8 +258,9 @@ def _slerp(a, b, t):
     return (a * math.sin((1 - t) * om) + b * math.sin(t * om)) / math.sin(om)
 
 
-def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, steps=7):
-    """One thick turning cone: hexagonal cross-section width:thickness = LOCK_RATIO, root buried in the skull."""
+def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, curl=0.0, steps=7):
+    """One thick turning cone: hexagonal cross-section width:thickness = LOCK_RATIO, root buried in the skull.
+    curl lifts the tip straight up (on top of the outward flick), so a side lock ends turned upward."""
     a, b = _sph(*exit_dir), _sph(*end_dir)
 
     def ring(centre, along, normal, w):
@@ -268,14 +269,14 @@ def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, steps=7):
         return [centre + side * (w * x) + normal * (th * y)
                 for x, y in ((0.5, 0), (0.25, 0.5), (-0.25, 0.5), (-0.5, 0), (-0.25, -0.5), (0.25, -0.5))]
 
-    tip = H + b * (HEAD_R + flick)
+    tip = H + b * (HEAD_R + flick) + Z * curl
     pts = []
     for k in range(steps):
         u = k / steps
         n = _slerp(a, b, u).normalized()
         w = width * (1 - u ** taper)
-        lift = flick * max(0.0, (u - 0.4) / 0.6) ** 2            # the tip turns away from the head
-        pts.append((n, H + n * (HEAD_R + depth * w / LOCK_RATIO + lift), w))
+        bend = max(0.0, (u - 0.4) / 0.6) ** 2                     # the tip turns away from the head
+        pts.append((n, H + n * (HEAD_R + depth * w / LOCK_RATIO + flick * bend) + Z * (curl * bend), w))
     root = H + a * HEAD_R * 0.3                                     # buried root: the lock grows out of the skull
     rings = [ring(root, (pts[1][1] - root).normalized(), a, width * 1.05)]
     for k, (n, c, w) in enumerate(pts):

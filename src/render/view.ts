@@ -290,7 +290,8 @@ export class GameView {
     this.hero.root.position.set(sim.x, 0, sim.y);
     this.hero.root.rotation.set(0, -sim.facing, 0);
     if (this.catching) this.updateCatch(this.catching, dt);
-    this.hero.setOutfit(sim.sneaking ? 'hooded' : 'plain'); // cloak up while sneaking, off when standing
+    // always cloaked in the underside; on the surface the cloak goes up only while sneaking
+    this.hero.setOutfit(sim.dim === 1 || sim.sneaking ? 'hooded' : 'plain');
     const moving = sim.moving && !this.catching; // the sim froze mid-stride when caught
     this.hero.play(sim.sneaking ? (moving ? 'crouch_walk' : 'crouch') : moving ? 'walk' : 'idle', 0.15);
     this.hero.update(dt);

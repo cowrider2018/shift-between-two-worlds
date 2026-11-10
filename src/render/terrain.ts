@@ -12,6 +12,7 @@
 import { BufferAttribute, BufferGeometry, Color } from 'three';
 import type { LevelGrid } from '../core/grid';
 import type { DimIndex } from '../core/level';
+import { TUNING } from '../core/sim';
 import { COBBLE_SPAN } from './cobbleTexture';
 
 /** Wall height in tiles — taller than the troll so walls read as walls from the third-person camera. */
@@ -223,7 +224,7 @@ class MeshBuilder {
  * The exit cave, in face coordinates: u runs 0..1 along the open face, y up, d into the rock. The mouth is a
  * round-topped arch; the tunnel behind it is CAVE.depth deep and fades to white light from CAVE.fadeFrom inwards.
  */
-export const CAVE = { half: 0.3, spring: 0.55, depth: 0.8, fadeFrom: 0.4, margin: 0.07, lintel: 0.1 };
+export const CAVE = { half: 0.3, spring: 0.55, depth: TUNING.caveDepth, fadeFrom: TUNING.caveDepth / 2, margin: 0.07, lintel: 0.1 };
 const CAVE_DEPTHS = [0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8];
 
 /** How far towards white the cave is at depth d: none to fadeFrom, then a smoothstep up to white at the end

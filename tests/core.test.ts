@@ -257,6 +257,24 @@ describe('simulation on level01', () => {
     expect(sim.hunter!.x).toBeGreaterThan(5);
   });
 
+  it('reaches the exit only once the hero has walked all the way into the cave', () => {
+    const sim = new Sim(level01());
+    sim.monsters.length = 0;
+    const exit = sim.grid.all().find((c) => c.dim === 0 && c.def.behavior === 'exit')!;
+    const [dx, dy] = sim.grid.openSides(0, exit.x, exit.y)[0];
+    // stand two cells out in front of the mouth, then walk straight in
+    sim.x = exit.x + 0.5 + dx * 2;
+    sim.y = exit.y + 0.5 + dy * 2;
+    for (let i = 0; i < 600 && sim.status === 'playing' && sim.caveDepthOf(exit) < TUNING.caveDepth / 2 - 0.06; i++) {
+      sim.update({ ...NO_INPUT, moveX: -dx * 0.3, moveY: -dy * 0.3 }, 1 / 60);
+    }
+    expect(sim.currentCell()).toBe(exit); // inside the exit cell, but not yet past the middle of the cave
+    expect(sim.status).toBe('playing');
+    for (let i = 0; i < 60 && sim.status === 'playing'; i++) sim.update({ ...NO_INPUT, moveX: -dx * 0.3, moveY: -dy * 0.3 }, 1 / 60);
+    expect(sim.status).toBe('won');
+    expect(sim.caveDepthOf(exit)).toBeGreaterThanOrEqual(TUNING.caveDepth / 2);
+  });
+
   it('can be completed along the intended route with monsters active', () => {
     const sim = new Sim(level01());
     const step = (extra: Partial<SimInput> = {}) => sim.update({ ...NO_INPUT, ...extra }, 1 / 60);

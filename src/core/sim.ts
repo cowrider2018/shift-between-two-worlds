@@ -29,6 +29,9 @@ export const TUNING = {
   catchReach: 0.75,
   /** Collision half-size of a hunting monster sliding along walls. */
   monsterHalfSize: 0.2,
+  /** Depth of the exit cave behind its mouth (the renderer digs it this deep). The player reaches the exit once
+   *  their centre is past half of it, i.e. has walked all the way in. */
+  caveDepth: 0.8,
 };
 
 export interface SimInput {
@@ -159,6 +162,8 @@ export class Sim {
   private events: SimEvent[] = [];
   private shiftT = 0;
   private lastCell: Cell | null = null;
+  /** The player's centre was past the middle of an exit cave last step. */
+  private inCave = false;
   /** Seconds left of a takedown in progress (the hero is locked in its animation), 0 otherwise. */
   takedownT = 0;
   /** The monster chasing the player after spotting them; the player can only run until it catches up. */
@@ -275,6 +280,7 @@ export class Sim {
       if (input.interact) this.tryInteract();
       if (input.attack) this.tryAttack();
       this.enterCell();
+      this.enterCave();
     }
     for (const m of this.monsters) if (m !== this.hunter) m.update(dt);
     if (this.hunter) this.hunt(this.hunter, dt);
@@ -421,7 +427,20 @@ export class Sim {
       this.picked.add(Sim.itemKey(c));
       this.cores++;
       this.events.push({ type: 'pickup', what: b, cell: c });
-    } else if (b === 'exit') {
+    }
+  }
+
+  /** How far the player's centre is into the cave of exit cell `c`, measured from its mouth. */
+  caveDepthOf(c: Cell): number {
+    const [dx, dy] = this.grid.openSides(c.dim, c.x, c.y)[0] ?? [0, 0];
+    return 0.5 - ((this.x - c.x - 0.5) * dx + (this.y - c.y - 0.5) * dy);
+  }
+
+  /** Reaching an exit means walking all the way in: the centre past the middle of its cave. */
+  private enterCave(): void {
+    const c = this.currentCell();
+    const inside = c.def.behavior === 'exit' && this.caveDepthOf(c) >= TUNING.caveDepth / 2;
+    if (inside && !this.inCave) {
       const need = Number(c.props.coresRequired) || this.coresTotal;
       if (this.cores >= need) {
         this.status = 'won';
@@ -430,6 +449,7 @@ export class Sim {
         this.events.push({ type: 'exitLocked', have: this.cores, need });
       }
     }
+    this.inCave = inside;
   }
 
   private updateDetection(dt: number): void {

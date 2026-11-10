@@ -1,5 +1,5 @@
-import { DIM_NAMES, type Level } from '../core/level';
-import { Sim, TUNING, type SimEvent } from '../core/sim';
+import type { Level } from '../core/level';
+import { Sim, type SimEvent } from '../core/sim';
 import { CAMERA } from '../render/followCamera';
 import { loadModels } from '../render/models';
 import { GameView } from '../render/view';
@@ -21,11 +21,10 @@ input.bindPointerLock($<HTMLCanvasElement>('game'));
 let sim: Sim;
 let acc = 0;
 let last = performance.now();
-/** Seconds the "caught" card stays up, after the monster's bonk has played out, before restarting. */
+/** Seconds to hold on the scene, after the monster's bonk has played out, before restarting. */
 const CAUGHT_HOLD = 0.9;
-/** -1: not caught; 0: caught, bonk still playing; >0: card up, counting down to restart. */
+/** -1: not caught; 0: caught, bonk still playing; >0: counting down to restart. */
 let caughtT = -1;
-let toastT = 0;
 
 function start(index: number): void {
   levelIndex = index;
@@ -34,68 +33,12 @@ function start(index: number): void {
   sim = new Sim(level);
   view.setSim(sim);
   caughtT = -1;
-  $('level-name').textContent = `${playtest ? '試玩：' : ''}${level.name}`;
-  $('overlay').className = 'hidden';
-  toast(`輕點 Shift 轉移次元・按住 Shift 潛行`, 3);
-}
-
-function toast(text: string, seconds = 1.6): void {
-  const el = $('toast');
-  el.textContent = text;
-  el.classList.add('show');
-  toastT = seconds;
-}
-
-function overlay(title: string, sub: string, kind: 'won' | 'caught'): void {
-  const el = $('overlay');
-  el.className = kind;
-  $('overlay-title').textContent = title;
-  $('overlay-sub').textContent = sub;
 }
 
 function handle(events: SimEvent[]): void {
-  for (const e of events) {
-    switch (e.type) {
-      case 'shift':
-        toast(`→ ${DIM_NAMES[e.dim]}`, 0.8);
-        break;
-      case 'pickup':
-        toast(`取得核心 ${sim.cores}/${sim.coresTotal}`, 1.2);
-        break;
-      case 'lever':
-        toast(`拉桿 ${e.on ? '開' : '關'}`, 1.2);
-        break;
-      case 'exitLocked':
-        toast(`出口需要 ${e.need} 顆核心（目前 ${e.have}）`, 1.6);
-        break;
-      case 'spotted':
-        toast('被發現了！快逃！', 1.6);
-        break;
-      case 'caught':
-        caughtT = 0; // the card waits until the monster has bonked the hero (view.catchFinished)
-        break;
-      case 'won': {
-        const hasNext = levelIndex + 1 < levels.length;
-        overlay('通關！', hasNext ? 'Enter 下一關' : 'Enter 重玩', 'won');
-        break;
-      }
-      default:
-        break;
-    }
-  }
+  // the restart countdown waits until the monster has bonked the hero (view.catchFinished)
+  if (events.some((e) => e.type === 'caught')) caughtT = 0;
   view.onEvents(events);
-}
-
-function updateHud(): void {
-  $('dim').textContent = `次元 ${DIM_NAMES[sim.dim]}`;
-  $('dim').className = `badge dim${sim.dim}`;
-  $('cores').textContent = `◆ ${sim.cores}/${sim.coresTotal}`;
-  const hints: string[] = [];
-  hints.push('<b>Shift</b> 轉移');
-  if (sim.sneaking) hints.push(`<b>潛行中</b> 視野 ×${TUNING.sneakRadiusMul}`);
-  if (sim.nearestLever()) hints.push('<b>E</b> 拉桿');
-  if (sim.attackTarget()) hints.push('<b>Space</b> 割喉');
-  $('hint').innerHTML = hints.join('　');
 }
 
 input.onKey.set('KeyR', () => start(levelIndex));
@@ -120,27 +63,17 @@ function loop(now: number): void {
   }
   if (caughtT === 0 && view.catchFinished()) {
     caughtT = CAUGHT_HOLD;
-    overlay('被抓住了！', 'R 立即重來', 'caught');
   } else if (caughtT > 0) {
     caughtT -= dt;
     if (caughtT <= 0) start(levelIndex);
   }
-  if (toastT > 0) {
-    toastT -= dt;
-    if (toastT <= 0) $('toast').classList.remove('show');
-  }
-  updateHud();
   view.frame(dt);
   requestAnimationFrame(loop);
 }
 
 window.addEventListener('resize', () => view.resize());
 async function boot(): Promise<void> {
-  if (levels.length === 0) {
-    $('level-name').textContent = '沒有關卡';
-    return;
-  }
-  $('level-name').textContent = '載入中…';
+  if (levels.length === 0) return;
   await loadModels();
   start(levelIndex);
   last = performance.now();

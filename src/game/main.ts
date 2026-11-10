@@ -33,11 +33,13 @@ function start(index: number): void {
   sim = new Sim(level);
   view.setSim(sim);
   caughtT = -1;
+  $('cleared').hidden = true;
 }
 
 function handle(events: SimEvent[]): void {
   // the restart countdown waits until the monster has bonked the hero (view.catchFinished)
   if (events.some((e) => e.type === 'caught')) caughtT = 0;
+  if (events.some((e) => e.type === 'won')) $('cleared').hidden = false;
   view.onEvents(events);
 }
 

@@ -11,11 +11,15 @@
         font: 600 15px/1.4 ui-monospace, "Cascadia Mono", Consolas, "Microsoft JhengHei", monospace; }
       #game { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); image-rendering: pixelated; }
       a.editor { position: absolute; top: 12px; right: 16px; color: var(--ink); opacity: .6; text-shadow: 2px 2px 0 #000; }
+      #cleared { position: absolute; inset: 0; display: grid; place-content: center; pointer-events: none;
+        color: #fff; font-size: 44px; letter-spacing: 4px; text-shadow: 4px 4px 0 #000; }
+      #cleared[hidden] { display: none; }
     </style>
   </head>
   <body>
     <canvas id="game"></canvas>
     <a class="editor" href="./editor.html">編輯器</a>
+    <div id="cleared" hidden>通關</div>
     <script type="module" src="/src/game/main.ts"></script>
   </body>
 </html>

@@ -122,6 +122,8 @@ const FINE: number[] = (() => {
 const COARSE = [0, 1];
 const HEIGHTS = [0, WALL_H - BEVEL, ...[1, 2, 3, 4].map((k) => WALL_H - BEVEL + (BEVEL * k) / 4)];
 
+interface RawVertex { p: [number, number, number]; n: [number, number, number]; uv: [number, number]; c: Color }
+
 class MeshBuilder {
   readonly pos: number[] = [];
   readonly nor: number[] = [];
@@ -131,7 +133,7 @@ class MeshBuilder {
   private readonly tmp = new Color();
 
   constructor(
-    private readonly shape: WallShape,
+    readonly shape: WallShape,
     private readonly origin: [number, number],
     private readonly side: Color,
     private readonly top: Color,
@@ -155,7 +157,11 @@ class MeshBuilder {
         this.col.push(this.tmp.r, this.tmp.g, this.tmp.b);
       }
     }
-    // winding from the flat patch, which is never degenerate
+    this.wind(base, nu, nv, pts, out);
+  }
+
+  /** Index a grid of vertices, with the winding taken from its (never degenerate) first cell. */
+  private wind(base: number, nu: number, nv: number, pts: [number, number, number][], out: [number, number, number]): void {
     const a = pts[0];
     const b = pts[1];
     const d = pts[nu];
@@ -175,6 +181,28 @@ class MeshBuilder {
     }
   }
 
+  /** A nu×nv patch of finished vertices (no snapping), wound so its normal points along `out`. */
+  raw(nu: number, nv: number, vtx: (i: number, j: number) => RawVertex, out: [number, number, number]): void {
+    const base = this.pos.length / 3;
+    const pts: [number, number, number][] = [];
+    for (let j = 0; j < nv; j++) {
+      for (let i = 0; i < nu; i++) {
+        const v = vtx(i, j);
+        pts.push(v.p);
+        this.pos.push(v.p[0] - this.origin[0], v.p[1], v.p[2] - this.origin[1]);
+        this.nor.push(...v.n);
+        this.uv.push(...v.uv);
+        this.col.push(v.c.r, v.c.g, v.c.b);
+      }
+    }
+    this.wind(base, nu, nv, pts, out);
+  }
+
+  /** Snap a face point onto the rounded wall (exposed for the cave, which starts from the snapped face). */
+  snap(x: number, y: number, z: number): [number, number, number] {
+    return this.shape.shape(x, y, z, true).p;
+  }
+
   build(): BufferGeometry {
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(new Float32Array(this.pos), 3));
@@ -184,6 +212,108 @@ class MeshBuilder {
     g.setIndex(this.idx);
     return g;
   }
+}
+
+/**
+ * The exit cave, in face coordinates: u runs 0..1 along the open face, y up, d into the rock. The mouth is a
+ * round-topped arch; the tunnel behind it is CAVE.depth deep and fades to black from CAVE.fadeFrom inwards.
+ */
+export const CAVE = { half: 0.3, spring: 0.55, depth: 0.8, fadeFrom: 0.4, margin: 0.07, lintel: 0.1 };
+const CAVE_DEPTHS = [0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8];
+
+/** Light left at depth d: full to fadeFrom, then a smoothstep down to black at the end (no visible line). */
+export function caveLight(d: number): number {
+  const u = Math.min(1, Math.max(0, (d - CAVE.fadeFrom) / (CAVE.depth - CAVE.fadeFrom)));
+  return 1 - u * u * (3 - 2 * u);
+}
+
+/** Open side of a cave and the colour of its floor. */
+export interface CaveMouth { dx: number; dz: number; floor: string }
+
+/** Shared layout of a cave mouth: the face point at (u, y), the arch's edges and the angles along its curve. */
+function caveLayout(cx: number, cz: number, m: CaveMouth) {
+  const face = (u: number, y: number): [number, number, number] =>
+    m.dx > 0 ? [cx + 1, y, cz + u] : m.dx < 0 ? [cx, y, cz + u] : m.dz > 0 ? [cx + u, y, cz + 1] : [cx + u, y, cz];
+  const { half: r, spring, margin, lintel } = CAVE;
+  const a0 = 0.5 - r;
+  const a1 = 0.5 + r;
+  const o0 = a0 - margin; // the face is cut into strips round a rectangle a little larger than the arch
+  const o1 = a1 + margin;
+  const top = spring + r + lintel;
+  const corner = Math.atan2(top - spring, o1 - 0.5);
+  const TH = [...new Set([...Array.from({ length: 13 }, (_, k) => (Math.PI * k) / 12), corner, Math.PI - corner])]
+    .sort((x, y) => x - y);
+  return { face, out: [m.dx, 0, m.dz] as [number, number, number], r, spring, a0, a1, o0, o1, top, TH };
+}
+
+/** The open face of a cave cell, cut round the arch (snapped onto the rounded wall like any other face). */
+function caveFace(b: MeshBuilder, cx: number, cz: number, m: CaveMouth): void {
+  const { face, out, r, spring, a0, a1, o0, o1, top, TH } = caveLayout(cx, cz, m);
+  const span = (lo: number, hi: number) => [lo, ...FINE.filter((v) => v > lo + 1e-3 && v < hi - 1e-3), hi];
+  const lift = HEIGHTS.filter((h) => h > top);
+
+  // the face round the opening: full-height strips either side, a lintel above, thin jambs, and the
+  // ring between the arch and the rectangle
+  for (const [lo, hi] of [[0, o0], [o1, 1]]) {
+    const U = span(lo, hi);
+    b.patch(U.length, HEIGHTS.length, (i, j) => face(U[i], HEIGHTS[j]), true, out);
+  }
+  const UL = span(o0, o1);
+  const HL = [top, ...lift];
+  b.patch(UL.length, HL.length, (i, j) => face(UL[i], HL[j]), true, out);
+  for (const [lo, hi] of [[o0, a0], [a1, o1]]) b.patch(2, 2, (i, j) => face(i ? hi : lo, j * spring), true, out);
+  const ring = (k: number, outer: boolean): [number, number] => {
+    const c = Math.cos(TH[k]);
+    const s = Math.sin(TH[k]);
+    const t = outer ? Math.min(Math.abs(c) > 1e-6 ? (o1 - 0.5) / Math.abs(c) : Infinity, s > 1e-6 ? (top - spring) / s : Infinity) : r;
+    return [0.5 + c * t, spring + s * t];
+  };
+  b.patch(TH.length, 2, (i, j) => face(...ring(i, j === 1)), true, out);
+}
+
+/**
+ * The tunnel behind a cave mouth, in coordinates local to the cell centre: walls and vault along the arch, and
+ * the floor, darkening with depth. A separate mesh from the rock so the rock's shadow does not fill it.
+ */
+export function caveGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
+  m: CaveMouth): BufferGeometry {
+  const b = new MeshBuilder(new WallShape((x, z) => isRock(grid, dim, x, z)), [cx + 0.5, cz + 0.5], new Color(), new Color());
+  const side = new Color(sideColor);
+  const floor = new Color(m.floor);
+  const { face, out, r, spring, a0, a1, TH } = caveLayout(cx, cz, m);
+
+  // the tunnel: walls and vault along the arch profile, then the floor, both darkening with depth
+  const prof: { u: number; y: number; n: [number, number] }[] = [
+    { u: a0, y: 0, n: [1, 0] },
+    { u: a0, y: spring, n: [1, 0] },
+    ...TH.slice().reverse().map((th) => ({ u: 0.5 + Math.cos(th) * r, y: spring + Math.sin(th) * r, n: [-Math.cos(th), -Math.sin(th)] as [number, number] })),
+    { u: a1, y: spring, n: [-1, 0] },
+    { u: a1, y: 0, n: [-1, 0] },
+  ];
+  const along: [number, number] = m.dx !== 0 ? [0, 1] : [1, 0]; // world xz direction of +u
+  const tmp = new Color();
+  const at = (u: number, y: number, d: number): [number, number, number] => {
+    const p = b.snap(...face(u, y));
+    return [p[0] - out[0] * d, p[1], p[2] - out[2] * d];
+  };
+  b.raw(prof.length, CAVE_DEPTHS.length, (i, j) => {
+    const q = prof[i];
+    const d = CAVE_DEPTHS[j];
+    const p = at(q.u, q.y, d);
+    return {
+      p,
+      n: [along[0] * q.n[0], q.n[1], along[1] * q.n[0]],
+      uv: [(p[0] + p[2] + d) / COBBLE_SPAN, p[1] / COBBLE_SPAN],
+      c: tmp.copy(side).multiplyScalar(caveLight(d)).clone(),
+    };
+  }, [along[0], 0, along[1]]); // the first strip is the left jamb, facing across the tunnel
+  b.raw(2, CAVE_DEPTHS.length, (i, j) => {
+    const d = CAVE_DEPTHS[j];
+    const p = at(i ? a1 : a0, 0, d);
+    p[1] = 0.002;
+    return { p, n: [0, 1, 0], uv: [p[0] / COBBLE_SPAN, p[2] / COBBLE_SPAN], c: tmp.copy(floor).multiplyScalar(caveLight(d)).clone() };
+  }, [0, 1, 0]);
+  return b.build();
 }
 
 /** Cells drawn as part of the rock mass: walls, and the exit, which is a small cave cut into the rock. */
@@ -198,7 +328,7 @@ function isRock(grid: LevelGrid, dim: DimIndex, x: number, z: number): boolean {
  * Vertex colours blend `sideColor` → `topColor` by how upward each point faces.
  */
 export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
-  topColor: string): BufferGeometry {
+  topColor: string, cave?: CaveMouth): BufferGeometry {
   const isWall: IsWall = (x, z) => isRock(grid, dim, x, z);
   const shape = new WallShape(isWall);
   const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
@@ -209,10 +339,12 @@ export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
   const H = HEIGHTS;
 
   b.patch(n, n, (i, j) => [cx + B[i], WALL_H, cz + B[j]], false, [0, 1, 0]);
-  if (!isWall(cx + 1, cz)) b.patch(n, H.length, (i, j) => [cx + 1, H[j], cz + B[i]], true, [1, 0, 0]);
-  if (!isWall(cx - 1, cz)) b.patch(n, H.length, (i, j) => [cx, H[j], cz + B[i]], true, [-1, 0, 0]);
-  if (!isWall(cx, cz + 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz + 1], true, [0, 0, 1]);
-  if (!isWall(cx, cz - 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz], true, [0, 0, -1]);
+  const open = (dx: number, dz: number) => !isWall(cx + dx, cz + dz) && !(cave && cave.dx === dx && cave.dz === dz);
+  if (cave) caveFace(b, cx, cz, cave);
+  if (open(1, 0)) b.patch(n, H.length, (i, j) => [cx + 1, H[j], cz + B[i]], true, [1, 0, 0]);
+  if (open(-1, 0)) b.patch(n, H.length, (i, j) => [cx, H[j], cz + B[i]], true, [-1, 0, 0]);
+  if (open(0, 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz + 1], true, [0, 0, 1]);
+  if (open(0, -1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz], true, [0, 0, -1]);
 
   // Fillet tops: at a corner where this wall's two neighbours are walls but the diagonal cell is open,
   // the rounded inner corner spills into that open cell; its sides come from the neighbours' faces.

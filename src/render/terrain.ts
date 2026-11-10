@@ -216,16 +216,19 @@ class MeshBuilder {
 
 /**
  * The exit cave, in face coordinates: u runs 0..1 along the open face, y up, d into the rock. The mouth is a
- * round-topped arch; the tunnel behind it is CAVE.depth deep and fades to black from CAVE.fadeFrom inwards.
+ * round-topped arch; the tunnel behind it is CAVE.depth deep and fades to white light from CAVE.fadeFrom inwards.
  */
 export const CAVE = { half: 0.3, spring: 0.55, depth: 0.8, fadeFrom: 0.4, margin: 0.07, lintel: 0.1 };
 const CAVE_DEPTHS = [0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8];
 
-/** Light left at depth d: full to fadeFrom, then a smoothstep down to black at the end (no visible line). */
-export function caveLight(d: number): number {
+/** How far towards white the cave is at depth d: none to fadeFrom, then a smoothstep up to white at the end
+ *  (no visible line). */
+export function caveWhite(d: number): number {
   const u = Math.min(1, Math.max(0, (d - CAVE.fadeFrom) / (CAVE.depth - CAVE.fadeFrom)));
-  return 1 - u * u * (3 - 2 * u);
+  return u * u * (3 - 2 * u);
 }
+
+const WHITE = new Color('#ffffff');
 
 /** Open side of a cave and the colour of its floor. */
 export interface CaveMouth { dx: number; dz: number; floor: string }
@@ -273,7 +276,7 @@ function caveFace(b: MeshBuilder, cx: number, cz: number, m: CaveMouth): void {
 
 /**
  * The tunnel behind a cave mouth, in coordinates local to the cell centre: walls and vault along the arch, and
- * the floor, darkening with depth. A separate mesh from the rock so the rock's shadow does not fill it.
+ * the floor, whitening with depth. A separate mesh from the rock so the rock's shadow does not fill it.
  */
 export function caveGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
   m: CaveMouth): BufferGeometry {
@@ -282,7 +285,7 @@ export function caveGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
   const floor = new Color(m.floor);
   const { face, out, r, spring, a0, a1, TH } = caveLayout(cx, cz, m);
 
-  // the tunnel: walls and vault along the arch profile, then the floor, both darkening with depth
+  // the tunnel: walls and vault along the arch profile, then the floor, both whitening with depth
   const prof: { u: number; y: number; n: [number, number] }[] = [
     { u: a0, y: 0, n: [1, 0] },
     { u: a0, y: spring, n: [1, 0] },
@@ -304,14 +307,14 @@ export function caveGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
       p,
       n: [along[0] * q.n[0], q.n[1], along[1] * q.n[0]],
       uv: [(p[0] + p[2] + d) / COBBLE_SPAN, p[1] / COBBLE_SPAN],
-      c: tmp.copy(side).multiplyScalar(caveLight(d)).clone(),
+      c: tmp.copy(side).lerp(WHITE, caveWhite(d)).clone(),
     };
   }, [along[0], 0, along[1]]); // the first strip is the left jamb, facing across the tunnel
   b.raw(2, CAVE_DEPTHS.length, (i, j) => {
     const d = CAVE_DEPTHS[j];
     const p = at(i ? a1 : a0, 0, d);
     p[1] = 0.002;
-    return { p, n: [0, 1, 0], uv: [p[0] / COBBLE_SPAN, p[2] / COBBLE_SPAN], c: tmp.copy(floor).multiplyScalar(caveLight(d)).clone() };
+    return { p, n: [0, 1, 0], uv: [p[0] / COBBLE_SPAN, p[2] / COBBLE_SPAN], c: tmp.copy(floor).lerp(WHITE, caveWhite(d)).clone() };
   }, [0, 1, 0]);
   return b.build();
 }

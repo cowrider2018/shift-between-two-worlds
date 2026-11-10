@@ -3,14 +3,14 @@
  * A factory returns an Object3D positioned at the cell origin plus an optional per-frame update.
  */
 import {
-  BoxGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, Shape, ShapeGeometry, TorusGeometry,
+  BoxGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PointLight, Shape, Vector3, ShapeGeometry, TorusGeometry,
   type Material, type Object3D,
 } from 'three';
 import type { Cell, LevelGrid } from '../core/grid';
 import type { Sim } from '../core/sim';
 import type { DimTheme } from './palette';
 import { cobble, glow, toon, wood } from './materials';
-import { withHole } from './cutaway';
+import { throughMouth, withHole, type Mouth } from './cutaway';
 import { CAVE, WALL_H, caveGeometry, floorGeometry, wallGeometry } from './terrain';
 
 export interface BlockView {
@@ -64,7 +64,7 @@ function archShape(grow = 0): Shape {
   return s;
 }
 
-/** Haze in the cave: [depth, opacity] of each thin black veil, thickening towards the back (dogsouls-style). */
+/** Haze in the cave: [depth, opacity] of each thin veil of white light, thickening towards the back. */
 const CAVE_HAZE: [number, number][] = [[0.42, 0.3], [0.5, 0.4], [0.58, 0.5], [0.66, 0.6], [0.74, 0.75]];
 
 export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
@@ -83,8 +83,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     arm.position.y = 0.1;
     arm.add(m(new CylinderGeometry(0.04, 0.04, 0.45, 6), toon('#3a3238'), 0, 0.16, 0));
     arm.add(m(new IcosahedronGeometry(0.09), toon('#6a6470'), 0, 0.46, 0));
-    const lamp = m(new BoxGeometry(0.1, 0.05, 0.32), glow('#333'), -0.17, 0.16, 0, false);
-    const g = onFloor(cell, ctx, base, arm, lamp);
+    const g = onFloor(cell, ctx, base, arm);
     let angle = -0.6;
     return {
       object: g,
@@ -93,7 +92,6 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
         const target = on ? 0.6 : -0.6;
         angle += (target - angle) * Math.min(1, dt * 12);
         arm.rotation.z = angle;
-        lamp.material = glow(on ? '#ffcf6b' : '#333333');
       },
     };
   },
@@ -152,37 +150,42 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   },
 
   exit: (cell, ctx) => {
-    // a small cave dug into the rock: plain wall outside, a tunnel behind its one open side that fades to black
+    // a small cave dug into the rock: plain wall outside, a tunnel behind its one open side that fades into light
     const [dx, dz] = ctx.grid.openSides(cell.dim, cell.x, cell.y)[0] ?? [0, 1];
     const mouth = { dx, dz, floor: ctx.theme.floor[0] };
     const stone = withHole(cobble('#ffffff', true));
     const rock = m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, mouth), stone);
-    // the tunnel takes no shadow from the rock over it: its light falls off with depth on its own
-    const tunnel = m(caveGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, mouth), stone, 0, 0, 0, false);
+    // the tunnel takes no shadow from the rock over it: its light comes from inside
+    // everything inside shows only through the arch, so it hides like the wall round it from any other angle
+    // (e.g. through the camera hole cut into a neighbouring wall)
+    const arch: Mouth = {
+      origin: new Vector3(cell.x + 0.5 + dx * 0.5, 0, cell.y + 0.5 + dz * 0.5),
+      normal: new Vector3(dx, 0, dz),
+      along: new Vector3(-dz, 0, dx),
+      half: CAVE.half,
+      spring: CAVE.spring,
+    };
+    const tunnel = m(caveGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, mouth),
+      throughMouth(stone, arch), 0, 0, 0, false);
     tunnel.receiveShadow = false;
     const inside = new Group();
     inside.rotation.y = Math.atan2(dx, dz); // local +z points out of the open side; the face is at z = 0.5
-    // the back of the tunnel: black, glowing faintly once enough cores are carried
-    const back = m(new ShapeGeometry(archShape(0.04), 12), withHole(glow('#000000')), 0, 0, 0.5 - CAVE.depth, false);
-    inside.add(back);
-    // veils of black haze, so whatever walks in sinks into the dark instead of meeting a flat black board
+    inside.add(m(new ShapeGeometry(archShape(0.04), 12), throughMouth(withHole(glow('#ffffff')), arch), 0, 0, 0.5 - CAVE.depth, false));
+    // veils of light, so whatever walks in sinks into the glow instead of meeting a flat white board
     for (const [d, opacity] of CAVE_HAZE) {
       const veil = new Mesh(new ShapeGeometry(archShape(0.02), 12),
-        withHole(new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity, depthWrite: false })));
+        throughMouth(withHole(new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity, depthWrite: false })), arch));
       veil.position.z = 0.5 - d;
       veil.renderOrder = 3;
       inside.add(veil);
     }
+    // the glow spills out of the mouth onto the walls and floor round it
+    const light = new PointLight('#fff4e0', 2.2, 3.2, 1.5);
+    light.position.set(0, CAVE.spring * 0.8, 0.5 - CAVE.depth * 0.6);
+    inside.add(light);
     const g = new Group();
     g.add(rock, tunnel, inside);
     place(g, cell);
-    return {
-      object: g,
-      update: (sim, _dt, t) => {
-        const need = Number(cell.props.coresRequired) || sim.coresTotal;
-        const open = sim.cores >= need;
-        back.material = withHole(glow(open ? (Math.sin(t * 3) > 0 ? '#2c1442' : '#22103a') : '#000000'));
-      },
-    };
+    return { object: g };
   },
 };

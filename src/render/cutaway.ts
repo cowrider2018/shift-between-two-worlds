@@ -6,7 +6,7 @@
  * outer rim the surface comes back through an ordered (Bayer) dither, so the edge fades by pixel density
  * rather than by transparency. gl_FragCoord is in low-res render pixels, so the dither is in art pixels.
  */
-import { Vector2, type Material, type WebGLProgramParametersWithUniforms } from 'three';
+import { Vector2, Vector3, type Material, type WebGLProgramParametersWithUniforms } from 'three';
 
 /** Fraction of the radius that is fully open; the rest is the dithered rim. */
 export const HOLE_INNER = 0.75;
@@ -61,5 +61,56 @@ export function withHole<T extends Material>(mat: T): T {
     m.customProgramCacheKey = () => 'camera-hole';
     cache.set(mat.uuid, m);
   }
+  return m;
+}
+
+/** An arched opening in a wall face, in world space: the middle of its sill, the outward normal of the face,
+ *  the direction along the face, its half width and the height where the round top springs. */
+export interface Mouth { origin: Vector3; normal: Vector3; along: Vector3; half: number; spring: number }
+
+/**
+ * A copy of `mat` (already given the camera hole) that only shows through `mouth`: a fragment is kept only if the
+ * line from the camera to it crosses the face plane inside the arch. Whatever sits behind the opening (a cave) is
+ * then hidden like the wall around it from every other angle, e.g. when the camera hole cuts into that wall.
+ */
+export function throughMouth<T extends Material>(mat: T, mouth: Mouth): T {
+  const m = mat.clone() as T;
+  const uniforms = {
+    uMouthOrigin: { value: mouth.origin },
+    uMouthNormal: { value: mouth.normal },
+    uMouthAlong: { value: mouth.along },
+    uMouthSize: { value: new Vector2(mouth.half, mouth.spring) },
+  };
+  const before = mat.onBeforeCompile.bind(mat);
+  m.onBeforeCompile = (shader, renderer) => {
+    before(shader, renderer);
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vMouthWorld;`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+vMouthWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vMouthWorld;
+uniform vec3 uMouthOrigin, uMouthNormal, uMouthAlong;
+uniform vec2 uMouthSize;`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+{
+  vec3 rd = vMouthWorld - cameraPosition;
+  float side = dot(cameraPosition - uMouthOrigin, uMouthNormal);
+  float dn = dot(rd, uMouthNormal);
+  if (side > 0.0 && dn < 0.0) {
+    vec3 hit = cameraPosition + rd * (-side / dn) - uMouthOrigin;
+    float u = abs(dot(hit, uMouthAlong));
+    float y = hit.y;
+    float r = uMouthSize.x + 0.03;
+    bool inside = y > -0.03 && u < r && (y < uMouthSize.y || length(vec2(u, y - uMouthSize.y)) < r);
+    if (!inside) discard;
+  }
+}`);
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  m.customProgramCacheKey = () => `${key()}+mouth`;
   return m;
 }

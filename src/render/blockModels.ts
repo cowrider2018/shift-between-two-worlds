@@ -62,19 +62,6 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
 
   spawn: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
 
-  reward: (cell, ctx) => {
-    const gem = m(new OctahedronGeometry(0.2), toon('#f2c94c', '#6b5200'), 0, 0.4, 0);
-    const g = onFloor(cell, ctx, gem);
-    return {
-      object: g,
-      update: (sim, _dt, t) => {
-        gem.visible = !sim.isPicked(cell);
-        gem.position.y = bob(t, cell.x);
-        gem.rotation.y = t * 2;
-      },
-    };
-  },
-
   lever: (cell, ctx) => {
     const base = m(new BoxGeometry(0.44, 0.16, 0.3), toon('#5a5560'), 0, 0.06, 0);
     const arm = new Group();

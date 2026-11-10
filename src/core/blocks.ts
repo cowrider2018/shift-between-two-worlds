@@ -20,7 +20,7 @@ export type ParamSchema =
 /** `whenClosed` only makes sense together with the `door` behavior. */
 export type Condition = 'never' | 'always' | 'whenClosed';
 
-export type Behavior = 'none' | 'spawn' | 'core' | 'reward' | 'lever' | 'door' | 'exit';
+export type Behavior = 'none' | 'spawn' | 'core' | 'lever' | 'door' | 'exit';
 
 export interface BlockDef {
   id: string;
@@ -53,10 +53,6 @@ export const BLOCKS: readonly BlockDef[] = [
     id: 'spawn', char: 'S', label: '出生點', description: '玩家起點（全關恰一個）。',
     color: '#5fd16b', params: [], solid: 'never', opaque: 'never', behavior: 'spawn',
     count: { min: 1, max: 1 },
-  },
-  {
-    id: 'reward', char: '$', label: '獎勵塊', description: '可選收集物，加分。',
-    color: '#f2c94c', params: [], solid: 'never', opaque: 'never', behavior: 'reward',
   },
   {
     id: 'lever', char: 'L', label: '拉桿', description: '機關塊：切換頻道訊號（跨次元有效）。',

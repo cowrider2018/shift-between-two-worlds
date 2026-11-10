@@ -45,7 +45,7 @@ export const NO_INPUT: SimInput = { moveX: 0, moveY: 0, sneak: false, shift: fal
 
 export type SimEvent =
   | { type: 'shift'; dim: DimIndex }
-  | { type: 'pickup'; what: 'core' | 'reward'; cell: Cell }
+  | { type: 'pickup'; what: 'core'; cell: Cell }
   | { type: 'lever'; cell: Cell; on: boolean }
   /** The hero leaps onto this monster's head and cuts its throat; it is dead from this moment on. */
   | { type: 'kill'; monster: MonsterState }
@@ -142,9 +142,7 @@ export class Sim {
   status: SimStatus = 'playing';
   time = 0;
   cores = 0;
-  rewards = 0;
   readonly coresTotal: number;
-  readonly rewardsTotal: number;
   readonly monsters: MonsterState[] = [];
   private readonly picked = new Set<string>();
   private readonly levers = new Map<string, boolean>();
@@ -161,7 +159,6 @@ export class Sim {
     this.grid = new LevelGrid(level);
     const cells = this.grid.all();
     this.coresTotal = cells.filter((c) => c.def.behavior === 'core').length;
-    this.rewardsTotal = cells.filter((c) => c.def.behavior === 'reward').length;
     const spawn = cells.find((c) => c.def.behavior === 'spawn');
     if (spawn) {
       this.dim = spawn.dim;
@@ -406,10 +403,9 @@ export class Sim {
     if (c === this.lastCell) return;
     this.lastCell = c;
     const b = c.def.behavior;
-    if ((b === 'core' || b === 'reward') && !this.isPicked(c)) {
+    if (b === 'core' && !this.isPicked(c)) {
       this.picked.add(Sim.itemKey(c));
-      if (b === 'core') this.cores++;
-      else this.rewards++;
+      this.cores++;
       this.events.push({ type: 'pickup', what: b, cell: c });
     } else if (b === 'exit') {
       const need = Number(c.props.coresRequired) || this.coresTotal;

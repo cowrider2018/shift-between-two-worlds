@@ -60,7 +60,7 @@ function handle(events: SimEvent[]): void {
         toast(`→ ${DIM_NAMES[e.dim]}`, 0.8);
         break;
       case 'pickup':
-        toast(e.what === 'core' ? `取得核心 ${sim.cores}/${sim.coresTotal}` : '獎勵 +1', 1.2);
+        toast(`取得核心 ${sim.cores}/${sim.coresTotal}`, 1.2);
         break;
       case 'lever':
         toast(`拉桿 ${e.on ? '開' : '關'}`, 1.2);
@@ -76,7 +76,7 @@ function handle(events: SimEvent[]): void {
         break;
       case 'won': {
         const hasNext = levelIndex + 1 < levels.length;
-        overlay('通關！', `獎勵 ${sim.rewards}/${sim.rewardsTotal}・${hasNext ? 'Enter 下一關' : 'Enter 重玩'}`, 'won');
+        overlay('通關！', hasNext ? 'Enter 下一關' : 'Enter 重玩', 'won');
         break;
       }
       default:
@@ -90,7 +90,6 @@ function updateHud(): void {
   $('dim').textContent = `次元 ${DIM_NAMES[sim.dim]}`;
   $('dim').className = `badge dim${sim.dim}`;
   $('cores').textContent = `◆ ${sim.cores}/${sim.coresTotal}`;
-  $('rewards').textContent = `$ ${sim.rewards}/${sim.rewardsTotal}`;
   const hints: string[] = [];
   hints.push('<b>Shift</b> 轉移');
   if (sim.sneaking) hints.push(`<b>潛行中</b> 視野 ×${TUNING.sneakRadiusMul}`);

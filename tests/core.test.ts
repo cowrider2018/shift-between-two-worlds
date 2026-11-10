@@ -97,7 +97,7 @@ describe('simulation on level01', () => {
 
   it('shifts on any cell, including non-floor ones', () => {
     const sim = new Sim(level01());
-    walkTo(sim, 2, 5); // reward in A
+    walkTo(sim, 2, 5);
     tap(sim, 'shift');
     expect(sim.dim).toBe(1);
   });

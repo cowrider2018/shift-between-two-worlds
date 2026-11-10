@@ -65,9 +65,6 @@ function handle(events: SimEvent[]): void {
       case 'lever':
         toast(`拉桿 ${e.on ? '開' : '關'}`, 1.2);
         break;
-      case 'kill':
-        toast('靈魂消散 — 本體也消失了', 1.4);
-        break;
       case 'exitLocked':
         toast(`出口需要 ${e.need} 顆核心（目前 ${e.have}）`, 1.6);
         break;
@@ -98,7 +95,7 @@ function updateHud(): void {
   hints.push('<b>Shift</b> 轉移');
   if (sim.sneaking) hints.push(`<b>潛行中</b> 視野 ×${TUNING.sneakRadiusMul}`);
   if (sim.nearestLever()) hints.push('<b>E</b> 拉桿');
-  if (sim.attackableSoul()) hints.push('<b>Space</b> 擊殺靈魂');
+  if (sim.attackTarget()) hints.push('<b>Space</b> 割喉');
   $('hint').innerHTML = hints.join('　');
 }
 

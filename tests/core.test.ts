@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { BLOCKS } from '../src/core/blocks';
 import { castRay } from '../src/core/grid';
 import { createEmptyLevel, parseLevel, serializeLevel, setCell, setProp, type Level } from '../src/core/level';
-import { NO_INPUT, Sim, type SimInput } from '../src/core/sim';
+import { NO_INPUT, Sim, TUNING, type SimInput } from '../src/core/sim';
 import { validateLevel } from '../src/core/validate';
 
 const levelsDir = resolve(import.meta.dirname, '..', 'levels');
@@ -102,18 +102,10 @@ describe('simulation on level01', () => {
     expect(sim.dim).toBe(1);
   });
 
-  it('a lever in B opens the door in A, and souls die to one swing', () => {
+  it('a lever in B opens the door in A', () => {
     const sim = new Sim(level01());
     const doorA = sim.grid.cell(0, 6, 3);
     expect(sim.doorOpen(doorA)).toBe(false);
-    // kill the B keeper's soul from A
-    const keeper = sim.monsters.find((m) => m.def.id === 'keeper')!;
-    for (let i = 0; i < 600 && Math.hypot(keeper.x - sim.x, keeper.y - sim.y) > 1.2; i++) {
-      const dx = keeper.x - sim.x, dy = keeper.y - sim.y, d = Math.hypot(dx, dy);
-      sim.update({ ...NO_INPUT, moveX: dx / d, moveY: dy / d }, 1 / 60);
-    }
-    tap(sim, 'attack');
-    expect(keeper.alive).toBe(false);
     walkTo(sim, 1, 2);
     tap(sim, 'shift');
     expect(sim.dim).toBe(1);
@@ -121,6 +113,53 @@ describe('simulation on level01', () => {
     tap(sim, 'interact');
     expect(sim.doorOpen(doorA)).toBe(true);
     expect(sim.status).toBe('playing');
+  });
+
+  /** A lone monster at (6, 2) facing west (180°) in dimension A, the player spawning at (spawnX, 2). */
+  const ambushLevel = (spawnX: number, facing = 180) => {
+    const l: Level = createEmptyLevel('t', 12, 5);
+    setCell(l, 0, 10, 3, 'E');
+    setCell(l, 0, 1, 1, '.');
+    setCell(l, 0, spawnX, 2, 'S');
+    l.dimensions[0].monsters.push({ id: 'm', path: [[6, 2]], mode: 'pingpong', speed: 1, pause: 0, viewRadius: 4, viewAngle: 90, facing });
+    return l;
+  };
+
+  it('takes a monster down from behind in its own dimension, locking the hero for the whole takedown', () => {
+    const sim = new Sim(ambushLevel(7)); // one cell behind the monster's back
+    const m = sim.monsters[0];
+    sim.update(NO_INPUT, 1 / 60);
+    expect(sim.attackTarget()).toBe(m);
+    tap(sim, 'attack');
+    expect(m.alive).toBe(false);
+    expect(sim.drainEvents()).toContainEqual({ type: 'kill', monster: m });
+    expect(sim.facing).toBeCloseTo(Math.PI); // turned to face its target
+    const x0 = sim.x;
+    const busy = Math.round(TUNING.takedownTime * 60) - 2;
+    for (let i = 0; i < busy; i++) sim.update({ ...NO_INPUT, moveX: 1, shift: true }, 1 / 60);
+    expect(sim.x).toBe(x0); // no moving or shifting while on the monster's head
+    expect(sim.dim).toBe(0);
+    for (let i = 0; i < 10; i++) sim.update({ ...NO_INPUT, moveX: 1 }, 1 / 60);
+    expect(sim.x).toBeGreaterThan(x0);
+    expect(sim.status).toBe('playing');
+    expect(sim.hunter).toBeNull();
+  });
+
+  it('cannot take down a monster that sees the hero, nor a soul in the other dimension', () => {
+    const facing = new Sim(ambushLevel(7, 0)); // the monster faces the hero
+    facing.update(NO_INPUT, 1 / 60);
+    expect(facing.monsters[0].seeing).toBe(true);
+    expect(facing.attackTarget()).toBeNull();
+    tap(facing, 'attack');
+    expect(facing.monsters[0].alive).toBe(true);
+
+    const soul = new Sim(ambushLevel(7));
+    tap(soul, 'shift');
+    expect(soul.dim).toBe(1);
+    expect(soul.attackTarget()).toBeNull();
+    tap(soul, 'attack');
+    expect(soul.monsters[0].alive).toBe(true);
+    expect(soul.takedownT).toBe(0);
   });
 
   it('is caught when standing in a cone, but not while sneaking at the edge', () => {

@@ -15,8 +15,10 @@ export const TUNING = {
   detectFall: 1,
   /** A circle one cell across at the monster's feet: inside it the player is noticed regardless of the cone or walls. */
   touchRadius: 0.5,
+  /** Reach of the throat-cut takedown: the hero leaps from up to this far onto the monster's head. */
   attackRange: 1.3,
-  attackCooldown: 0.35,
+  /** Seconds the hero is busy with a takedown (leap on, cut, hop back off) and takes no input. */
+  takedownTime: 1.15,
   interactRange: 1.05,
   shiftCooldown: 0.25,
   monsterTurnSpeed: 5,
@@ -44,7 +46,7 @@ export type SimEvent =
   | { type: 'shift'; dim: DimIndex }
   | { type: 'pickup'; what: 'core' | 'reward'; cell: Cell }
   | { type: 'lever'; cell: Cell; on: boolean }
-  | { type: 'swing' }
+  /** The hero leaps onto this monster's head and cuts its throat; it is dead from this moment on. */
   | { type: 'kill'; monster: MonsterState }
   /** Alert filled: the monster starts hunting the player down. */
   | { type: 'spotted'; monster: MonsterState }
@@ -147,10 +149,10 @@ export class Sim {
   private readonly levers = new Map<string, boolean>();
   private channels = new Map<number, boolean>();
   private events: SimEvent[] = [];
-  private attackT = 0;
   private shiftT = 0;
   private lastCell: Cell | null = null;
-  swingT = 0;
+  /** Seconds left of a takedown in progress (the hero is locked in its animation), 0 otherwise. */
+  takedownT = 0;
   /** The monster chasing the player after spotting them; the player can only run until it catches up. */
   hunter: MonsterState | null = null;
 
@@ -206,12 +208,13 @@ export class Sim {
     );
   }
 
-  /** The nearest monster nearby that the player is currently able to attack (a soul). */
-  attackableSoul(): MonsterState | null {
+  /** The nearest monster in the player's own dimension that can be taken down: in reach and not seeing the player. */
+  attackTarget(): MonsterState | null {
+    if (this.hunter || this.takedownT > 0) return null;
     let best: MonsterState | null = null;
     let bestD = TUNING.attackRange;
     for (const m of this.monsters) {
-      if (!m.alive || m.dim === this.dim) continue;
+      if (!m.alive || m.dim !== this.dim || m.seeing) continue;
       const d = Math.hypot(m.x - this.x, m.y - this.y);
       if (d <= bestD) {
         best = m;
@@ -250,14 +253,16 @@ export class Sim {
   update(input: SimInput, dt: number): void {
     if (this.status !== 'playing') return;
     this.time += dt;
-    this.attackT = Math.max(0, this.attackT - dt);
     this.shiftT = Math.max(0, this.shiftT - dt);
-    this.swingT = Math.max(0, this.swingT - dt);
     this.sneaking = input.sneak;
 
-    this.movePlayer(input, dt);
+    if (this.takedownT > 0) {
+      // mid-takedown the hero is on the monster's head: no moving or acting, but the rest of the world goes on
+      this.takedownT = Math.max(0, this.takedownT - dt);
+      this.moving = false;
+    } else this.movePlayer(input, dt);
     // once spotted there is no way out: no shifting, levers, pickups or exit — only running
-    if (!this.hunter) {
+    if (!this.hunter && this.takedownT === 0) {
       if (input.shift) this.tryShift();
       if (input.interact) this.tryInteract();
       if (input.attack) this.tryAttack();
@@ -382,16 +387,17 @@ export class Sim {
     this.channels = next;
   }
 
+  /** Leap onto the target's head and cut its throat (nothing happens without a target). */
   private tryAttack(): void {
-    if (this.attackT > 0) return;
-    this.attackT = TUNING.attackCooldown;
-    this.swingT = 0.25;
-    this.events.push({ type: 'swing' });
-    const soul = this.attackableSoul();
-    if (soul) {
-      soul.alive = false;
-      this.events.push({ type: 'kill', monster: soul });
-    }
+    const m = this.attackTarget();
+    if (!m) return;
+    m.alive = false;
+    m.seeing = false;
+    m.detect = 0;
+    this.facing = Math.atan2(m.y - this.y, m.x - this.x);
+    this.moving = false;
+    this.takedownT = TUNING.takedownTime;
+    this.events.push({ type: 'kill', monster: m });
   }
 
   private enterCell(): void {

@@ -206,9 +206,7 @@ export class GameView {
 
   onEvents(events: SimEvent[]): void {
     for (const e of events) {
-      if (e.type === 'swing') {
-        this.hero.trigger('attack');
-      } else if (e.type === 'shift') {
+      if (e.type === 'shift') {
         this.pipeline.fx.flash = 0.85;
         this.pipeline.fx.ripple = 1;
       } else if (e.type === 'kill') {

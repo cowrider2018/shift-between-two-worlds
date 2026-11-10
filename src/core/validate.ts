@@ -122,11 +122,6 @@ export function validateLevel(level: Level): ValidationReport {
     }
   });
 
-  // --- shifting
-  let shiftPoints = 0;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (grid.isShiftPoint(x, y)) shiftPoints++;
-  if (shiftPoints === 0) warn('沒有任何兩側皆為錨點的格子，玩家無法轉移次元');
-
   // --- exit requirement
   const coreCount = cells.filter((c) => c.def.behavior === 'core').length;
   for (const e of cells.filter((c) => c.def.behavior === 'exit')) {

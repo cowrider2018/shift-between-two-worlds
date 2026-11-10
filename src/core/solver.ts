@@ -97,7 +97,9 @@ export function solve(grid: LevelGrid): SolveResult {
         const ny = y + oy;
         if (grid.inBounds(nx, ny) && !grid.solid(d, nx, ny, ch)) push(d, nx, ny, lm);
       }
-      if (grid.isShiftPoint(x, y)) push((1 - d) as DimIndex, x, y, lm);
+      // shifting is allowed anywhere; landing inside a solid cell is a dead end, so skip it
+      const od = (1 - d) as DimIndex;
+      if (!grid.solid(od, x, y, ch)) push(od, x, y, lm);
       const li = leverIndex.get(here);
       if (li !== undefined) push(d, x, y, lm ^ (1 << li));
     }

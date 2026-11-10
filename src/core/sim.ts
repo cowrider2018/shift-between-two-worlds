@@ -36,7 +36,6 @@ export const NO_INPUT: SimInput = { moveX: 0, moveY: 0, sneak: false, shift: fal
 
 export type SimEvent =
   | { type: 'shift'; dim: DimIndex }
-  | { type: 'shiftDenied' }
   | { type: 'pickup'; what: 'core' | 'reward'; cell: Cell }
   | { type: 'lever'; cell: Cell; on: boolean }
   | { type: 'swing' }
@@ -183,10 +182,6 @@ export class Sim {
     return this.grid.cell(this.dim, Math.floor(this.x), Math.floor(this.y));
   }
 
-  canShiftHere(): boolean {
-    return this.grid.isShiftPoint(Math.floor(this.x), Math.floor(this.y));
-  }
-
   viewRadius(m: MonsterState): number {
     return m.def.viewRadius * (this.sneaking ? TUNING.sneakRadiusMul : 1);
   }
@@ -277,10 +272,6 @@ export class Sim {
 
   private tryShift(): void {
     if (this.shiftT > 0) return;
-    if (!this.canShiftHere()) {
-      this.events.push({ type: 'shiftDenied' });
-      return;
-    }
     this.dim = (1 - this.dim) as DimIndex;
     this.shiftT = TUNING.shiftCooldown;
     for (const m of this.monsters) m.detect = 0;

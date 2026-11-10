@@ -22,7 +22,7 @@ WASD 移動（以鏡頭為準）・滑鼠 / ←→ 轉鏡頭・**按住 Shift �
 1. `npm run dev`，開 `/editor.html`。
 2. 上方「新增」或從下拉選單開啟既有關卡。左右（或上下）兩個面板分別是次元 A、B，完全獨立。
 3. 工具：**畫筆 B**（右鍵擦）・**選取 V**（編參數）・**怪物 M**（放置後自動切到路徑）・**路徑 P**（加巡邏點，右鍵刪最後一點）。數字鍵 1-8 切換方塊。
-4. 顯示選項：◆ 轉移點（兩側皆錨點的格子）、靈魂路徑（另一側怪物在此側的移動軌跡）、視野預覽。
+4. 顯示選項：靈魂路徑（另一側怪物在此側的移動軌跡）、視野預覽。
 5. 右側驗證即時更新：結構、頻道連結、怪物路徑、**可解性求解**（不計怪物）。點問題可跳到該格。
 6. **Ctrl+Enter 試玩**，**Ctrl+S 存檔**到 `levels/<id>.json`。遊戲按 id 排序載入所有關卡。
 7. 提交前跑 `npm run check`。
@@ -48,7 +48,7 @@ tests/        單元測試（含 level01 依設計路線、怪物開啟狀態下
 
 ### 新增一種方塊
 
-1. `src/core/blocks.ts` 加一筆（字元、名稱、顏色、參數 schema、solid/opaque、shiftAnchor、behavior）。
+1. `src/core/blocks.ts` 加一筆（字元、名稱、顏色、參數 schema、solid/opaque、behavior）。
 2. `src/render/blockModels.ts` 加同 id 的模型工廠。
 3. 需要新行為時，在 `sim.ts`（遊戲）與 `solver.ts`（可解性）處理該 behavior。
 4. `npm run check` — 測試會檢查字元唯一、每個方塊都有模型。

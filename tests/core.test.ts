@@ -82,12 +82,9 @@ describe('ray cast', () => {
 });
 
 describe('simulation on level01', () => {
-  it('denies shifting on non-anchor cells and allows it on floor', () => {
+  it('shifts on any cell, including non-floor ones', () => {
     const sim = new Sim(level01());
     walkTo(sim, 2, 5); // reward in A
-    tap(sim, 'shift');
-    expect(sim.dim).toBe(0);
-    walkTo(sim, 1, 3);
     tap(sim, 'shift');
     expect(sim.dim).toBe(1);
   });

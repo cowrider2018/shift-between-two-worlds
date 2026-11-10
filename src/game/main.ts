@@ -56,9 +56,6 @@ function handle(events: SimEvent[]): void {
       case 'shift':
         toast(`→ ${DIM_NAMES[e.dim]}`, 0.8);
         break;
-      case 'shiftDenied':
-        toast('兩側腳下都必須是空塊才能轉移', 1.2);
-        break;
       case 'pickup':
         toast(e.what === 'core' ? `取得核心 ${sim.cores}/${sim.coresTotal}` : '獎勵 +1', 1.2);
         break;
@@ -93,7 +90,7 @@ function updateHud(): void {
   $('cores').textContent = `◆ ${sim.cores}/${sim.coresTotal}`;
   $('rewards').textContent = `$ ${sim.rewards}/${sim.rewardsTotal}`;
   const hints: string[] = [];
-  hints.push(sim.canShiftHere() ? '<b>Shift</b> 可轉移' : '<span class="off">此處無法轉移</span>');
+  hints.push('<b>Shift</b> 轉移');
   if (sim.sneaking) hints.push(`<b>潛行中</b> 視野 ×${TUNING.sneakRadiusMul}`);
   if (sim.nearestLever()) hints.push('<b>E</b> 拉桿');
   if (sim.attackableSoul()) hints.push('<b>Space</b> 擊殺靈魂');

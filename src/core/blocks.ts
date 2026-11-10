@@ -33,8 +33,6 @@ export interface BlockDef {
   params: ParamSchema[];
   solid: Condition;
   opaque: Condition;
-  /** Player may shift dimensions only where BOTH dimensions hold an anchor block. */
-  shiftAnchor: boolean;
   behavior: Behavior;
   /** Count across both dimensions. */
   count?: { min?: number; max?: number };
@@ -44,41 +42,41 @@ const CHANNEL: ParamSchema = { key: 'channel', label: '頻道', type: 'int', def
 
 export const BLOCKS: readonly BlockDef[] = [
   {
-    id: 'floor', char: '.', label: '空塊', description: '可走、可轉移的錨點。',
-    color: '#c9b99a', params: [], solid: 'never', opaque: 'never', shiftAnchor: true, behavior: 'none',
+    id: 'floor', char: '.', label: '空塊', description: '可走的地面。',
+    color: '#c9b99a', params: [], solid: 'never', opaque: 'never', behavior: 'none',
   },
   {
     id: 'wall', char: '#', label: '牆', description: '擋路也擋視線。',
-    color: '#4a4048', params: [], solid: 'always', opaque: 'always', shiftAnchor: false, behavior: 'none',
+    color: '#4a4048', params: [], solid: 'always', opaque: 'always', behavior: 'none',
   },
   {
-    id: 'spawn', char: 'S', label: '出生點', description: '玩家起點（全關恰一個），也是錨點。',
-    color: '#5fd16b', params: [], solid: 'never', opaque: 'never', shiftAnchor: true, behavior: 'spawn',
+    id: 'spawn', char: 'S', label: '出生點', description: '玩家起點（全關恰一個）。',
+    color: '#5fd16b', params: [], solid: 'never', opaque: 'never', behavior: 'spawn',
     count: { min: 1, max: 1 },
   },
   {
     id: 'reward', char: '$', label: '獎勵塊', description: '可選收集物，加分。',
-    color: '#f2c94c', params: [], solid: 'never', opaque: 'never', shiftAnchor: false, behavior: 'reward',
+    color: '#f2c94c', params: [], solid: 'never', opaque: 'never', behavior: 'reward',
   },
   {
     id: 'lever', char: 'L', label: '拉桿', description: '機關塊：切換頻道訊號（跨次元有效）。',
-    color: '#e07b39', params: [CHANNEL], solid: 'never', opaque: 'never', shiftAnchor: false, behavior: 'lever',
+    color: '#e07b39', params: [CHANNEL], solid: 'never', opaque: 'never', behavior: 'lever',
   },
   {
     id: 'door', char: 'D', label: '門', description: '頻道訊號開啟時打開（inverted 則相反）。',
     color: '#8a5a3c',
     params: [CHANNEL, { key: 'inverted', label: '反相', type: 'bool', default: false }],
-    solid: 'whenClosed', opaque: 'whenClosed', shiftAnchor: false, behavior: 'door',
+    solid: 'whenClosed', opaque: 'whenClosed', behavior: 'door',
   },
   {
     id: 'core', char: 'C', label: '核心', description: '集齊才能開啟出口。',
-    color: '#58d6e8', params: [], solid: 'never', opaque: 'never', shiftAnchor: false, behavior: 'core',
+    color: '#58d6e8', params: [], solid: 'never', opaque: 'never', behavior: 'core',
   },
   {
     id: 'exit', char: 'E', label: '出口', description: '集齊核心後通關。',
     color: '#c46bff',
     params: [{ key: 'coresRequired', label: '需要核心數（0=全部）', type: 'int', default: 0, min: 0, max: 99 }],
-    solid: 'never', opaque: 'never', shiftAnchor: false, behavior: 'exit', count: { min: 1 },
+    solid: 'never', opaque: 'never', behavior: 'exit', count: { min: 1 },
   },
 ];
 

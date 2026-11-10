@@ -56,11 +56,6 @@ export class LevelGrid {
     const c = this.cell(dim, x, y);
     return evalCondition(c.def.opaque, c.def, c.props, channelOn);
   }
-
-  /** Shift rule (DESIGN §3.2): both dimensions must hold an anchor block at this cell. */
-  isShiftPoint(x: number, y: number): boolean {
-    return this.cell(0, x, y).def.shiftAnchor && this.cell(1, x, y).def.shiftAnchor;
-  }
 }
 
 /**

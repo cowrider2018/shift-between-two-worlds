@@ -43,7 +43,7 @@ let hover: { dim: DimIndex; x: number; y: number } | null = null;
 let stroke: { erase: boolean } | null = null;
 let serverLevels: { id: string; text: string }[] | null = null;
 let loadedFrom: string | null = null;
-const overlays: Overlays = { anchors: true, souls: true, cones: true, grid: true };
+const overlays: Overlays = { souls: true, cones: true, grid: true };
 
 const panes = [new Pane(0, $('panes')), new Pane(1, $('panes'))] as const;
 
@@ -214,7 +214,7 @@ function renderToolbar(): void {
   );
   $('overlays').replaceChildren(
     ...(Object.keys(overlays) as (keyof Overlays)[]).map((k) => {
-      const labels: Record<keyof Overlays, string> = { anchors: '轉移點 ◆', souls: '靈魂路徑', cones: '視野預覽', grid: '格線' };
+      const labels: Record<keyof Overlays, string> = { souls: '靈魂路徑', cones: '視野預覽', grid: '格線' };
       const cb = h('input', { type: 'checkbox', checked: overlays[k] });
       cb.onchange = () => {
         overlays[k] = cb.checked;
@@ -366,7 +366,7 @@ function drawPanes(): void {
   for (const p of panes) p.draw({ grid, selection, hover, overlays, issues: report.issues });
   const cell = hover && grid.cell(hover.dim, hover.x, hover.y);
   $('status').textContent = cell
-    ? `${DIM_IDS[cell.dim]} (${cell.x}, ${cell.y})　${cell.def.label}${grid.isShiftPoint(cell.x, cell.y) ? '　◆可轉移' : ''}`
+    ? `${DIM_IDS[cell.dim]} (${cell.x}, ${cell.y})　${cell.def.label}`
     : '';
 }
 

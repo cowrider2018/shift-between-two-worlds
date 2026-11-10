@@ -8,7 +8,6 @@ import { channelColor } from '../render/palette';
 export type Selection = { kind: 'cell'; dim: DimIndex; x: number; y: number } | { kind: 'monster'; dim: DimIndex; id: string } | null;
 
 export interface Overlays {
-  anchors: boolean;
   souls: boolean;
   cones: boolean;
   grid: boolean;
@@ -95,15 +94,6 @@ export class Pane {
           ctx.strokeRect(px + 0.5, py + 0.5, c - 1, c - 1);
           ctx.setLineDash([]);
         }
-      }
-      if (s.overlays.anchors && g.isShiftPoint(cell.x, cell.y)) {
-        ctx.fillStyle = '#2fb7c9';
-        ctx.beginPath();
-        ctx.moveTo(px + c * 0.12, py + c * 0.88);
-        ctx.lineTo(px + c * 0.24, py + c * 0.76);
-        ctx.lineTo(px + c * 0.36, py + c * 0.88);
-        ctx.lineTo(px + c * 0.24, py + c);
-        ctx.fill();
       }
       if (s.overlays.grid) {
         ctx.strokeStyle = '#00000022';

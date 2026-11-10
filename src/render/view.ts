@@ -5,6 +5,7 @@ import {
   BoxGeometry, BufferAttribute, BufferGeometry, Color, DirectionalLight, Fog, Group, HemisphereLight, Mesh, MeshBasicMaterial,
   Scene, Vector3,
 } from 'three';
+import { angleDiff } from '../core/grid';
 import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
@@ -94,12 +95,8 @@ interface MonsterView {
  *  high-refresh screens, and a per-frame check would flicker walk/idle and restart the walk every frame. */
 const WALK_HOLD = 0.12;
 
-/** Caught sequence: the catcher strides up to the hero and bonks them with its lantern. */
+/** Caught sequence: the hunter has run the hero down (sim) and bonks them with its lantern. */
 const CATCH = {
-  /** Tiles per second while closing in (faster than its patrol pace: it is charging). */
-  speed: 3.5,
-  /** Centre-to-centre distance at which it stops and swings. */
-  reach: 0.75,
   /** Seconds into the troll's `attack` clip at which the lantern lands (frame 10 at 24 fps). */
   impact: 9 / 24,
   /** Seconds from the swing starting until the sequence counts as finished. */
@@ -111,9 +108,7 @@ const CATCH = {
 
 interface CatchSequence {
   mv: MonsterView;
-  x: number;
-  y: number;
-  /** Seconds since the swing started; negative while still closing in. */
+  /** Seconds since the swing started. */
   swingT: number;
   hit: boolean;
   /** Current hero lean (radians). */
@@ -220,7 +215,15 @@ export class GameView {
         this.pipeline.fx.flash = Math.max(this.pipeline.fx.flash, 0.3);
       } else if (e.type === 'caught') {
         const mv = this.monsters.find((v) => v.state === e.monster);
-        if (mv) this.catching = { mv, x: e.monster.x, y: e.monster.y, swingT: -1, hit: false, lean: 0 };
+        if (mv) {
+          this.catching = { mv, swingT: 0, hit: false, lean: 0 };
+          mv.body.trigger('attack');
+          // a hunter catches up from behind, i.e. between the camera and the hero: swing round to watch side-on
+          const line = Math.atan2(this.sim.y - e.monster.y, this.sim.x - e.monster.x);
+          const sides = [line + Math.PI / 2, line - Math.PI / 2];
+          const yaw = this.follow.yaw;
+          this.follow.swingTo(Math.abs(angleDiff(sides[0], yaw)) <= Math.abs(angleDiff(sides[1], yaw)) ? sides[0] : sides[1]);
+        }
       }
     }
   }
@@ -256,25 +259,14 @@ export class GameView {
     return !!this.catching && this.catching.swingT >= CATCH.duration;
   }
 
-  /** Walk the catcher up to the hero, swing the lantern, and knock the hero back when it lands. */
+  /** Play out the lantern swing and knock the hero back when it lands. */
   private updateCatch(c: CatchSequence, dt: number): void {
     const sim = this.sim;
-    const dx = sim.x - c.x;
-    const dy = sim.y - c.y;
+    const m = c.mv.state;
+    const dx = sim.x - m.x;
+    const dy = sim.y - m.y;
     const d = Math.hypot(dx, dy);
-    if (c.swingT < 0) {
-      const stepLen = Math.min(CATCH.speed * dt, Math.max(0, d - CATCH.reach));
-      if (d > 1e-6) {
-        c.x += (dx / d) * stepLen;
-        c.y += (dy / d) * stepLen;
-      }
-      if (d - stepLen <= CATCH.reach + 1e-3) {
-        c.swingT = 0;
-        c.mv.body.trigger('attack');
-      }
-    } else {
-      c.swingT += dt;
-    }
+    c.swingT += dt;
     if (!c.hit && c.swingT >= CATCH.impact) {
       c.hit = true;
       c.lean = CATCH.lean;
@@ -310,18 +302,17 @@ export class GameView {
     mv.lastY = m.y;
     const home = m.dim === sim.dim;
     const pace = m.def.speed / 1.4;
-    const c = this.catching?.mv === mv ? this.catching : null;
+    const caught = this.catching?.mv === mv;
     mv.body.root.visible = m.alive && home;
-    if (c) {
-      // the catcher leaves its patrol: charge the hero, then swing (attack is a one-shot, so play() won't cut it)
-      mv.body.root.position.set(c.x, 0, c.y);
-      mv.body.root.rotation.y = -Math.atan2(sim.y - c.y, sim.x - c.x);
-      if (c.swingT < 0) mv.body.play('walk', 0.1, CATCH.speed / 1.4);
+    mv.body.root.position.set(m.x, 0, m.y);
+    if (caught) {
+      // squared up to the hero for the swing (attack is a one-shot, so nothing else cuts it off)
+      mv.body.root.rotation.y = -Math.atan2(sim.y - m.y, sim.x - m.x);
     } else {
-      const anim = m.detect > 0.3 ? 'alert' : moved ? 'walk' : 'idle';
-      mv.body.root.position.set(m.x, 0, m.y);
+      // a hunter runs flat out after the hero
+      const anim = m.hunting ? 'walk' : m.detect > 0.3 ? 'alert' : moved ? 'walk' : 'idle';
       mv.body.root.rotation.y = -m.angle;
-      mv.body.play(anim, 0.2, anim === 'walk' ? pace : 1);
+      mv.body.play(anim, 0.2, m.hunting ? TUNING.huntSpeed / 1.4 : anim === 'walk' ? pace : 1);
     }
     mv.body.update(dt);
     mv.alert.visible = m.detect > 0.05;
@@ -341,7 +332,6 @@ export class GameView {
       mv.soul.update(dt);
     }
     mv.cone.update(sim, m);
-    if (c) mv.cone.mesh.visible = false; // its light would stay behind on the patrol spot
   }
 
   private applyTheme(dim: DimIndex): void {

@@ -71,6 +71,9 @@ function handle(events: SimEvent[]): void {
       case 'exitLocked':
         toast(`出口需要 ${e.need} 顆核心（目前 ${e.have}）`, 1.6);
         break;
+      case 'spotted':
+        toast('被發現了！快逃！', 1.6);
+        break;
       case 'caught':
         caughtT = 0; // the card waits until the monster has bonked the hero (view.catchFinished)
         break;
@@ -120,7 +123,7 @@ function loop(now: number): void {
   }
   if (caughtT === 0 && view.catchFinished()) {
     caughtT = CAUGHT_HOLD;
-    overlay('被發現了！', 'R 立即重來', 'caught');
+    overlay('被抓住了！', 'R 立即重來', 'caught');
   } else if (caughtT > 0) {
     caughtT -= dt;
     if (caughtT <= 0) start(levelIndex);

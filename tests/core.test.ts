@@ -133,9 +133,49 @@ describe('simulation on level01', () => {
     const sneaking = new Sim(l);
     for (let i = 0; i < 120; i++) sneaking.update({ ...NO_INPUT, sneak: true }, 1 / 60);
     expect(sneaking.status).toBe('playing');
+    expect(sneaking.hunter).toBeNull();
     const open = new Sim(l);
     for (let i = 0; i < 120; i++) open.update(NO_INPUT, 1 / 60);
     expect(open.status).toBe('caught');
+  });
+
+  it('once spotted, the player can still run but cannot shift, and the faster monster catches up', () => {
+    const l: Level = createEmptyLevel('t', 24, 5);
+    setCell(l, 0, 22, 3, 'E');
+    l.dimensions[0].monsters.push({ id: 'm', path: [[4, 2]], mode: 'pingpong', speed: 1, pause: 0, viewRadius: 4, viewAngle: 90, facing: 0 });
+    setCell(l, 0, 1, 1, '.');
+    setCell(l, 0, 7, 2, 'S');
+    const sim = new Sim(l);
+    for (let i = 0; i < 30 && !sim.hunter; i++) sim.update(NO_INPUT, 1 / 60);
+    expect(sim.hunter?.def.id).toBe('m');
+    expect(sim.status).toBe('playing');
+    const x0 = sim.x;
+    sim.update({ ...NO_INPUT, moveX: 1 }, 1 / 60);
+    expect(sim.x).toBeGreaterThan(x0); // still in control
+    sim.update({ ...NO_INPUT, moveX: 1, shift: true }, 1 / 60);
+    expect(sim.dim).toBe(0); // no escaping into the other dimension
+    // flee east along the corridor; the hunter runs faster and gets there first
+    for (let i = 0; i < 600 && sim.status === 'playing'; i++) sim.update({ ...NO_INPUT, moveX: 1 }, 1 / 60);
+    expect(sim.status).toBe('caught');
+    expect(sim.x).toBeLessThan(20); // caught in the open, well before the dead end
+  });
+
+  it('a hunter follows the player round corners', () => {
+    const l: Level = createEmptyLevel('t', 9, 7);
+    // a wall splits the room from the top; the only way round is along the bottom row
+    for (let y = 1; y <= 4; y++) setCell(l, 0, 4, y, '#');
+    setCell(l, 0, 1, 1, '.');
+    setCell(l, 0, 7, 1, 'E');
+    l.dimensions[0].monsters.push({ id: 'm', path: [[2, 2]], mode: 'pingpong', speed: 1, pause: 0, viewRadius: 5, viewAngle: 360, facing: 0 });
+    setCell(l, 0, 3, 5, 'S');
+    const sim = new Sim(l);
+    for (let i = 0; i < 30 && !sim.hunter; i++) sim.update(NO_INPUT, 1 / 60);
+    expect(sim.hunter).not.toBeNull();
+    // run round the wall end and up the far side; a hunter heading straight at the hero would pin itself on the wall
+    walkTo(sim, 7, 5);
+    walkTo(sim, 7, 1);
+    expect(sim.status).toBe('caught');
+    expect(sim.hunter!.x).toBeGreaterThan(5);
   });
 
   it('can be completed along the intended route with monsters active', () => {

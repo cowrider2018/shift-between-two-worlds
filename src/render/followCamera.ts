@@ -5,6 +5,7 @@
  * camera and the hero are cut away by a round hole (see cutaway.ts) instead of pulling the camera in.
  */
 import { PerspectiveCamera } from 'three';
+import { angleDiff } from '../core/grid';
 import type { Sim } from '../core/sim';
 
 export const CAMERA = {
@@ -35,6 +36,8 @@ export class FollowCamera {
   distance = CAMERA.distance;
   private tx = 0;
   private ty = 0;
+  /** A yaw the camera swings round to on its own (a cutscene beat), or null for player control only. */
+  private yawTarget: number | null = null;
 
   /** Unit vector (grid coords) the camera faces on the ground plane. */
   forward(): [number, number] {
@@ -56,6 +59,12 @@ export class FollowCamera {
     this.yaw = Math.atan2(h / 2 - sim.y, w / 2 - sim.x);
     this.tx = sim.x;
     this.ty = sim.y;
+    this.yawTarget = null;
+  }
+
+  /** Swing round to look along `yaw` (eased in update) until the next reset. */
+  swingTo(yaw: number): void {
+    this.yawTarget = yaw;
   }
 
   /** Zoom by notches: positive = out, negative = in. */
@@ -70,6 +79,7 @@ export class FollowCamera {
   }
 
   update(sim: Sim, dt: number): void {
+    if (this.yawTarget !== null) this.yaw += angleDiff(this.yawTarget, this.yaw) * Math.min(1, dt * 6);
     const k = Math.min(1, dt * 12);
     this.tx += (sim.x - this.tx) * k;
     this.ty += (sim.y - this.ty) * k;

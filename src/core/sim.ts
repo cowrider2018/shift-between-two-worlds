@@ -20,6 +20,12 @@ export const TUNING = {
   interactRange: 1.05,
   shiftCooldown: 0.25,
   monsterTurnSpeed: 5,
+  /** Once spotted, the monster hunts the player down at this speed (faster than the player's 3.2). */
+  huntSpeed: 4.2,
+  /** Centre-to-centre distance at which a hunting monster catches the player. */
+  catchReach: 0.75,
+  /** Collision half-size of a hunting monster sliding along walls. */
+  monsterHalfSize: 0.2,
 };
 
 export interface SimInput {
@@ -40,6 +46,9 @@ export type SimEvent =
   | { type: 'lever'; cell: Cell; on: boolean }
   | { type: 'swing' }
   | { type: 'kill'; monster: MonsterState }
+  /** Alert filled: the monster starts hunting the player down. */
+  | { type: 'spotted'; monster: MonsterState }
+  /** The hunting monster reached the player. */
   | { type: 'caught'; monster: MonsterState }
   | { type: 'exitLocked'; have: number; need: number }
   | { type: 'won' };
@@ -49,8 +58,10 @@ export class MonsterState {
   y: number;
   angle: number;
   alive = true;
-  /** 0..1, caught at 1. */
+  /** 0..1, spotted at 1. */
   detect = 0;
+  /** Left its patrol to chase the player down. */
+  hunting = false;
   seeing = false;
   private target = 1;
   private dir = 1;
@@ -108,7 +119,7 @@ export class MonsterState {
     this.target += this.dir;
   }
 
-  private turnTowards(a: number, dt: number): void {
+  turnTowards(a: number, dt: number): void {
     const d = angleDiff(a, this.angle);
     const max = TUNING.monsterTurnSpeed * dt;
     this.angle += Math.abs(d) <= max ? d : Math.sign(d) * max;
@@ -140,6 +151,8 @@ export class Sim {
   private shiftT = 0;
   private lastCell: Cell | null = null;
   swingT = 0;
+  /** The monster chasing the player after spotting them; the player can only run until it catches up. */
+  hunter: MonsterState | null = null;
 
   constructor(readonly level: Level) {
     this.grid = new LevelGrid(level);
@@ -243,12 +256,85 @@ export class Sim {
     this.sneaking = input.sneak;
 
     this.movePlayer(input, dt);
-    if (input.shift) this.tryShift();
-    if (input.interact) this.tryInteract();
-    if (input.attack) this.tryAttack();
-    this.enterCell();
-    for (const m of this.monsters) m.update(dt);
-    this.updateDetection(dt);
+    // once spotted there is no way out: no shifting, levers, pickups or exit — only running
+    if (!this.hunter) {
+      if (input.shift) this.tryShift();
+      if (input.interact) this.tryInteract();
+      if (input.attack) this.tryAttack();
+      this.enterCell();
+    }
+    for (const m of this.monsters) if (m !== this.hunter) m.update(dt);
+    if (this.hunter) this.hunt(this.hunter, dt);
+    else this.updateDetection(dt);
+  }
+
+  /** Chase the player along the shortest walkable route (straight at them once in the same or a neighbouring cell). */
+  private hunt(m: MonsterState, dt: number): void {
+    const px = Math.floor(this.x);
+    const py = Math.floor(this.y);
+    const mx = Math.floor(m.x);
+    const my = Math.floor(m.y);
+    let gx = this.x;
+    let gy = this.y;
+    if (Math.abs(px - mx) + Math.abs(py - my) > 1) {
+      const next = this.stepTowardPlayer(m.dim, mx, my, px, py);
+      if (next) {
+        gx = next[0] + 0.5;
+        gy = next[1] + 0.5;
+      }
+    }
+    const dx = gx - m.x;
+    const dy = gy - m.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 1e-6) {
+      const step = Math.min(d, TUNING.huntSpeed * dt);
+      const p = moveBox(m.x, m.y, (dx / d) * step, (dy / d) * step, TUNING.monsterHalfSize, (cx, cy) =>
+        this.grid.solid(m.dim, cx, cy, this.channelOn),
+      );
+      m.x = p.x;
+      m.y = p.y;
+      m.turnTowards(Math.atan2(dy, dx), dt * 3);
+    }
+    if (Math.hypot(this.x - m.x, this.y - m.y) <= TUNING.catchReach) {
+      this.status = 'caught';
+      this.events.push({ type: 'caught', monster: m });
+    }
+  }
+
+  /** The 4-neighbour of (mx, my) one step closer to the player's cell, by breadth-first search from the player. */
+  private stepTowardPlayer(dim: DimIndex, mx: number, my: number, px: number, py: number): [number, number] | null {
+    const { w, h } = this.grid;
+    const dist = new Int32Array(w * h).fill(-1);
+    const queue = [py * w + px];
+    dist[py * w + px] = 0;
+    const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (let qi = 0; qi < queue.length; qi++) {
+      const k = queue[qi];
+      const x = k % w;
+      const y = (k - x) / w;
+      if (x === mx && y === my) break;
+      for (const [ox, oy] of DIRS) {
+        const nx = x + ox;
+        const ny = y + oy;
+        if (!this.grid.inBounds(nx, ny) || dist[ny * w + nx] >= 0) continue;
+        if (this.grid.solid(dim, nx, ny, this.channelOn) && !(nx === mx && ny === my)) continue;
+        dist[ny * w + nx] = dist[k] + 1;
+        queue.push(ny * w + nx);
+      }
+    }
+    let best: [number, number] | null = null;
+    let bestD = Infinity;
+    for (const [ox, oy] of DIRS) {
+      const nx = mx + ox;
+      const ny = my + oy;
+      if (!this.grid.inBounds(nx, ny)) continue;
+      const d = dist[ny * w + nx];
+      if (d >= 0 && d < bestD && !this.grid.solid(dim, nx, ny, this.channelOn)) {
+        best = [nx, ny];
+        bestD = d;
+      }
+    }
+    return best;
   }
 
   private movePlayer(input: SimInput, dt: number): void {
@@ -333,10 +419,11 @@ export class Sim {
     for (const m of this.monsters) {
       m.seeing = m.alive && m.dim === this.dim && this.monsterSeesPlayer(m);
       m.detect = m.seeing ? m.detect + TUNING.detectRise * dt : Math.max(0, m.detect - TUNING.detectFall * dt);
-      if (m.detect >= 1 && this.status === 'playing') {
+      if (m.detect >= 1 && !this.hunter) {
         m.detect = 1;
-        this.status = 'caught';
-        this.events.push({ type: 'caught', monster: m });
+        m.hunting = true;
+        this.hunter = m;
+        this.events.push({ type: 'spotted', monster: m });
       }
     }
   }

@@ -106,21 +106,18 @@ describe('simulation on level01', () => {
 
   it('shifts on any cell, including non-floor ones', () => {
     const sim = new Sim(level01());
-    walkTo(sim, 2, 5);
+    expect(sim.currentCell().def.id).toBe('spawn');
     tap(sim, 'shift');
     expect(sim.dim).toBe(1);
   });
 
-  it('a lever in B opens the door in A', () => {
+  it('the lever at the bottom of the west corridor opens the door beside the spawn', () => {
     const sim = new Sim(level01());
-    const doorA = sim.grid.cell(0, 6, 3);
-    expect(sim.doorOpen(doorA)).toBe(false);
-    walkTo(sim, 1, 2);
-    tap(sim, 'shift');
-    expect(sim.dim).toBe(1);
-    walkTo(sim, 2, 2);
+    const door = sim.grid.cell(0, 2, 1);
+    expect(sim.doorOpen(door)).toBe(false);
+    walkTo(sim, 1, 7, { sneak: true }); // sneaking keeps the hero out of m1's light
     tap(sim, 'interact');
-    expect(sim.doorOpen(doorA)).toBe(true);
+    expect(sim.doorOpen(door)).toBe(true);
     expect(sim.status).toBe('playing');
   });
 
@@ -263,40 +260,29 @@ describe('simulation on level01', () => {
   it('can be completed along the intended route with monsters active', () => {
     const sim = new Sim(level01());
     const step = (extra: Partial<SimInput> = {}) => sim.update({ ...NO_INPUT, ...extra }, 1 / 60);
-    const chase = (id: string) => {
-      const m = sim.monsters.find((mm) => mm.def.id === id)!;
-      for (let i = 0; i < 1200 && Math.hypot(m.x - sim.x, m.y - sim.y) > 1.1; i++) {
-        const dx = m.x - sim.x, dy = m.y - sim.y, d = Math.hypot(dx, dy);
-        step({ moveX: dx / d, moveY: dy / d });
-      }
-      tap(sim, 'attack');
-      expect(m.alive).toBe(false);
-    };
-    const guard = sim.monsters.find((m) => m.def.id === 'guard')!;
-    const waitGuardEast = (minX: number, sneak = false) => {
-      let px = guard.x;
-      for (let i = 0; i < 2000; i++) {
-        step({ sneak });
-        if (guard.x > minX && guard.x > px) return;
-        px = guard.x;
-      }
-      throw new Error(`guard never came by: status=${sim.status} p=${sim.x.toFixed(2)},${sim.y.toFixed(2)} g=${guard.x.toFixed(2)},${guard.y.toFixed(2)} ${guard.detect}`);
-    };
+    const m2 = sim.monsters.find((m) => m.def.id === 'm2')!;
 
-    chase('keeper');                // B's keeper is in the other dimension: harmless here
-    walkTo(sim, 1, 2); tap(sim, 'shift'); expect(sim.dim).toBe(1);
-    walkTo(sim, 2, 2); tap(sim, 'interact');      // lever ch1 → A door opens
-    walkTo(sim, 1, 2); tap(sim, 'shift'); expect(sim.dim).toBe(0);
-    walkTo(sim, 5, 1);
-    waitGuardEast(10);
-    walkTo(sim, 5, 3); walkTo(sim, 7, 3);   // through the door behind the guard's back
-    tap(sim, 'shift'); expect(sim.dim).toBe(1); // shifting works anywhere: slip into B's closed-off room
-    chase('guard');                 // A's guard is in the other dimension: harmless here
-    walkTo(sim, 11, 6);             // core B
-    tap(sim, 'shift'); expect(sim.dim).toBe(0);
-    walkTo(sim, 12, 2);             // core A
-    expect(sim.cores).toBe(2);
-    walkTo(sim, 7, 3); walkTo(sim, 5, 3); walkTo(sim, 3, 4);
+    walkTo(sim, 1, 7, { sneak: true });     // past m1's light, down to the lever
+    tap(sim, 'interact');                   // lever ch1 → the door beside the spawn opens
+    walkTo(sim, 1, 1, { sneak: true });
+    // wait, sneaking, for m2 to turn at the west end of its beat and walk off east
+    let px = m2.x;
+    for (let i = 0; i < 2000; i++) {
+      step({ sneak: true });
+      if (m2.x > 4.6 && m2.x > px) break;
+      px = m2.x;
+    }
+    expect(sim.status).toBe('playing');
+    // run up behind it and cut its throat before it turns round
+    for (let i = 0; i < 600 && Math.hypot(m2.x - sim.x, m2.y - sim.y) > 1.1; i++) {
+      const dx = m2.x - sim.x, dy = m2.y - sim.y, d = Math.hypot(dx, dy);
+      step({ moveX: dx / d, moveY: dy / d });
+    }
+    tap(sim, 'attack');
+    expect(m2.alive).toBe(false);
+    expect(m2.dim).toBe(1);                 // its ghost now stands watch in B; the hero stays in A
+    for (let i = 0; i < Math.ceil(TUNING.takedownTime * 60); i++) step();
+    walkTo(sim, 7, 1); walkTo(sim, 7, 2); walkTo(sim, 7, 3); // into the cave
     expect(sim.status).toBe('won');
   });
 

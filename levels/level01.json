@@ -2,47 +2,47 @@
   "format": 1,
   "id": "level01",
   "name": "第一次轉移",
-  "size": {"w":15,"h":9},
+  "size": {"w":9,"h":9},
   "dimensions": [
     {
       "rows": [
-        "###############",
-        "#S....#.......#",
-        "#.....#.....C.#",
-        "#.....D.......#",
-        "#..E..#.......#",
-        "#.....#..L....#",
-        "#.....#.......#",
-        "#.....#.......#",
-        "###############"
+        "#########",
+        "#SD.....#",
+        "#.#####.#",
+        "#.....#E#",
+        "#.....###",
+        "#.....###",
+        "#.#######",
+        "#L#######",
+        "#########"
       ],
       "props": {
-        "6,3": {"channel":1,"inverted":false},
-        "3,4": {"coresRequired":0},
-        "9,5": {"channel":2}
+        "2,1": {"channel":1,"inverted":false},
+        "7,3": {"coresRequired":0},
+        "1,7": {"channel":1}
       },
       "monsters": [
-        {"id":"guard","path":[[8,4],[13,4]],"mode":"pingpong","speed":1.6,"pause":0.8,"viewRadius":4.5,"viewAngle":70,"facing":0}
+        {"id":"m1","path":[[5,4]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":180},
+        {"id":"m2","path":[[7,1],[4,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":0}
       ]
     },
     {
       "rows": [
-        "###############",
-        "#.....#.......#",
-        "#.L...#.......#",
-        "#.....#.......#",
-        "#.....D.......#",
-        "#.....#.......#",
-        "#.....#....C..#",
-        "#.....#.......#",
-        "###############"
+        "#########",
+        "#.......#",
+        "#.#####.#",
+        "#.....#E#",
+        "#.....###",
+        "#.....###",
+        "#.#######",
+        "#.#######",
+        "#########"
       ],
       "props": {
-        "2,2": {"channel":1},
-        "6,4": {"channel":2,"inverted":false}
+        "7,3": {"coresRequired":0}
       },
       "monsters": [
-        {"id":"keeper","path":[[3,1],[3,7]],"mode":"pingpong","speed":1.4,"pause":0.6,"viewRadius":4,"viewAngle":70,"facing":90}
+        {"id":"m3","path":[[5,4]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":180}
       ]
     }
   ]

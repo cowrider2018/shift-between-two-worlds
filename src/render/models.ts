@@ -24,7 +24,7 @@ interface Template {
 }
 
 /** Clips that play once and hold until finished instead of looping. */
-const ONE_SHOT = new Set(['attack', 'alert']);
+const ONE_SHOT = new Set(['attack', 'alert', 'takedown', 'death']);
 
 const templates = new Map<ModelName, Template>();
 

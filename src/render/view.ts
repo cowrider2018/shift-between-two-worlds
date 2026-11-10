@@ -3,7 +3,7 @@
  */
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, Color, DirectionalLight, Fog, Group, HemisphereLight, Mesh, MeshBasicMaterial,
-  Scene, Vector3,
+  type Object3D, Scene, Vector3,
 } from 'three';
 import { angleDiff } from '../core/grid';
 import type { DimIndex } from '../core/level';
@@ -88,7 +88,8 @@ interface MonsterView {
   lastY: number;
   /** Seconds since the monster last changed position. */
   stillT: number;
-  deathT: number;
+  /** The troll's chest bone: the hero perches relative to it during a takedown. */
+  chest: Object3D;
 }
 
 /** A monster counts as walking until it has stood still this long: render frames outnumber sim steps on
@@ -105,6 +106,33 @@ const CATCH = {
   lean: 0.55,
   leanRate: 14,
 };
+
+/** Takedown choreography, in seconds from the kill, matched to the hero's `takedown` clip (24 fps, art/blender/hero.py)
+ *  and the troll's `death` clip. The clips pose the bodies; this moves the hero's root along the leap. */
+const TAKEDOWN = {
+  /** Feet leave the ground (frame 5), land on the troll's crown (frame 10). */
+  jump: 4 / 24,
+  perch: 9 / 24,
+  /** The blade passes under the jaw (frame 14). */
+  cut: 13 / 24,
+  /** Push off the crown (frame 21), land back where the leap started (frame 25). */
+  leave: 20 / 24,
+  land: 24 / 24,
+  /** Extra height of each leap's arc at its middle. */
+  arc: 0.35,
+  /** Hero's feet relative to the troll's chest bone, in the troll's frame: forward, up. */
+  perchForward: 0.06,
+  perchUp: 0.36,
+};
+
+interface Takedown {
+  mv: MonsterView;
+  t: number;
+  /** Where the leap started (the hero's position in the sim, which does not move during a takedown). */
+  x: number;
+  y: number;
+  cut: boolean;
+}
 
 interface CatchSequence {
   mv: MonsterView;
@@ -137,6 +165,8 @@ export class GameView {
   private hero!: CharacterInstance;
   private sim!: Sim;
   private catching: CatchSequence | null = null;
+  private takedown: Takedown | null = null;
+  private readonly perchAt = new Vector3();
   private shownDim: DimIndex | -1 = -1;
   private t = 0;
 
@@ -183,7 +213,8 @@ export class GameView {
       alert.position.y = 1.75;
       body.root.add(alert);
       this.world.add(body.root, soul.root, cone.mesh);
-      return { state, body, soul, cone, alert, lastX: state.x, lastY: state.y, stillT: WALK_HOLD, deathT: 0 };
+      const chest = body.root.getObjectByName('chest') ?? body.root;
+      return { state, body, soul, cone, alert, lastX: state.x, lastY: state.y, stillT: WALK_HOLD, chest };
     });
     const { w, h } = sim.level.size;
     const c = new Vector3(w / 2, 0, h / 2);
@@ -194,6 +225,7 @@ export class GameView {
     this.sun.shadow.camera.updateProjectionMatrix();
     this.shownDim = -1;
     this.catching = null;
+    this.takedown = null;
     this.hero.root.rotation.set(0, 0, 0);
     this.follow.reset(sim);
     this.resize();
@@ -210,8 +242,14 @@ export class GameView {
         this.pipeline.fx.flash = 0.85;
         this.pipeline.fx.ripple = 1;
       } else if (e.type === 'kill') {
-        this.pipeline.fx.flash = Math.max(this.pipeline.fx.flash, 0.3);
+        const mv = this.monsters.find((v) => v.state === e.monster);
+        if (mv) {
+          this.takedown = { mv, t: 0, x: this.sim.x, y: this.sim.y, cut: false };
+          this.hero.trigger('takedown');
+          mv.body.trigger('death');
+        }
       } else if (e.type === 'caught') {
+        this.takedown = null; // spotted by another monster mid-takedown: the hero is back on the ground for the bonk
         const mv = this.monsters.find((v) => v.state === e.monster);
         if (mv) {
           this.catching = { mv, swingT: 0, hit: false, lean: 0 };
@@ -247,6 +285,7 @@ export class GameView {
     this.hero.update(dt);
 
     for (const mv of this.monsters) this.updateMonster(mv, dt);
+    if (this.takedown) this.updateTakedown(this.takedown, dt);
     this.follow.update(sim, dt);
     this.updateHole();
     this.pipeline.render(this.scene, this.follow.camera);
@@ -276,11 +315,60 @@ export class GameView {
     if (c.hit) c.lean += (CATCH.lean * 0.6 - c.lean) * Math.min(1, dt * CATCH.leanRate);
   }
 
+  /** Carry the hero along the leap onto the troll's crown, hold it there for the cut, and back off again. */
+  private updateTakedown(td: Takedown, dt: number): void {
+    td.t += dt;
+    const T = TAKEDOWN;
+    const m = td.mv.state;
+    if (!td.cut && td.t >= T.cut) {
+      td.cut = true;
+      this.pipeline.fx.flash = Math.max(this.pipeline.fx.flash, 0.35);
+    }
+    if (td.t >= T.land) {
+      this.takedown = null;
+      return;
+    }
+    // the perch follows the troll's chest as its death clip wrenches it about
+    const body = td.mv.body.root;
+    body.updateMatrixWorld(true);
+    const p = td.mv.chest.getWorldPosition(this.perchAt);
+    p.x += Math.cos(m.angle) * T.perchForward;
+    p.z += Math.sin(m.angle) * T.perchForward;
+    p.y += T.perchUp;
+    const ground = { x: td.x, y: 0, z: td.y };
+    const hero = this.hero.root;
+    // facing the troll on the way up, facing where it faces while on its head and on the way back off
+    const toward = Math.atan2(m.y - td.y, m.x - td.x);
+    let from = ground;
+    let to = ground;
+    let k = 0;
+    let yaw = m.angle;
+    if (td.t < T.jump) {
+      yaw = toward;
+    } else if (td.t < T.perch) {
+      to = p;
+      k = (td.t - T.jump) / (T.perch - T.jump);
+      yaw = toward + angleDiff(m.angle, toward) * k;
+    } else if (td.t < T.leave) {
+      from = to = p;
+    } else {
+      from = p;
+      k = (td.t - T.leave) / (T.land - T.leave);
+    }
+    hero.position.set(
+      from.x + (to.x - from.x) * k,
+      from.y + (to.y - from.y) * k + T.arc * 4 * k * (1 - k),
+      from.z + (to.z - from.z) * k,
+    );
+    hero.rotation.y = -yaw;
+  }
+
   /** Centre the camera hole (cutaway.ts) on the hero's body and cut everything nearer than the hero. */
   private updateHole(): void {
     const cam = this.follow.camera;
     cam.updateMatrixWorld();
-    const p = this.holeAt.set(this.sim.x, HOLE_BODY_Y, this.sim.y);
+    const h = this.hero.root.position; // follows the hero up onto a troll's head during a takedown
+    const p = this.holeAt.set(h.x, h.y + HOLE_BODY_Y, h.z);
     const depth = -p.clone().applyMatrix4(cam.matrixWorldInverse).z;
     p.project(cam);
     const { width, height } = this.pipeline;
@@ -301,9 +389,11 @@ export class GameView {
     const home = m.dim === sim.dim;
     const pace = m.def.speed / 1.4;
     const caught = this.catching?.mv === mv;
-    mv.body.root.visible = m.alive && home;
+    mv.body.root.visible = home; // the dead stay where they fell
     mv.body.root.position.set(m.x, 0, m.y);
-    if (caught) {
+    if (!m.alive) {
+      mv.body.root.rotation.y = -m.angle; // the death clip plays once and holds its last frame
+    } else if (caught) {
       // squared up to the hero for the swing (attack is a one-shot, so nothing else cuts it off)
       mv.body.root.rotation.y = -Math.atan2(sim.y - m.y, sim.x - m.x);
     } else {
@@ -316,16 +406,11 @@ export class GameView {
     mv.alert.visible = m.detect > 0.05;
     mv.alert.scale.setScalar(0.6 + m.detect * 0.8);
 
-    if (!m.alive) mv.deathT += dt;
-    const dying = !m.alive && mv.deathT < 0.5;
     const soul = mv.soul.root;
-    soul.visible = !home && (m.alive || dying);
+    soul.visible = !home && m.alive;
     if (soul.visible) {
-      const k = dying ? mv.deathT / 0.5 : 0;
-      soul.position.set(m.x, 0.15 + Math.sin(this.t * 2 + m.x) * 0.06 + k * 0.6, m.y);
+      soul.position.set(m.x, 0.15 + Math.sin(this.t * 2 + m.x) * 0.06, m.y);
       soul.rotation.y = -m.angle;
-      soul.scale.setScalar(1 + k * 0.8);
-      soul.visible = k < 1;
       mv.soul.play(moved ? 'walk' : 'idle', 0.2, moved ? pace : 1);
       mv.soul.update(dt);
     }

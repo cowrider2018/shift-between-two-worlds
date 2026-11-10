@@ -82,6 +82,19 @@ describe('ray cast', () => {
 });
 
 describe('simulation on level01', () => {
+  it('notices the player inside the one-cell circle at its feet, even behind it', () => {
+    const sim = new Sim(level01());
+    const m = sim.monsters[0];
+    sim.dim = m.dim;
+    const behind = m.angle + Math.PI;
+    sim.x = m.x + Math.cos(behind) * 0.45;
+    sim.y = m.y + Math.sin(behind) * 0.45;
+    expect(sim.monsterSeesPlayer(m)).toBe(true);
+    sim.x = m.x + Math.cos(behind) * 0.55;
+    sim.y = m.y + Math.sin(behind) * 0.55;
+    expect(sim.monsterSeesPlayer(m)).toBe(false);
+  });
+
   it('shifts on any cell, including non-floor ones', () => {
     const sim = new Sim(level01());
     walkTo(sim, 2, 5); // reward in A

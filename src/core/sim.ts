@@ -13,8 +13,8 @@ export const TUNING = {
   playerHalfSize: 0.26,
   detectRise: 2,
   detectFall: 1,
-  /** Within this distance a monster notices the player regardless of the cone. */
-  touchRadius: 0.45,
+  /** A circle one cell across at the monster's feet: inside it the player is noticed regardless of the cone or walls. */
+  touchRadius: 0.5,
   attackRange: 1.3,
   attackCooldown: 0.35,
   interactRange: 1.05,

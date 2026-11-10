@@ -6,7 +6,7 @@ import {
   Scene, Vector3,
 } from 'three';
 import type { DimIndex } from '../core/level';
-import type { MonsterState, Sim, SimEvent } from '../core/sim';
+import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE } from './cutaway';
 import { CharacterInstance } from './models';
@@ -16,6 +16,10 @@ import { THEMES } from './palette';
 import { PixelPipeline } from './pixelPipeline';
 
 const CONE_SEGMENTS = 32;
+/** Segments of the touch circle drawn around the back of the monster, outside the cone. */
+const RING_SEGMENTS = 24;
+/** Outline points: the cone arc, then the circle's interior points back round to where the cone started. */
+const OUTLINE = CONE_SEGMENTS + RING_SEGMENTS;
 
 class VisionCone {
   readonly mesh: Mesh;
@@ -24,11 +28,12 @@ class VisionCone {
   private readonly geo = new BufferGeometry();
 
   constructor() {
-    const n = CONE_SEGMENTS + 2;
+    const n = OUTLINE + 1;
     this.pos = new Float32Array(n * 3);
     this.col = new Float32Array(n * 4);
     const idx: number[] = [];
-    for (let i = 1; i <= CONE_SEGMENTS; i++) idx.push(0, i + 1, i);
+    // a closed fan: the cone's lit wedge plus the touch circle around the monster's feet
+    for (let i = 0; i < OUTLINE; i++) idx.push(0, 1 + ((i + 1) % OUTLINE), 1 + i);
     this.geo.setIndex(idx);
     this.geo.setAttribute('position', new BufferAttribute(this.pos, 3));
     this.geo.setAttribute('color', new BufferAttribute(this.col, 4));
@@ -53,14 +58,18 @@ class VisionCone {
     const y = 0.025;
     this.pos.set([m.x, y, m.y], 0);
     this.col.set([cr, cg, cb, 0.6], 0);
-    for (let i = 0; i <= CONE_SEGMENTS; i++) {
-      const a = m.angle - half + (2 * half * i) / CONE_SEGMENTS;
-      const d = sim.sightDistance(m, a, r);
+    const touch = TUNING.touchRadius;
+    for (let i = 0; i < OUTLINE; i++) {
+      const inCone = i <= CONE_SEGMENTS;
+      const a = inCone
+        ? m.angle - half + (2 * half * i) / CONE_SEGMENTS
+        : m.angle + half + ((2 * Math.PI - 2 * half) * (i - CONE_SEGMENTS)) / RING_SEGMENTS;
+      const d = inCone ? Math.max(touch, sim.sightDistance(m, a, r)) : touch;
       const k = (i + 1) * 3;
       this.pos[k] = m.x + Math.cos(a) * d;
       this.pos[k + 1] = y;
       this.pos[k + 2] = m.y + Math.sin(a) * d;
-      this.col.set([cr, cg, cb, 0.12 + 0.18 * (1 - d / r)], (i + 1) * 4);
+      this.col.set([cr, cg, cb, 0.12 + 0.18 * Math.max(0, 1 - d / r)], (i + 1) * 4);
     }
     this.geo.attributes.position.needsUpdate = true;
     this.geo.attributes.color.needsUpdate = true;

@@ -21,7 +21,10 @@ input.bindPointerLock($<HTMLCanvasElement>('game'));
 let sim: Sim;
 let acc = 0;
 let last = performance.now();
-let caughtT = 0;
+/** Seconds the "caught" card stays up, after the monster's bonk has played out, before restarting. */
+const CAUGHT_HOLD = 0.9;
+/** -1: not caught; 0: caught, bonk still playing; >0: card up, counting down to restart. */
+let caughtT = -1;
 let toastT = 0;
 
 function start(index: number): void {
@@ -30,7 +33,7 @@ function start(index: number): void {
   if (!level) return;
   sim = new Sim(level);
   view.setSim(sim);
-  caughtT = 0;
+  caughtT = -1;
   $('level-name').textContent = `${playtest ? '試玩：' : ''}${level.name}`;
   $('overlay').className = 'hidden';
   toast(`輕點 Shift 轉移次元・按住 Shift 潛行`, 3);
@@ -69,8 +72,7 @@ function handle(events: SimEvent[]): void {
         toast(`出口需要 ${e.need} 顆核心（目前 ${e.have}）`, 1.6);
         break;
       case 'caught':
-        caughtT = 1.4;
-        overlay('被發現了！', 'R 立即重來', 'caught');
+        caughtT = 0; // the card waits until the monster has bonked the hero (view.catchFinished)
         break;
       case 'won': {
         const hasNext = levelIndex + 1 < levels.length;
@@ -116,7 +118,10 @@ function loop(now: number): void {
     sim.update({ ...raw, moveX, moveY }, STEP);
     handle(sim.drainEvents());
   }
-  if (caughtT > 0) {
+  if (caughtT === 0 && view.catchFinished()) {
+    caughtT = CAUGHT_HOLD;
+    overlay('被發現了！', 'R 立即重來', 'caught');
+  } else if (caughtT > 0) {
     caughtT -= dt;
     if (caughtT <= 0) start(levelIndex);
   }

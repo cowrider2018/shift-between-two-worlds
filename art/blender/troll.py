@@ -214,7 +214,7 @@ def build_rig():
 
 
 def build_actions(rig):
-    """idle (2 s), walk (1 s heavy stomping waddle), alert (head up, ears perk)."""
+    """idle (2 s), walk (1 s heavy stomping waddle), alert (head up, ears perk), attack (overhead lantern bonk)."""
     tau = 2 * math.pi
 
     def leg(side, p):
@@ -276,6 +276,33 @@ def build_actions(rig):
     }
     lib.action(rig, "alert", {1: alert, 13: alert})
 
+    # attack: raise the lantern overhead with the elbow cocked behind the head, then slam it down in front
+    # (impact on frame 10, 0.375 s in), let the torso follow through and settle. The free arm braces.
+    def legs(lead, back):
+        return {"thigh.L": [(Y, -lead)], "shin.L": [(Y, lead * 0.8)], "foot.L": [(Y, lead * 0.2)],
+                "thigh.R": [(Y, back)], "shin.R": [(Y, back * 0.5)], "foot.R": [(Y, -back * 0.3)]}
+
+    rest = idle_pose(0)
+    wind = {**legs(10, 6),
+            "hips": [(Z, 8)], "spine": [(Y, -6), (Z, 6)], "chest": [(Y, -12), (Z, 10)],
+            "neck": [(Y, -6)], "head": [(Y, -12)],
+            "upper_arm.R": [(Y, -165), (X, -12)], "forearm.R": [(Y, -60)], "hand.R": [(Y, -20)],
+            "upper_arm.L": [(Y, -30), (X, 14)], "forearm.L": [(Y, -30)],
+            "ear.L": [(X, -12)], "ear.R": [(X, 12)], "_lift": 0.02}
+    strike = {**legs(30, 14),
+              "hips": [(Z, -8), (Y, 6)], "spine": [(Y, 12), (Z, -6)], "chest": [(Y, 22), (Z, -10)],
+              "neck": [(Y, 4)], "head": [(Y, 8)],
+              "upper_arm.R": [(Y, -65), (X, 4)], "forearm.R": [(Y, -10)], "hand.R": [(Y, -30)],
+              "upper_arm.L": [(Y, 25), (X, 20)], "forearm.L": [(Y, -20)],
+              "ear.L": [(X, 16)], "ear.R": [(X, -16)], "_lift": -0.04}
+    follow = {**legs(30, 14),
+              "hips": [(Z, -10), (Y, 8)], "spine": [(Y, 14), (Z, -8)], "chest": [(Y, 26), (Z, -12)],
+              "neck": [(Y, 6)], "head": [(Y, 4)],
+              "upper_arm.R": [(Y, -40), (X, 6)], "forearm.R": [(Y, -6)], "hand.R": [(Y, -10)],
+              "upper_arm.L": [(Y, 28), (X, 22)], "forearm.L": [(Y, -22)],
+              "ear.L": [(X, 8)], "ear.R": [(X, -8)], "_lift": -0.045}
+    lib.action(rig, "attack", {1: rest, 7: wind, 10: strike, 13: follow, 22: rest})
+
 
 def build(out_glb, out_preview):
     lib.reset()
@@ -290,5 +317,6 @@ def build(out_glb, out_preview):
     lib.export_glb(out_glb, objs)
     lib.previews(out_preview, HEIGHT, head=hp((0.22, 0, 1.12)))
     lib.pose_sheet(rig, out_preview.replace(".png", "_poses.png"), HEIGHT,
-                   [("idle", 1), ("alert", 1)] + [("walk", f) for f in range(1, 24, 3)], cols=5)
+                   [("idle", 1), ("alert", 1)] + [("walk", f) for f in range(1, 24, 3)]
+                   + [("attack", f) for f in (7, 10, 13)], cols=5)
     print(f"troll: {lib.tri_count(body)} body tris, {sum(lib.tri_count(o) for o, _ in props.values())} prop tris")

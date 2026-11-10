@@ -23,7 +23,7 @@ function readGlb(path: string): Gltf {
 
 const SPEC: Record<string, { animations: string[]; bones: string[]; maxTris: number }> = {
   troll: {
-    animations: ['idle', 'walk', 'alert'],
+    animations: ['idle', 'walk', 'alert', 'attack'],
     bones: ['root', 'hips', 'head', 'ear.L', 'ear.R', 'hand.L', 'hand.R', 'foot.L', 'foot.R'],
     maxTris: 8000,
   },

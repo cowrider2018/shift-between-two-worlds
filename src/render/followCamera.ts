@@ -1,6 +1,6 @@
 /**
- * DESIGN §4.1 — third-person perspective camera, ~30° above the ground, orbiting behind the hero.
- * Yaw is player-controlled (mouse / ← →); the boom length is player-zoomed (wheel / + −) between
+ * DESIGN §4.1 — third-person perspective camera, ~30° above the ground by default, orbiting behind the hero.
+ * Yaw is player-controlled (mouse X / ← →), pitch too (mouse Y, clamped to CAMERA.min/maxElevationDeg); the boom length is player-zoomed (wheel / + −) between
  * CAMERA.minDistance (near the face) and CAMERA.distance (the default, farthest view). Walls between the
  * camera and the hero are cut away by a round hole (see cutaway.ts) instead of pulling the camera in.
  */
@@ -9,7 +9,11 @@ import { angleDiff } from '../core/grid';
 import type { Sim } from '../core/sim';
 
 export const CAMERA = {
+  /** Default pitch above the ground. */
   elevationDeg: 30,
+  /** Pitch limits: low enough to look along the floor, high enough for a near top-down view. */
+  minElevationDeg: 8,
+  maxElevationDeg: 80,
   /** Farthest (and default) boom length. */
   distance: 5.2,
   /** Closest boom length: the hero's face fills much of the screen. */
@@ -31,6 +35,8 @@ export class FollowCamera {
   readonly camera = new PerspectiveCamera(CAMERA.fov, 1, 0.1, 60);
   /** Grid angle the camera looks along (0 = +x, π/2 = +y). */
   yaw = -Math.PI / 2;
+  /** Pitch above the ground, radians. */
+  private elevation = (CAMERA.elevationDeg * Math.PI) / 180;
   /** Boom length the player asked for, and the smoothed length actually used. */
   private zoomTarget = CAMERA.distance;
   distance = CAMERA.distance;
@@ -67,6 +73,13 @@ export class FollowCamera {
     this.yawTarget = yaw;
   }
 
+  /** Tilt by radians: positive = camera rises (looks more downward). */
+  tilt(rad: number): void {
+    const lo = (CAMERA.minElevationDeg * Math.PI) / 180;
+    const hi = (CAMERA.maxElevationDeg * Math.PI) / 180;
+    this.elevation = Math.min(hi, Math.max(lo, this.elevation + rad));
+  }
+
   /** Zoom by notches: positive = out, negative = in. */
   zoom(notches: number): void {
     const d = this.zoomTarget * Math.pow(CAMERA.zoomStep, notches);
@@ -83,7 +96,7 @@ export class FollowCamera {
     const k = Math.min(1, dt * 12);
     this.tx += (sim.x - this.tx) * k;
     this.ty += (sim.y - this.ty) * k;
-    const elev = (CAMERA.elevationDeg * Math.PI) / 180;
+    const elev = this.elevation;
     const [fx, fy] = this.forward();
     this.distance += (this.zoomTarget - this.distance) * Math.min(1, dt * 10);
     const d = this.distance;

@@ -112,6 +112,7 @@ function loop(now: number): void {
   last = now;
   acc += dt;
   view.follow.yaw += input.takeTurn(dt, CAMERA.mouseSensitivity, CAMERA.keyTurnSpeed);
+  view.follow.tilt(input.takeTilt(CAMERA.mouseSensitivity));
   view.follow.zoom(input.takeZoom());
   while (acc >= STEP) {
     acc -= STEP;

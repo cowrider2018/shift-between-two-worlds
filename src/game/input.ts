@@ -1,6 +1,6 @@
 /**
  * Keyboard + mouse → abstract SimInput (camera-relative; main converts to grid space).
- * Mouse movement while pointer-locked and ← / → turn the camera; the wheel and + / − zoom it. Shift is dual-purpose (DESIGN §2):
+ * Mouse movement while pointer-locked turns (X) and tilts (Y) the camera, ← / → also turn it; the wheel and + / − zoom it. Shift is dual-purpose (DESIGN §2):
  * held = sneak, tapped (< TAP_MS between press and release) = dimension shift.
  */
 import type { SimInput } from '../core/sim';
@@ -13,6 +13,7 @@ export class Input {
   private pending = { shift: false, interact: false, attack: false };
   readonly onKey = new Map<string, () => void>();
   private mouseDX = 0;
+  private mouseDY = 0;
   private zoomNotches = 0;
 
   constructor(target: Window = window) {
@@ -37,7 +38,9 @@ export class Input {
     });
     target.addEventListener('blur', () => this.down.clear());
     target.addEventListener('mousemove', (e) => {
-      if (document.pointerLockElement) this.mouseDX += e.movementX;
+      if (!document.pointerLockElement) return;
+      this.mouseDX += e.movementX;
+      this.mouseDY += e.movementY;
     });
     target.addEventListener(
       'wheel',
@@ -68,6 +71,13 @@ export class Input {
     const turn = this.mouseDX * mouseSensitivity + keys * keySpeed * dt;
     this.mouseDX = 0;
     return turn;
+  }
+
+  /** Camera pitch change this frame, in radians (positive = camera rises; mouse down). */
+  takeTilt(mouseSensitivity: number): number {
+    const tilt = this.mouseDY * mouseSensitivity;
+    this.mouseDY = 0;
+    return tilt;
   }
 
   /** Zoom notches since the last call (positive = zoom out). */

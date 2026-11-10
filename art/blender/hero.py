@@ -324,15 +324,15 @@ def _smoothstep(a, b, x):
     return t * t * (3 - 2 * t)
 
 
-# Side profile: the crown sweeps back in one big arc over the head to a peak behind the skull, a little below the
-# head centre. From the peak the underside runs forward almost level, then turns down in one concave curve onto the
-# upper back (see HOOD_DRAPE_SPAN).
-HOOD_SPINE = [h(0.16, 0, 0.0), h(0.01, 0, 0.06), h(-0.15, 0, 0.055), h(-0.26, 0, -0.01), h(-0.33, 0, -0.06)]
+# Side profile: the crown sweeps back in one big arc over the head and tapers to a slim peak behind the skull, about
+# level with the head centre, its end lifting slightly rather than hanging down. That leaves room under the peak for
+# the underside to turn down in one concave curve onto the upper back (see HOOD_DRAPE_SPAN).
+HOOD_SPINE = [h(0.16, 0, 0.0), h(0.01, 0, 0.06), h(-0.15, 0, 0.06), h(-0.25, 0, 0.025), h(-0.34, 0, 0.045)]
 #            (half-width across, half-height) at each spine control point, interpolated along the spine
-HOOD_RADII = [(0.175, 0.2), (0.21, 0.225), (0.185, 0.19), (0.1, 0.1), (0.0, 0.0)]
+HOOD_RADII = [(0.175, 0.2), (0.21, 0.225), (0.185, 0.19), (0.065, 0.06), (0.0, 0.0)]
 # Along the spine (0 = face opening, 1 = peak): the drape ramps in behind the opening, holds over the head, and fades
-# out toward the peak, so the underside rises from the collar to the level run under the peak.
-HOOD_DRAPE_SPAN = (0.05, 0.35, 0.55, 0.9)
+# out before the peak, so the peak stays slim and the underside rises from the collar up to it.
+HOOD_DRAPE_SPAN = (0.05, 0.35, 0.45, 0.75)
 # The draped cloth keeps at least this far off the head centre, so it slides down the back of the skull.
 HOOD_SKULL_CLEAR = HEAD_R + 0.025
 HOOD_SIDES = 12

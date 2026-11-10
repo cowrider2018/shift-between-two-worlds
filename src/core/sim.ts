@@ -17,8 +17,9 @@ export const TUNING = {
   touchRadius: 0.5,
   /** Reach of the throat-cut takedown: the hero leaps from up to this far onto the monster's head. */
   attackRange: 1.3,
-  /** Seconds the hero is busy with a takedown (leap on, cut, hop back off) and takes no input. */
-  takedownTime: 1.15,
+  /** Seconds the hero is busy with a takedown (leap on, ride out the troll's thrashing, cut, hop back off) and takes
+   *  no input; matches the hero's `takedown` clip. */
+  takedownTime: 2.3,
   interactRange: 1.05,
   shiftCooldown: 0.25,
   monsterTurnSpeed: 5,

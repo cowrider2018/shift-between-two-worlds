@@ -88,8 +88,9 @@ interface MonsterView {
   lastY: number;
   /** Seconds since the monster last changed position. */
   stillT: number;
-  /** The troll's chest bone: the hero perches relative to it during a takedown. */
-  chest: Object3D;
+  /** The troll's head bone and the crown point in its frame: the hero perches there during a takedown. */
+  head: Object3D;
+  crown: Vector3;
 }
 
 /** A monster counts as walking until it has stood still this long: render frames outnumber sim steps on
@@ -113,16 +114,16 @@ const TAKEDOWN = {
   /** Feet leave the ground (frame 5), land on the troll's crown (frame 10). */
   jump: 4 / 24,
   perch: 9 / 24,
-  /** The blade passes under the jaw (frame 14). */
-  cut: 13 / 24,
-  /** Push off the crown (frame 21), land back where the leap started (frame 25). */
-  leave: 20 / 24,
-  land: 24 / 24,
+  /** After a standoff on the thrashing troll's head, the blade passes under its jaw (frame 42). */
+  cut: 41 / 24,
+  /** Push off the crown as the troll lunges forward (frame 47), land back where the leap started (frame 53). */
+  leave: 46 / 24,
+  land: 52 / 24,
   /** Extra height of each leap's arc at its middle. */
   arc: 0.35,
-  /** Hero's feet relative to the troll's chest bone, in the troll's frame: forward, up. */
-  perchForward: 0.06,
-  perchUp: 0.36,
+  /** Where the hero's feet sit on the troll's crown, in the troll model's rest pose (x forward, y up). The point rides
+   *  the head bone, so the hero ducks and lurches with the troll's head. */
+  crown: new Vector3(0.12, 1.22, 0),
 };
 
 interface Takedown {
@@ -213,8 +214,11 @@ export class GameView {
       alert.position.y = 1.75;
       body.root.add(alert);
       this.world.add(body.root, soul.root, cone.mesh);
-      const chest = body.root.getObjectByName('chest') ?? body.root;
-      return { state, body, soul, cone, alert, lastX: state.x, lastY: state.y, stillT: WALK_HOLD, chest };
+      // still in its rest pose (no clip has played): pin the crown point to the head bone
+      const head = body.root.getObjectByName('head') ?? body.root;
+      body.root.updateMatrixWorld(true);
+      const crown = head.worldToLocal(TAKEDOWN.crown.clone());
+      return { state, body, soul, cone, alert, lastX: state.x, lastY: state.y, stillT: WALK_HOLD, head, crown };
     });
     const { w, h } = sim.level.size;
     const c = new Vector3(w / 2, 0, h / 2);
@@ -328,13 +332,9 @@ export class GameView {
       this.takedown = null;
       return;
     }
-    // the perch follows the troll's chest as its death clip wrenches it about
-    const body = td.mv.body.root;
-    body.updateMatrixWorld(true);
-    const p = td.mv.chest.getWorldPosition(this.perchAt);
-    p.x += Math.cos(m.angle) * T.perchForward;
-    p.z += Math.sin(m.angle) * T.perchForward;
-    p.y += T.perchUp;
+    // the perch rides the troll's head as it ducks and thrashes
+    td.mv.body.root.updateMatrixWorld(true);
+    const p = td.mv.head.localToWorld(this.perchAt.copy(td.mv.crown));
     const ground = { x: td.x, y: 0, z: td.y };
     const hero = this.hero.root;
     // facing the troll on the way up, facing where it faces while on its head and on the way back off

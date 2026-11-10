@@ -650,10 +650,10 @@ def build_actions(rig):
 
     lib.action(rig, "crouch_walk", {f: crouch_walk((f - 1) / 24) for f in range(1, 26, 3)})
 
-    # takedown (1.125 s): the game moves the root along the leap onto the troll's shoulders and back off
-    # (view.ts TAKEDOWN); the clip only poses the body. coil -> tuck in the air -> land crouched on the
-    # shoulders, left hand clamps the brow, sword drawn out to the right -> cut across under the jaw
-    # (frame 13) -> hold -> push off backwards -> tuck -> land.
+    # takedown (2.29 s): the game moves the root along the leap onto the troll's head and back off
+    # (view.ts TAKEDOWN); the clip only poses the body. coil -> tuck in the air -> land crouched on the troll's
+    # crown, left hand clamps its brow, sword cocked high -> ride out its thrashing, leaning against each lurch
+    # (the standoff) -> sword across to the left -> cut under the jaw (frame 42) -> push off backwards -> tuck -> land.
     coil = merge(legs(-60, -60, 100, 100, -35, -35), {
         "spine": [(Y, 30)], "chest": [(Y, 16)], "head": [(Y, -30)],
         "upper_arm.L": [(Y, 40), (X, 20)], "upper_arm.R": [(Y, 45), (X, -20)],
@@ -700,8 +700,19 @@ def build_actions(rig):
         "forearm.L": [(Y, -20)], "forearm.R": [(Y, -30)],
         "cape.1": [(Y, 50)], "cape.2": [(Y, 30)], "_lift": 0.06,
     })
-    lib.action(rig, "takedown", {1: idle(0), 4: coil, 7: tuck, 10: land, 12: draw, 14: cut, 16: through, 19: through,
-                                 21: push, 23: flip, 25: crouch_base(), 28: idle(0)})
+    def ride(lean, bob=0.0):
+        """Holding on through the troll's thrashing: knees wide, leaning `lean` degrees (+ left) against it."""
+        return merge(perch_legs, perch, grab, {
+            "thigh.L": [(X, 12)], "thigh.R": [(X, -12)],
+            "spine": [(X, lean)], "chest": [(X, lean * 0.6)], "head": [(X, -lean * 0.5)],
+            "upper_arm.R": [(Y, 30), (X, -75)], "forearm.R": [(Y, -60)], "hand.R": [(Y, -20)],
+            "_lift": -0.07 + bob,
+        })
+
+    lib.action(rig, "takedown", {1: idle(0), 4: coil, 7: tuck, 10: land,
+                                 13: ride(0), 17: ride(-14, -0.01), 22: ride(16), 27: ride(-12, -0.01), 32: ride(15),
+                                 37: ride(-10, -0.01), 39: draw, 42: cut, 44: through, 46: through,
+                                 47: push, 50: flip, 53: crouch_base(), 56: idle(0)})
 
 
 # ---------------------------------------------------------------------------
@@ -736,8 +747,8 @@ def build(out_glb, out_preview):
 
     poses = [("idle", 1), ("walk", 1), ("walk", 5), ("walk", 9), ("walk", 13), ("attack", 3),
              ("attack", 5), ("attack", 7), ("crouch", 1), ("crouch_walk", 1), ("crouch_walk", 7), ("crouch_walk", 13),
-             ("takedown", 4), ("takedown", 7), ("takedown", 10), ("takedown", 12), ("takedown", 14), ("takedown", 16),
-             ("takedown", 21), ("takedown", 23)]
+             ("takedown", 10), ("takedown", 17), ("takedown", 22), ("takedown", 39), ("takedown", 42), ("takedown", 44),
+             ("takedown", 47), ("takedown", 50)]
     for variant, shown in VARIANTS.items():
         for name, obj in parts.items():
             obj.hide_render = name not in shown

@@ -111,7 +111,7 @@ export class Pane {
       ctx.strokeRect(i.x * c + 3, i.y * c + 3, c - 6, c - 6);
     }
 
-    // souls: the other dimension's monsters, which appear here as souls
+    // the other dimension's monsters (invisible in game; shown faintly here as a design aid)
     if (s.overlays.souls) {
       for (const m of g.level.dimensions[other].monsters) this.drawMonster(m, s, true);
     }

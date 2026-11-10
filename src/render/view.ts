@@ -83,7 +83,8 @@ class VisionCone {
 interface MonsterView {
   state: MonsterState;
   body: CharacterInstance;
-  soul: CharacterInstance;
+  /** A surface (A) monster that dies lingers in the underside (B) as a ghost; null for underside monsters. */
+  ghost: CharacterInstance | null;
   cone: VisionCone;
   alert: Group;
   lastX: number;
@@ -95,6 +96,9 @@ interface MonsterView {
   chest: Object3D;
   chestRestInv: Matrix4;
 }
+
+/** Ghosts float a little above the floor, bobbing (phase by position so neighbours do not bob in step). */
+const hover = (t: number, phase: number) => 0.15 + Math.sin(t * 2 + phase) * 0.06;
 
 /** A monster counts as walking until it has stood still this long: render frames outnumber sim steps on
  *  high-refresh screens, and a per-frame check would flicker walk/idle and restart the walk every frame. */
@@ -210,8 +214,9 @@ export class GameView {
       }
     }
     this.monsters = sim.monsters.map((state) => {
-      const body = new CharacterInstance('troll', 'normal');
-      const soul = new CharacterInstance('troll', 'soul');
+      // every underside (B) monster is a ghost: the look marks the dimension, not death
+      const body = new CharacterInstance('troll', state.dim === 1 ? 'ghost' : 'normal');
+      const ghost = state.dim === 0 ? new CharacterInstance('troll', 'ghost') : null;
       const cone = new VisionCone();
       const alert = new Group();
       alert.add(new Mesh(new BoxGeometry(0.08, 0.22, 0.08), glow('#ff4040')));
@@ -220,12 +225,13 @@ export class GameView {
       alert.add(dot);
       alert.position.y = 1.75;
       body.root.add(alert);
-      this.world.add(body.root, soul.root, cone.mesh);
+      this.world.add(body.root, cone.mesh);
+      if (ghost) this.world.add(ghost.root);
       // still in its rest pose at the origin (no clip has played): remember the chest's rest transform
       const chest = body.root.getObjectByName('chest') ?? body.root;
       body.root.updateMatrixWorld(true);
       const chestRestInv = chest.matrixWorld.clone().invert();
-      return { state, body, soul, cone, alert, lastX: state.x, lastY: state.y, stillT: WALK_HOLD, chest, chestRestInv };
+      return { state, body, ghost, cone, alert, lastX: state.x, lastY: state.y, stillT: WALK_HOLD, chest, chestRestInv };
     });
     const { w, h } = sim.level.size;
     const c = new Vector3(w / 2, 0, h / 2);
@@ -402,7 +408,7 @@ export class GameView {
     const pace = m.def.speed / 1.4;
     const caught = this.catching?.mv === mv;
     mv.body.root.visible = home; // the dead stay where they fell
-    mv.body.root.position.set(m.x, 0, m.y);
+    mv.body.root.position.set(m.x, m.dim === 1 ? hover(this.t, m.x) : 0, m.y);
     if (!m.alive) {
       mv.body.root.rotation.y = -m.angle; // the death clip plays once and holds its last frame
     } else if (caught) {
@@ -418,13 +424,16 @@ export class GameView {
     mv.alert.visible = m.detect > 0.05;
     mv.alert.scale.setScalar(0.6 + m.detect * 0.8);
 
-    const soul = mv.soul.root;
-    soul.visible = !home && m.alive;
-    if (soul.visible) {
-      soul.position.set(m.x, 0.15 + Math.sin(this.t * 2 + m.x) * 0.06, m.y);
-      soul.rotation.y = -m.angle;
-      mv.soul.play(moved ? 'walk' : 'idle', 0.2, moved ? pace : 1);
-      mv.soul.update(dt);
+    // monsters of the other dimension are never seen; a fallen surface monster haunts the underside where it died
+    const ghost = mv.ghost;
+    if (ghost) {
+      ghost.root.visible = !m.alive && sim.dim === 1;
+      if (ghost.root.visible) {
+        ghost.root.position.set(m.x, hover(this.t, m.x), m.y);
+        ghost.root.rotation.y = -m.angle;
+        ghost.play('idle', 0.2);
+        ghost.update(dt);
+      }
     }
     mv.cone.update(sim, m);
   }

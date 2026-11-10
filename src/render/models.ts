@@ -57,18 +57,18 @@ export class CharacterInstance {
   private readonly variants: Record<string, string[]>;
   private outfit = '';
 
-  constructor(name: ModelName, look: 'normal' | 'soul', outfit?: string) {
+  constructor(name: ModelName, look: 'normal' | 'ghost', outfit?: string) {
     const t = templates.get(name);
     if (!t) throw new Error(`model "${name}" not loaded`);
     this.root = cloneSkinned(t.scene);
     this.variants = t.variants;
     const outfits = Object.keys(t.variants);
     if (outfits.length) this.setOutfit(outfit && t.variants[outfit] ? outfit : outfits[0]);
-    const soulMat = ghost(CHARACTER.soul);
+    const ghostMat = ghost(CHARACTER.ghost);
     this.root.traverse((o) => {
       if (!(o instanceof Mesh)) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
-      const mapped = mats.map((m: Material) => (look === 'soul' ? soulMat : paletteMaterial(m.name)));
+      const mapped = mats.map((m: Material) => (look === 'ghost' ? ghostMat : paletteMaterial(m.name)));
       o.material = Array.isArray(o.material) ? mapped : mapped[0];
       o.castShadow = look === 'normal';
       o.frustumCulled = false; // skinned bounds do not follow the animation

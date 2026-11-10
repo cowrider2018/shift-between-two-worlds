@@ -214,7 +214,7 @@ function renderToolbar(): void {
   );
   $('overlays').replaceChildren(
     ...(Object.keys(overlays) as (keyof Overlays)[]).map((k) => {
-      const labels: Record<keyof Overlays, string> = { souls: '靈魂路徑', cones: '視野預覽', grid: '格線' };
+      const labels: Record<keyof Overlays, string> = { souls: '另一側怪物路徑', cones: '視野預覽', grid: '格線' };
       const cb = h('input', { type: 'checkbox', checked: overlays[k] });
       cb.onchange = () => {
         overlays[k] = cb.checked;

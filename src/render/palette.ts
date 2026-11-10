@@ -35,9 +35,9 @@ export const THEMES: readonly [DimTheme, DimTheme] = [
   },
 ];
 
-/** Character model colours live in art/palette.json; this is the soul look applied at runtime. */
+/** Character model colours live in art/palette.json; this is the ghost look applied at runtime. */
 export const CHARACTER = {
-  soul: '#bff6ff',
+  ghost: '#bff6ff',
 };
 
 const CHANNEL_COLORS = ['#9aa0a6', '#ff5d5d', '#5db8ff', '#7ee06b', '#ffd25d', '#e15dff', '#5dffe0', '#ff9e5d', '#b0ff5d'];

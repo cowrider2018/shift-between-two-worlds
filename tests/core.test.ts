@@ -145,7 +145,7 @@ describe('simulation on level01', () => {
     expect(sim.hunter).toBeNull();
   });
 
-  it('cannot take down a monster that sees the hero, nor a soul in the other dimension', () => {
+  it('cannot take down a monster that sees the hero, nor one in the other dimension', () => {
     const facing = new Sim(ambushLevel(7, 0)); // the monster faces the hero
     facing.update(NO_INPUT, 1 / 60);
     expect(facing.monsters[0].seeing).toBe(true);
@@ -153,13 +153,13 @@ describe('simulation on level01', () => {
     tap(facing, 'attack');
     expect(facing.monsters[0].alive).toBe(true);
 
-    const soul = new Sim(ambushLevel(7));
-    tap(soul, 'shift');
-    expect(soul.dim).toBe(1);
-    expect(soul.attackTarget()).toBeNull();
-    tap(soul, 'attack');
-    expect(soul.monsters[0].alive).toBe(true);
-    expect(soul.takedownT).toBe(0);
+    const other = new Sim(ambushLevel(7));
+    tap(other, 'shift');
+    expect(other.dim).toBe(1);
+    expect(other.attackTarget()).toBeNull();
+    tap(other, 'attack');
+    expect(other.monsters[0].alive).toBe(true);
+    expect(other.takedownT).toBe(0);
   });
 
   it('is caught when standing in a cone, but not while sneaking at the edge', () => {
@@ -240,7 +240,7 @@ describe('simulation on level01', () => {
       throw new Error(`guard never came by: status=${sim.status} p=${sim.x.toFixed(2)},${sim.y.toFixed(2)} g=${guard.x.toFixed(2)},${guard.y.toFixed(2)} ${guard.detect}`);
     };
 
-    chase('keeper');                // soul kill (B's keeper is a soul in A)
+    chase('keeper');                // B's keeper is in the other dimension: harmless here
     walkTo(sim, 1, 2); tap(sim, 'shift'); expect(sim.dim).toBe(1);
     walkTo(sim, 2, 2); tap(sim, 'interact');      // lever ch1 → A door opens
     walkTo(sim, 1, 2); tap(sim, 'shift'); expect(sim.dim).toBe(0);
@@ -248,7 +248,7 @@ describe('simulation on level01', () => {
     waitGuardEast(10);
     walkTo(sim, 5, 3); walkTo(sim, 7, 3);   // through the door behind the guard's back
     tap(sim, 'shift'); expect(sim.dim).toBe(1); // shifting works anywhere: slip into B's closed-off room
-    chase('guard');                 // A's guard is a soul in B
+    chase('guard');                 // A's guard is in the other dimension: harmless here
     walkTo(sim, 11, 6);             // core B
     tap(sim, 'shift'); expect(sim.dim).toBe(0);
     walkTo(sim, 12, 2);             // core A

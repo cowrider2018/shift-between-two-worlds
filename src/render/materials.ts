@@ -1,4 +1,5 @@
 import { cobbleTexture } from './cobbleTexture';
+import { woodTexture } from './woodTexture';
 import {
   AdditiveBlending, Color, DataTexture, DoubleSide, MeshBasicMaterial, MeshToonMaterial, NearestFilter, RedFormat,
   type Material,
@@ -37,6 +38,17 @@ export function cobble(color: string, vertexColors = false): MeshToonMaterial {
   let m = cache.get(key) as MeshToonMaterial | undefined;
   if (!m) {
     m = new MeshToonMaterial({ color: new Color(color), map: cobbleTexture(), gradientMap: toonRamp(), vertexColors });
+    cache.set(key, m);
+  }
+  return m;
+}
+
+/** Toon material with the weathered-plank texture tinted by `color`. */
+export function wood(color: string): MeshToonMaterial {
+  const key = `wood:${color}`;
+  let m = cache.get(key) as MeshToonMaterial | undefined;
+  if (!m) {
+    m = new MeshToonMaterial({ color: new Color(color), map: woodTexture(), gradientMap: toonRamp() });
     cache.set(key, m);
   }
   return m;

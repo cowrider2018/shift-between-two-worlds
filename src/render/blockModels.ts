@@ -9,7 +9,7 @@ import {
 import type { Cell, LevelGrid } from '../core/grid';
 import type { Sim } from '../core/sim';
 import { channelColor, type DimTheme } from './palette';
-import { cobble, glow, toon } from './materials';
+import { cobble, glow, toon, wood } from './materials';
 import { withHole } from './cutaway';
 import { WALL_H, floorGeometry, wallGeometry } from './terrain';
 
@@ -107,9 +107,27 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     const solidAt = (dx: number, dy: number) => ctx.grid.cell(cell.dim, cell.x + dx, cell.y + dy).def.solid === 'always';
     const spanX = solidAt(-1, 0) || solidAt(1, 0) || !(solidAt(0, -1) || solidAt(0, 1));
     const panel = new Group();
-    const slab = m(new BoxGeometry(spanX ? 1 : 0.3, WALL_H - 0.1, spanX ? 0.3 : 1), withHole(toon('#7a4e33')), 0, (WALL_H - 0.1) / 2, 0);
-    const stripe = m(new BoxGeometry(spanX ? 1.01 : 0.31, 0.12, spanX ? 0.31 : 1.01), withHole(glow(color)), 0, 1.1, 0, false);
-    panel.add(slab, stripe);
+    const doorH = WALL_H - 0.1;
+    // a box measured along the door (`along`), up, and through it (`across`), centred `off` through the door
+    const part = (along: number, h: number, across: number, mat: Material, a: number, y: number, off = 0, shadow = true) =>
+      m(new BoxGeometry(spanX ? along : across, h, spanX ? across : along), mat, spanX ? a : off, y, spanX ? off : a, shadow);
+    const iron = withHole(toon('#34343a'));
+    panel.add(part(1, doorH, 0.3, withHole(wood('#b8a088')), 0, doorH / 2));
+    // iron straps across both faces near the top and bottom, studded with rivets
+    for (const y of [0.24, doorH - 0.22]) {
+      panel.add(part(1.005, 0.09, 0.34, iron, 0, y));
+      for (const a of [-0.36, 0, 0.36]) for (const s of [-1, 1]) panel.add(part(0.05, 0.05, 0.03, iron, a, y, s * 0.18, false));
+    }
+    // a latch bar with a ring pull on each face
+    for (const s of [-1, 1]) {
+      panel.add(part(0.05, 0.3, 0.03, iron, -0.34, 0.78, s * 0.165, false));
+      const ring = m(new TorusGeometry(0.06, 0.014, 4, 10), iron, 0, 0.72, 0, false);
+      ring.position.set(spanX ? -0.34 : s * 0.19, 0.66, spanX ? s * 0.19 : -0.34);
+      if (!spanX) ring.rotation.y = Math.PI / 2;
+      panel.add(ring);
+    }
+    // channel colour band, so the lever that opens it can be matched by eye
+    panel.add(part(1.01, 0.08, 0.31, withHole(glow(color)), 0, 1.1, 0, false));
     const g = onFloor(cell, ctx, panel);
     let y = 0;
     return {

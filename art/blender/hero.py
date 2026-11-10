@@ -5,8 +5,9 @@ short sword. Stocky pear-shaped trunk; short legs of straight trouser tubes with
 
 Outfits are modular parts on one skeleton (see VARIANTS):
   plain  — the five-lock hair, no cape, no hood
-  hooded — streamlined pointed hood, full-body cloak, clasp, hair hidden
-The bulky locks cannot sit under a hood, so the hair itself is a swappable part.
+  hooded — close hood with a small peak above the back of the head, full-body cloak, clasp, and the hair cut
+           to what fits inside the hood (it still shows in the face opening)
+The bulky locks cannot sit under a hood whole, so the hair itself is a swappable part.
 
 Faces +X, feet on z = 0, ~0.84 tiles tall. Right hand = -Y.
 """
@@ -37,8 +38,8 @@ H = Vector((0.0, 0.0, 0.555))  # head centre
 
 # Outfit variants: the game shows the listed parts and hides every other part named here.
 VARIANTS = {
-    "plain": ["hair"],
-    "hooded": ["hood", "cape", "clasp"],
+    "plain": ["hair_full"],
+    "hooded": ["hair_hood", "hood", "cape", "clasp"],
 }
 
 
@@ -323,19 +324,33 @@ def _smoothstep(a, b, x):
     return t * t * (3 - 2 * t)
 
 
-def build_hood():
+# Side profile: the crown sweeps back in one big arc over the head to a peak behind the skull, a little below the
+# head centre. From the peak the underside runs forward almost level, then turns down in one concave curve onto the
+# upper back (see HOOD_DRAPE_SPAN).
+HOOD_SPINE = [h(0.16, 0, 0.0), h(0.01, 0, 0.06), h(-0.15, 0, 0.055), h(-0.26, 0, -0.01), h(-0.33, 0, -0.06)]
+#            (half-width across, half-height) at each spine control point, interpolated along the spine
+HOOD_RADII = [(0.175, 0.2), (0.21, 0.225), (0.185, 0.19), (0.1, 0.1), (0.0, 0.0)]
+# Along the spine (0 = face opening, 1 = peak): the drape ramps in behind the opening, holds over the head, and fades
+# out toward the peak, so the underside rises from the collar to the level run under the peak.
+HOOD_DRAPE_SPAN = (0.05, 0.35, 0.55, 0.9)
+# The draped cloth keeps at least this far off the head centre, so it slides down the back of the skull.
+HOOD_SKULL_CLEAR = HEAD_R + 0.025
+HOOD_SIDES = 12
+# How far inside the cloth the hair is cut, so no lock pokes through a facet of the low-poly hood.
+HOOD_HAIR_INSET = 0.03
+# How far in front of the face opening the hair may still reach (locks peeking out of the hood).
+HOOD_HAIR_LIP = 0.025
+
+
+def _hood_rings(draped=True):
     """
-    Streamlined hood: one lofted tube along a smooth spine. The front ring is the face opening (an egg, narrower at
-    the top), the rings grow around the skull, then taper smoothly down the back to a pointed tip. Behind the
-    opening the lower half of every ring is drawn down to the collar, draping the cloth over the nape.
+    The hood's rings (egg cross-sections, lower halves draped to the collar unless `draped` is False), their spine
+    centres, and the tip.
     """
-    spine = lib.catmull_rom([h(0.16, 0, 0.0), h(0.02, 0, 0.035), h(-0.14, 0, 0.045), h(-0.25, 0, -0.01),
-                             h(-0.31, 0, -0.12), h(-0.33, 0, -0.25)], samples_per_segment=2)
-    #            (half-width across, half-height) at each control point, interpolated along the spine
-    radii = [(0.175, 0.2), (0.205, 0.215), (0.165, 0.17), (0.1, 0.1), (0.055, 0.055), (0.0, 0.0)]
-    sides = 12
+    spine = lib.catmull_rom(HOOD_SPINE, samples_per_segment=2)
+    radii = HOOD_RADII
     exp = 2 / HOOD_SQUARE
-    rings = []
+    rings, centres = [], []
     m = len(spine) - 1
     for k, c in enumerate(spine[:-1]):
         u = k / m * (len(radii) - 1)
@@ -346,20 +361,80 @@ def build_hood():
         tangent = (spine[k + 1] - c).normalized()
         up = Y.cross(tangent).normalized()
         side = tangent.cross(up).normalized()
-        drape = _smoothstep(0.05, 0.35, k / m)  # none at the face opening, full from the crown back
+        a0, a1, b0, b1 = HOOD_DRAPE_SPAN
+        drape = _smoothstep(a0, a1, k / m) * (1 - _smoothstep(b0, b1, k / m)) if draped else 0.0
         ring = []
-        for a in range(sides):
-            t = 2 * math.pi * a / sides
+        for a in range(HOOD_SIDES):
+            t = 2 * math.pi * a / HOOD_SIDES
             ct, st = math.cos(t), math.sin(t)
             across = math.copysign(abs(ct) ** exp, ct) * (1 - HOOD_EGG * st)
             along_up = math.copysign(abs(st) ** exp, st)
             p = c + side * (across * ry) + up * (along_up * rz)
             if st < 0 and drape > 0:
-                w = drape * (-st) ** 0.8  # the lowest point of the ring drops the most
+                # the lowest point of the ring drops the most; near the peak this hangs the cloth straight down
+                # the back of the head, turning once along the line from the peak to the collar
+                w = drape * (-st) ** 0.8
                 p.z += (min(p.z, HOOD_DRAPE_Z) - p.z) * w
+                off = p - H
+                if off.length < HOOD_SKULL_CLEAR:
+                    p = H + off.normalized() * HOOD_SKULL_CLEAR
             ring.append(p)
         rings.append(ring)
-    return lib.loft("hood", rings, "hero_cape", tip=spine[-1])
+        centres.append(c)
+    return rings, centres, spine[-1]
+
+
+def build_hood():
+    """
+    Close hood: one lofted tube along a short spine over the skull. The front ring is the face opening (an egg,
+    narrower at the top); the rings follow the skull and taper to a small peak above the back of the head. Behind the
+    opening the lower half of every ring is drawn down to the collar, so the cloth hangs down the back of the head.
+    """
+    rings, _, tip = _hood_rings()
+    return lib.loft("hood", rings, "hero_cape", tip=tip)
+
+
+def _hood_volume():
+    """
+    A closed solid just inside the hood (capped a little in front of the face opening): what the hair may fill.
+    Built from the undraped tube: the drape folds the rings over each other near the peak, which would make the
+    solid self-intersect, and everything below the tube is hidden under the drape anyway.
+    """
+    rings, centres, tip = _hood_rings(draped=False)
+    inner = [[p - (p - c).normalized() * HOOD_HAIR_INSET for p in ring] for ring, c in zip(rings, centres)]
+    lip = [p + X * HOOD_HAIR_LIP for p in inner[0]]
+    rows = [lip] + inner
+    n = HOOD_SIDES
+    verts = [v for row in rows for v in row]
+    faces = []
+    for r in range(len(rows) - 1):
+        for i in range(n):
+            a, b = r * n + i, r * n + (i + 1) % n
+            faces.append((a, b, b + n, a + n))
+    verts.append(tip)
+    t = len(verts) - 1
+    last = (len(rows) - 1) * n
+    faces += [(last + i, last + (i + 1) % n, t) for i in range(n)]
+    verts.append(sum(lip, Vector()) / n)
+    f = len(verts) - 1
+    faces += [(i, f, (i + 1) % n) for i in range(n)]
+    return lib.mesh_from("hood_volume", verts, faces, "hero_hair", recalc=True)
+
+
+def build_hooded_hair(name):
+    """The five locks cut down to what lies inside the hood, so they show in the face opening but never poke out."""
+    hair = build_hair(name)
+    vol = _hood_volume()
+    mod = hair.modifiers.new("hood_cut", "BOOLEAN")
+    mod.operation = "INTERSECT"
+    mod.solver = "EXACT"
+    mod.use_self = True  # the five locks overlap each other
+    mod.use_hole_tolerant = True
+    mod.object = vol
+    lib.apply_modifiers(hair)
+    bpy.data.objects.remove(vol)
+    lib.flat(hair)
+    return hair
 
 
 def build_cape():
@@ -569,7 +644,8 @@ def build(out_glb, out_preview):
     body = build_body()
     clothes = [build_tunic(), build_sleeves(), build_boots()]
     parts = {
-        "hair": build_hair("hair"),
+        "hair_full": build_hair("hair_full"),
+        "hair_hood": build_hooded_hair("hair_hood"),
         "hood": build_hood(),
     }
     parts["cape"], parts["clasp"] = build_cape()
@@ -582,7 +658,7 @@ def build(out_glb, out_preview):
     for obj in head_parts:
         lib.attach(obj, rig, "head")
     lib.weight_chain(parts["cape"], rig, [("chest", 0.4), ("cape.1", 0.26), ("cape.2", 0.065)])
-    for name in ("hair", "hood"):
+    for name in ("hair_full", "hair_hood", "hood"):
         lib.attach(parts[name], rig, "head")
     lib.attach(parts["clasp"], rig, "chest")
     for obj, bone in props.values():

@@ -9,7 +9,7 @@ import {
 import type { Cell, LevelGrid } from '../core/grid';
 import type { Sim } from '../core/sim';
 import type { DimTheme } from './palette';
-import { cobble, glow, toon, wood } from './materials';
+import { cobble, glow, toon, whitening, wood } from './materials';
 import { throughMouth, withHole, type Mouth } from './cutaway';
 import { CAVE, WALL_H, caveGeometry, floorGeometry, wallGeometry } from './terrain';
 
@@ -166,11 +166,10 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       spring: CAVE.spring,
     };
     const tunnel = m(caveGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, mouth),
-      throughMouth(stone, arch), 0, 0, 0, false);
+      throughMouth(whitening(stone), arch), 0, 0, 0, false);
     tunnel.receiveShadow = false;
     const inside = new Group();
     inside.rotation.y = Math.atan2(dx, dz); // local +z points out of the open side; the face is at z = 0.5
-    inside.add(m(new ShapeGeometry(archShape(0.04), 12), throughMouth(withHole(glow('#ffffff')), arch), 0, 0, 0.5 - CAVE.depth, false));
     // veils of light, so whatever walks in sinks into the glow instead of meeting a flat white board
     for (const [d, opacity] of CAVE_HAZE) {
       const veil = new Mesh(new ShapeGeometry(archShape(0.02), 12),

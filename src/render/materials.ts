@@ -69,3 +69,35 @@ export function ghost(color: string, opacity = 0.3): MeshBasicMaterial {
     color: new Color(color), transparent: true, opacity, depthWrite: false, blending: AdditiveBlending,
   });
 }
+
+/**
+ * A copy of `mat` that blends to pure white light by the geometry's `whiten` attribute (0..1): texture and
+ * lighting both fade out, so a glowing surface shows no stone pattern or toon bands. Chains onto any
+ * onBeforeCompile `mat` already has (e.g. the camera hole).
+ */
+export function whitening<T extends Material>(mat: T): T {
+  const m = mat.clone() as T;
+  const before = mat.onBeforeCompile.bind(mat);
+  m.onBeforeCompile = (shader, renderer) => {
+    before(shader, renderer);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+attribute float whiten;
+varying float vWhiten;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+vWhiten = whiten;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying float vWhiten;`)
+      .replace('#include <map_fragment>', `#ifdef USE_MAP
+  vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+  sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, vec3(1.0), vWhiten);
+  diffuseColor *= sampledDiffuseColor;
+#endif`)
+      .replace('#include <opaque_fragment>', `outgoingLight = mix(outgoingLight, vec3(1.0), vWhiten);
+#include <opaque_fragment>`);
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  m.customProgramCacheKey = () => `${key()}+whiten`;
+  return m;
+}

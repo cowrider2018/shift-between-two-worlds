@@ -122,13 +122,15 @@ const FINE: number[] = (() => {
 const COARSE = [0, 1];
 const HEIGHTS = [0, WALL_H - BEVEL, ...[1, 2, 3, 4].map((k) => WALL_H - BEVEL + (BEVEL * k) / 4)];
 
-interface RawVertex { p: [number, number, number]; n: [number, number, number]; uv: [number, number]; c: Color }
+interface RawVertex { p: [number, number, number]; n: [number, number, number]; uv: [number, number]; c: Color; w?: number }
 
 class MeshBuilder {
   readonly pos: number[] = [];
   readonly nor: number[] = [];
   readonly uv: number[] = [];
   readonly col: number[] = [];
+  /** Per-vertex 0..1 blend to pure white light (the cave; see materials.ts `whitening`). */
+  readonly white: number[] = [];
   readonly idx: number[] = [];
   private readonly tmp = new Color();
 
@@ -155,6 +157,7 @@ class MeshBuilder {
         const t = Math.min(1, Math.max(0, (n[1] - 0.35) / 0.4));
         this.tmp.copy(this.side).lerp(this.top, t);
         this.col.push(this.tmp.r, this.tmp.g, this.tmp.b);
+        this.white.push(0);
       }
     }
     this.wind(base, nu, nv, pts, out);
@@ -193,6 +196,7 @@ class MeshBuilder {
         this.nor.push(...v.n);
         this.uv.push(...v.uv);
         this.col.push(v.c.r, v.c.g, v.c.b);
+        this.white.push(v.w ?? 0);
       }
     }
     this.wind(base, nu, nv, pts, out);
@@ -209,6 +213,7 @@ class MeshBuilder {
     g.setAttribute('normal', new BufferAttribute(new Float32Array(this.nor), 3));
     g.setAttribute('uv', new BufferAttribute(new Float32Array(this.uv), 2));
     g.setAttribute('color', new BufferAttribute(new Float32Array(this.col), 3));
+    g.setAttribute('whiten', new BufferAttribute(new Float32Array(this.white), 1));
     g.setIndex(this.idx);
     return g;
   }
@@ -308,14 +313,23 @@ export function caveGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
       n: [along[0] * q.n[0], q.n[1], along[1] * q.n[0]],
       uv: [(p[0] + p[2] + d) / COBBLE_SPAN, p[1] / COBBLE_SPAN],
       c: tmp.copy(side).lerp(WHITE, caveWhite(d)).clone(),
+      w: caveWhite(d),
     };
   }, [along[0], 0, along[1]]); // the first strip is the left jamb, facing across the tunnel
   b.raw(2, CAVE_DEPTHS.length, (i, j) => {
     const d = CAVE_DEPTHS[j];
     const p = at(i ? a1 : a0, 0, d);
     p[1] = 0.002;
-    return { p, n: [0, 1, 0], uv: [p[0] / COBBLE_SPAN, p[2] / COBBLE_SPAN], c: tmp.copy(floor).lerp(WHITE, caveWhite(d)).clone() };
+    return { p, n: [0, 1, 0], uv: [p[0] / COBBLE_SPAN, p[2] / COBBLE_SPAN], c: tmp.copy(floor).lerp(WHITE, caveWhite(d)).clone(), w: caveWhite(d) };
   }, [0, 1, 0]);
+  // the end wall, closing the tunnel on the same ring of points (no separate board, so no seam): white
+  const end = CAVE.depth;
+  const mid = at(0.5, spring * 0.6, end);
+  const loop = [...prof, prof[0]]; // round the whole outline, floor edge included
+  b.raw(loop.length, 2, (i, j) => {
+    const p = j ? mid : at(loop[i].u, loop[i].y, end);
+    return { p, n: out, uv: [(p[0] + p[2]) / COBBLE_SPAN, p[1] / COBBLE_SPAN], c: WHITE.clone(), w: 1 };
+  }, out);
   return b.build();
 }
 

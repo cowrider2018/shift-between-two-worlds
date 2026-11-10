@@ -8,6 +8,7 @@ import {
 import type { DimIndex } from '../core/level';
 import type { MonsterState, Sim, SimEvent } from '../core/sim';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
+import { HOLE } from './cutaway';
 import { CharacterInstance } from './models';
 import { FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -84,6 +85,12 @@ interface MonsterView {
  *  high-refresh screens, and a per-frame check would flicker walk/idle and restart the walk every frame. */
 const WALK_HOLD = 0.12;
 
+/** Camera hole: radius as a fraction of screen height, aimed at the hero's mid-body; geometry closer to the
+ *  camera than the hero by more than the margin is cut. */
+const HOLE_RADIUS = 0.2;
+const HOLE_BODY_Y = 0.75;
+const HOLE_DEPTH_MARGIN = 0.25;
+
 export class GameView {
   readonly pipeline: PixelPipeline;
   readonly scene = new Scene();
@@ -93,9 +100,7 @@ export class GameView {
   private readonly world = new Group();
   private dims: [Group, Group] = [new Group(), new Group()];
   private blocks: BlockView[] = [];
-  /** Tall block objects per dimension, keyed "x,y" — candidates for the camera cutaway. */
-  private tall: [Map<string, BlockView['object']>, Map<string, BlockView['object']>] = [new Map(), new Map()];
-  private cut: BlockView['object'][] = [];
+  private readonly holeAt = new Vector3();
   private monsters: MonsterView[] = [];
   private hero!: CharacterInstance;
   private readonly shiftRing: Mesh;
@@ -122,8 +127,6 @@ export class GameView {
     this.world.clear();
     this.dims = [new Group(), new Group()];
     this.blocks = [];
-    this.tall = [new Map(), new Map()];
-    this.cut = [];
     this.world.add(...this.dims);
     if (!this.hero) {
       this.hero = new CharacterInstance('hero', 'normal', 'plain');
@@ -137,7 +140,6 @@ export class GameView {
         const v = factory(cell, ctx);
         this.dims[dim].add(v.object);
         this.blocks.push(v);
-        if (cell.def.solid !== 'never') this.tall[dim].set(`${cell.x},${cell.y}`, v.object);
       }
     }
     this.monsters = sim.monsters.map((state) => {
@@ -208,21 +210,23 @@ export class GameView {
 
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     this.follow.update(sim, dt);
-    this.updateCutaway();
+    this.updateHole();
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Squash walls / doors between the camera and the hero into low stubs. */
-  private updateCutaway(): void {
-    for (const o of this.cut) o.scale.y = 1;
-    this.cut = [];
-    const tall = this.tall[this.sim.dim];
-    for (const [x, y] of this.follow.occluderCells()) {
-      const o = tall.get(`${x},${y}`);
-      if (!o) continue;
-      o.scale.y = 0.12;
-      this.cut.push(o);
-    }
+  /** Centre the camera hole (cutaway.ts) on the hero's body and cut everything nearer than the hero. */
+  private updateHole(): void {
+    const cam = this.follow.camera;
+    cam.updateMatrixWorld();
+    const p = this.holeAt.set(this.sim.x, HOLE_BODY_Y, this.sim.y);
+    const depth = -p.clone().applyMatrix4(cam.matrixWorldInverse).z;
+    p.project(cam);
+    const { width, height } = this.pipeline;
+    const r = height * HOLE_RADIUS;
+    HOLE.uHoleCenter.value.set((p.x * 0.5 + 0.5) * width, (p.y * 0.5 + 0.5) * height);
+    HOLE.uHoleRadius.value = r;
+    HOLE.uHoleDepth.value = depth - HOLE_DEPTH_MARGIN;
+    this.pipeline.hole = { x: HOLE.uHoleCenter.value.x, y: HOLE.uHoleCenter.value.y, r };
   }
 
   private updateMonster(mv: MonsterView, dt: number): void {

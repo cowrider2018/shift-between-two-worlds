@@ -10,6 +10,7 @@ import type { Cell, LevelGrid } from '../core/grid';
 import type { Sim } from '../core/sim';
 import { channelColor, type DimTheme } from './palette';
 import { cobble, glow, toon } from './materials';
+import { withHole } from './cutaway';
 import { WALL_H, floorGeometry, wallGeometry } from './terrain';
 
 export interface BlockView {
@@ -56,7 +57,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
 
   wall: (cell, ctx) => {
     const g = wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop);
-    return { object: place(m(g, cobble('#ffffff', true)), cell) };
+    return { object: place(m(g, withHole(cobble('#ffffff', true))), cell) };
   },
 
   spawn: (cell, ctx) => {
@@ -106,8 +107,8 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     const solidAt = (dx: number, dy: number) => ctx.grid.cell(cell.dim, cell.x + dx, cell.y + dy).def.solid === 'always';
     const spanX = solidAt(-1, 0) || solidAt(1, 0) || !(solidAt(0, -1) || solidAt(0, 1));
     const panel = new Group();
-    const slab = m(new BoxGeometry(spanX ? 1 : 0.3, WALL_H - 0.1, spanX ? 0.3 : 1), toon('#7a4e33'), 0, (WALL_H - 0.1) / 2, 0);
-    const stripe = m(new BoxGeometry(spanX ? 1.01 : 0.31, 0.12, spanX ? 0.31 : 1.01), glow(color), 0, 1.1, 0, false);
+    const slab = m(new BoxGeometry(spanX ? 1 : 0.3, WALL_H - 0.1, spanX ? 0.3 : 1), withHole(toon('#7a4e33')), 0, (WALL_H - 0.1) / 2, 0);
+    const stripe = m(new BoxGeometry(spanX ? 1.01 : 0.31, 0.12, spanX ? 0.31 : 1.01), withHole(glow(color)), 0, 1.1, 0, false);
     panel.add(slab, stripe);
     const g = onFloor(cell, ctx, panel);
     let y = 0;

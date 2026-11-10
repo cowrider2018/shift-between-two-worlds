@@ -4,8 +4,9 @@
  */
 import {
   Camera, DepthTexture, PerspectiveCamera, Mesh, NearestFilter, OrthographicCamera, PlaneGeometry, Scene, ShaderMaterial,
-  Color, Vector2, WebGLRenderTarget, WebGLRenderer, PCFShadowMap, UnsignedIntType,
+  Color, Vector2, Vector3, WebGLRenderTarget, WebGLRenderer, PCFShadowMap, UnsignedIntType,
 } from 'three';
+import { HOLE_INNER } from './cutaway';
 
 /** Render resolution = screen resolution / PIXEL_SCALE (each art pixel is PIXEL_SCALE×PIXEL_SCALE screen pixels). */
 export const PIXEL_SCALE = 3;
@@ -22,6 +23,8 @@ export class PixelPipeline {
 
   /** Effects driven by the game. */
   readonly fx = { flash: 0, ripple: 0, danger: 0, time: 0 };
+  /** Camera hole in render pixels (see cutaway.ts); depth outlines are skipped across its dithered rim. */
+  hole = { x: 0, y: 0, r: 0 };
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -43,6 +46,7 @@ export class PixelPipeline {
         time: { value: 0 },
         cameraNear: { value: 0.1 },
         cameraFar: { value: 60 },
+        hole: { value: new Vector3() },
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -56,6 +60,7 @@ export class PixelPipeline {
         uniform vec2 texel;
         uniform float levels, flash, ripple, danger, time;
         uniform vec3 outline;
+        uniform vec3 hole;
         varying vec2 vUv;
         float depthAt(vec2 uv) { return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, cameraNear, cameraFar); }
         void main() {
@@ -70,7 +75,9 @@ export class PixelPipeline {
                          max(depthAt(uv + vec2(0.0, texel.y)), depthAt(uv - vec2(0.0, texel.y))));
           c = pow(max(c, 0.0), vec3(1.0 / 2.2));
           c = floor(c * levels + 0.5) / levels;
-          if ((dn - d) / d > 0.07 && d < cameraFar * 0.99) c = mix(c, outline, 0.8);
+          float hd = distance(gl_FragCoord.xy, hole.xy);
+          bool rim = hd > hole.z * ${HOLE_INNER.toFixed(3)} - 1.5 && hd < hole.z + 1.5;
+          if (!rim && (dn - d) / d > 0.07 && d < cameraFar * 0.99) c = mix(c, outline, 0.8);
           vec2 q = vUv - 0.5;
           float vig = smoothstep(0.25, 0.75, length(q * vec2(1.3, 1.0)));
           c = mix(c, vec3(0.85, 0.08, 0.1), vig * danger * 0.75);
@@ -103,6 +110,7 @@ export class PixelPipeline {
     u.ripple.value = this.fx.ripple;
     u.danger.value = this.fx.danger;
     u.time.value = this.fx.time;
+    (u.hole.value as Vector3).set(this.hole.x, this.hole.y, this.hole.r);
     if (camera instanceof PerspectiveCamera) {
       u.cameraNear.value = camera.near;
       u.cameraFar.value = camera.far;

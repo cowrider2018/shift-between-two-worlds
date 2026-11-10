@@ -1,7 +1,7 @@
 /**
  * DESIGN §4.1 — third-person perspective camera, ~30° above the ground, orbiting behind the hero.
  * Yaw is player-controlled (mouse / ← →). The boom length is fixed; walls between the camera and the
- * hero are cut away by the view (see `occluderCells`) instead of pulling the camera in.
+ * hero are cut away by a round hole (see cutaway.ts) instead of pulling the camera in.
  */
 import { PerspectiveCamera } from 'three';
 import type { Sim } from '../core/sim';
@@ -62,24 +62,5 @@ export class FollowCamera {
     const cy = this.ty - fy * d * Math.cos(elev);
     this.camera.position.set(cx, CAMERA.targetHeight + d * Math.sin(elev), cy);
     this.camera.lookAt(this.tx, CAMERA.targetHeight, this.ty);
-  }
-
-  /**
-   * Cells whose geometry may hide the hero: a band along the ground projection of the boom,
-   * from just behind the hero to past the camera.
-   */
-  occluderCells(): [number, number][] {
-    const elev = (CAMERA.elevationDeg * Math.PI) / 180;
-    const [fx, fy] = this.forward();
-    const len = CAMERA.distance * Math.cos(elev) + 1;
-    const out = new Map<string, [number, number]>();
-    for (let t = 0.45; t <= len; t += 0.2) {
-      for (const side of [-0.4, 0, 0.4]) {
-        const x = Math.floor(this.tx - fx * t - fy * side);
-        const y = Math.floor(this.ty - fy * t + fx * side);
-        out.set(`${x},${y}`, [x, y]);
-      }
-    }
-    return [...out.values()];
   }
 }

@@ -114,16 +114,17 @@ const TAKEDOWN = {
   /** Feet leave the ground (frame 5), land on the troll's crown (frame 10). */
   jump: 4 / 24,
   perch: 9 / 24,
-  /** After a standoff on the thrashing troll's head, the blade passes under its jaw (frame 42). */
-  cut: 41 / 24,
-  /** Push off the crown as the troll lunges forward (frame 47), land back where the leap started (frame 53). */
-  leave: 46 / 24,
-  land: 52 / 24,
+  /** After a standoff with the blade held at the thrashing troll's throat (0.4-1.2 s), it slices across (frame 30). */
+  cut: 29 / 24,
+  /** Push off as the troll lunges forward (frame 35), land back where the leap started (frame 41). */
+  leave: 34 / 24,
+  land: 40 / 24,
   /** Extra height of each leap's arc at its middle. */
   arc: 0.35,
-  /** Where the hero's feet sit on the troll's crown, in the troll model's rest pose (x forward, y up). The point rides
-   *  the head bone, so the hero ducks and lurches with the troll's head. */
-  crown: new Vector3(0.12, 1.22, 0),
+  /** Where the hero's feet sit on the troll's brow ridge, in the troll model's rest pose (x forward, y up): close
+   *  enough to the face for the short sword to reach under the jaw. The point rides the head bone, so the hero
+   *  lurches with the troll's head. */
+  crown: new Vector3(0.27, 1.17, 0),
 };
 
 interface Takedown {

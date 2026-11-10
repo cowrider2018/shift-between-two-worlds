@@ -303,20 +303,21 @@ def build_actions(rig):
               "ear.L": [(X, 8)], "ear.R": [(X, -8)], "_lift": -0.045}
     lib.action(rig, "attack", {1: rest, 7: wind, 10: strike, 13: follow, 22: rest})
 
-    # death (2.6 s, starts with the hero's takedown): the hero lands on its head (frame 9) and the troll ducks its
-    # head and clamps both hands over its throat, then thrashes left and right trying to shake the hero off while
-    # it holds on (a standoff). The cut lands (frame 42): the head jerks up, the arms fling open and it lunges
-    # forward onto its face and settles.
+    # death (2.04 s, starts with the hero's takedown): the hero lands on its head (frame 9) with a blade at its throat;
+    # the troll ducks and clamps both hands over its throat, thrashing left and right to shake the hero off (the
+    # standoff, 0.4-1.2 s). The cut lands (frame 30): the head jerks up, the arms fling open and it lunges forward
+    # onto its face and settles.
     def clutch(roll, knee=0.0, lean=0.0, twist=0.0, bow=0.0):
         """Both hands clamped on the throat, the body rolled `roll` degrees towards its left (+) / right (-),
         the head ducked forward by `bow` degrees."""
         return {
-            "hips": [(X, roll * 0.5), (Z, twist * 0.5)], "spine": [(X, roll * 0.4), (Y, 6 + lean * 0.5)],
-            "chest": [(X, roll * 0.6), (Y, 4 + lean), (Z, twist)],
+            # feet planted, pelvis still: the waist twists and the upper body thrashes
+            "spine": [(X, roll * 0.5), (Y, 6 + lean * 0.5), (Z, twist * 0.6)],
+            "chest": [(X, roll * 0.7), (Y, 4 + lean), (Z, twist)],
             "neck": [(Y, 10 + bow * 0.5)], "head": [(Y, 18 + bow), (X, -roll * 0.5)],
             "upper_arm.L": [(Y, -40), (X, -20)], "forearm.L": [(Y, -100), (Z, -35)], "hand.L": [(Z, -40)],
             "upper_arm.R": [(Y, -40), (X, 20)], "forearm.R": [(Y, -100), (Z, 35)], "hand.R": [(Z, 40)],
-            "thigh.L": [(Y, -knee), (X, roll * 0.3)], "thigh.R": [(Y, -knee), (X, roll * 0.3)],
+            "thigh.L": [(Y, -knee)], "thigh.R": [(Y, -knee)],
             "shin.L": [(Y, knee * 1.6)], "shin.R": [(Y, knee * 1.6)], "foot.L": [(Y, -knee * 0.6)], "foot.R": [(Y, -knee * 0.6)],
             "ear.L": [(X, -10 - roll * 0.8)], "ear.R": [(X, 10 - roll * 0.8)],
             "_lift": -0.0035 * knee,
@@ -334,20 +335,21 @@ def build_actions(rig):
         p.update({
             "root": [(Y, pitch)], "hips": [], "spine": [(Y, hunch * 0.5)], "chest": [(Y, hunch)],
             "neck": [(Y, -6)], "head": [(Y, -14)],
-            "upper_arm.L": [(Y, -reach), (X, spread)], "forearm.L": [(Y, -10)], "hand.L": [(Y, -10)],
-            "upper_arm.R": [(Y, -reach), (X, -spread)], "forearm.R": [(Y, -10)], "hand.R": [(Y, -10)],
+            # open sideways first, then swing up: the arms stay on their own side however far overhead they go
+            "upper_arm.L": [(X, spread), (Y, -reach)], "forearm.L": [(Y, -10)], "hand.L": [(Y, -10)],
+            "upper_arm.R": [(X, -spread), (Y, -reach)], "forearm.R": [(Y, -10)], "hand.R": [(Y, -10)],
             "ear.L": [(X, 20)], "ear.R": [(X, -20)],
             "_lift": lift,
         })
         return p
 
     lib.action(rig, "death", {
-        1: rest, 9: grabbed, 13: clutch(0, 8, 6, 0, 12),
-        17: clutch(18, 6, 4, 12, 10), 22: clutch(-20, 10, 6, -14, 14), 27: clutch(16, 6, 2, 10, 8),
-        32: clutch(-18, 10, 6, -12, 14), 37: clutch(12, 8, 4, 8, 10), 40: clutch(-6, 8, 4, -4, 12),
-        42: clutch(0, 4, -10, 0, -30),
-        44: topple(0, -0.04, 10, 40, 85, -5), 47: topple(20, -0.08, 20, 80, 75, 15), 50: topple(55, -0.06, 10, 130, 65, 8),
-        53: topple(84, 0.0, 0, 165, 50, 0), 56: topple(76, 0.04, 0, 160, 50, 0), 61: topple(82, 0.01, 0, 165, 50, 0),
+        1: rest, 9: grabbed, 12: clutch(0, 8, 6, 0, -28),
+        15: clutch(18, 6, 4, 25, -24), 19: clutch(-20, 8, 6, -28, -22), 23: clutch(16, 6, 2, 22, -28),
+        27: clutch(-14, 8, 6, -20, -24), 29: clutch(-4, 8, 4, -5, -28),
+        31: clutch(0, 4, -10, 0, -30),
+        33: topple(0, -0.04, 10, 40, 85, -5), 36: topple(20, -0.08, 20, 80, 75, 15), 39: topple(55, -0.06, 10, 130, 65, 8),
+        42: topple(84, 0.0, 0, 160, 60, 0), 45: topple(76, 0.04, 0, 155, 60, 0), 50: topple(82, 0.01, 0, 160, 60, 0),
     })
 
 
@@ -366,5 +368,5 @@ def build(out_glb, out_preview):
     lib.pose_sheet(rig, out_preview.replace(".png", "_poses.png"), HEIGHT,
                    [("idle", 1), ("alert", 1)] + [("walk", f) for f in range(1, 24, 3)]
                    + [("attack", f) for f in (7, 10, 13)]
-                   + [("death", f) for f in (9, 13, 17, 22, 32, 42, 44, 47, 50, 53)], cols=5)
+                   + [("death", f) for f in (9, 12, 15, 19, 29, 31, 33, 36, 39, 42)], cols=5)
     print(f"troll: {lib.tri_count(body)} body tris, {sum(lib.tri_count(o) for o, _ in props.values())} prop tris")

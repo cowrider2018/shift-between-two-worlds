@@ -19,7 +19,7 @@ export const TUNING = {
   attackRange: 1.3,
   /** Seconds the hero is busy with a takedown (leap on, ride out the troll's thrashing, cut, hop back off) and takes
    *  no input; matches the hero's `takedown` clip. */
-  takedownTime: 2.3,
+  takedownTime: 1.8,
   interactRange: 1.05,
   shiftCooldown: 0.25,
   monsterTurnSpeed: 5,

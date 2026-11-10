@@ -3,7 +3,7 @@
  * A factory returns an Object3D positioned at the cell origin plus an optional per-frame update.
  */
 import {
-  BoxGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, OctahedronGeometry, RingGeometry, TorusGeometry,
+  BoxGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, Shape, ShapeGeometry, TorusGeometry,
   type Material, type Object3D,
 } from 'three';
 import type { Cell, LevelGrid } from '../core/grid';
@@ -51,6 +51,21 @@ function onFloor(cell: Cell, ctx: ModelCtx, ...deco: Object3D[]): Group {
 }
 
 const bob = (t: number, phase: number) => 0.38 + Math.sin(t * 2.5 + phase) * 0.06;
+
+/** Exit cave mouth: half width, height of the springing line, and arch radius (= half width). */
+const MOUTH = { half: 0.33, spring: 0.62 };
+
+/** A round-topped arch outline standing on y = 0, `inset` smaller on every side. */
+function archShape(inset = 0): Shape {
+  const r = MOUTH.half - inset;
+  const s = new Shape();
+  s.moveTo(-r, 0);
+  s.lineTo(r, 0);
+  s.lineTo(r, MOUTH.spring);
+  s.absarc(0, MOUTH.spring, r, 0, Math.PI, false);
+  s.lineTo(-r, 0);
+  return s;
+}
 
 export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   floor: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
@@ -137,28 +152,27 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   },
 
   exit: (cell, ctx) => {
-    // an upright portal ring facing the camera, with one socket per required core
-    const ring = m(new TorusGeometry(0.4, 0.07, 6, 24), toon('#9a90aa'), 0, 0.52, 0);
-    const portal = m(new RingGeometry(0.0, 0.34, 24), glow('#3a2350'), 0, 0.52, -0.01, false);
-    const pad = m(new BoxGeometry(0.95, 0.04, 0.5), toon('#9a90aa'), 0, 0.02, 0);
-    const sockets: Mesh[] = [];
-    const g = onFloor(cell, ctx, pad, ring, portal);
+    // a small cave cut into the rock: the cell is plain wall, except for an arched mouth on its one open side
+    const rock = m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop),
+      withHole(cobble('#ffffff', true)));
+    const [dx, dz] = ctx.grid.openSides(cell.dim, cell.x, cell.y)[0] ?? [0, 1];
+    const mouth = new Group();
+    mouth.rotation.y = Math.atan2(dx, dz); // local +z faces out of the open side
+    // the dark inside, drawn just proud of the rock face so the hero walking in vanishes into it
+    const inside = m(new ShapeGeometry(archShape(), 12), withHole(glow('#07050a')), 0, 0, 0.505, false);
+    // a glow deep in the cave once enough cores are carried
+    const light = m(new ShapeGeometry(archShape(0.1), 12), withHole(glow('#07050a')), 0, 0, 0.51, false);
+    light.scale.set(1, 0.85, 1);
+    mouth.add(inside, light);
+    const g = new Group();
+    g.add(rock, mouth);
+    place(g, cell);
     return {
       object: g,
       update: (sim, _dt, t) => {
         const need = Number(cell.props.coresRequired) || sim.coresTotal;
-        if (sockets.length !== need) {
-          for (let i = 0; i < need; i++) {
-            const a = Math.PI / 2 + ((i - (need - 1) / 2) * 0.6);
-            const s = m(new OctahedronGeometry(0.07), glow('#333'), Math.cos(a) * 0.4, 0.52 + Math.sin(a) * 0.4, 0.06, false);
-            sockets.push(s);
-            g.add(s);
-          }
-        }
-        sockets.forEach((s, i) => (s.material = glow(i < sim.cores ? '#7ff0ff' : '#333333')));
         const open = sim.cores >= need;
-        portal.material = glow(open ? (Math.sin(t * 6) > 0 ? '#c46bff' : '#a24fe0') : '#3a2350');
-        ring.material = open ? glow('#e2b8ff') : toon('#9a90aa');
+        light.material = withHole(glow(open ? (Math.sin(t * 4) > 0 ? '#c46bff' : '#a24fe0') : '#07050a'));
       },
     };
   },

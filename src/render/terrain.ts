@@ -186,13 +186,20 @@ class MeshBuilder {
   }
 }
 
+/** Cells drawn as part of the rock mass: walls, and the exit, which is a small cave cut into the rock. */
+function isRock(grid: LevelGrid, dim: DimIndex, x: number, z: number): boolean {
+  const def = grid.cell(dim, x, z).def;
+  return def.solid === 'always' || def.behavior === 'exit';
+}
+
 /**
  * Geometry for the wall at (cx, cz), in coordinates local to the cell centre (cx + .5, 0, cz + .5).
+ * Also used for the exit cell, whose cave mouth is added on top (blockModels.ts).
  * Vertex colours blend `sideColor` → `topColor` by how upward each point faces.
  */
 export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
   topColor: string): BufferGeometry {
-  const isWall: IsWall = (x, z) => grid.cell(dim, x, z).def.solid === 'always';
+  const isWall: IsWall = (x, z) => isRock(grid, dim, x, z);
   const shape = new WallShape(isWall);
   const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
   let exposed = false;

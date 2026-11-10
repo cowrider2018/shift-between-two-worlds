@@ -125,6 +125,9 @@ export function validateLevel(level: Level): ValidationReport {
   // --- exit requirement
   const coreCount = cells.filter((c) => c.def.behavior === 'core').length;
   for (const e of cells.filter((c) => c.def.behavior === 'exit')) {
+    const sides = grid.openSides(e.dim, e.x, e.y).length;
+    if (sides !== 1)
+      err(`${where(e.dim, e.x, e.y)} 出口是牆上的小山洞：三面要是牆、只留一個入口（現在有 ${sides} 個）`, { dim: e.dim, x: e.x, y: e.y });
     if (Number(e.props.coresRequired) > coreCount)
       err(`${where(e.dim, e.x, e.y)} 出口需要 ${e.props.coresRequired} 顆核心，但全關只有 ${coreCount} 顆`, { dim: e.dim, x: e.x, y: e.y });
   }

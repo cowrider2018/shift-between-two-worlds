@@ -47,6 +47,13 @@ export class LevelGrid {
     return dim === undefined ? [...this.cells[0], ...this.cells[1]] : this.cells[dim];
   }
 
+  /** The 4-neighbour offsets of (x, y) that are not permanent wall: the ways into the cell. */
+  openSides(dim: DimIndex, x: number, y: number): [number, number][] {
+    return ([[0, -1], [1, 0], [0, 1], [-1, 0]] as [number, number][]).filter(
+      ([dx, dy]) => this.cell(dim, x + dx, y + dy).def.solid !== 'always',
+    );
+  }
+
   solid(dim: DimIndex, x: number, y: number, channelOn: ChannelFn): boolean {
     const c = this.cell(dim, x, y);
     return evalCondition(c.def.solid, c.def, c.props, channelOn);

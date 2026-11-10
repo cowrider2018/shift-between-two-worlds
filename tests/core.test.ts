@@ -59,10 +59,19 @@ describe('validator', () => {
     const l = createEmptyLevel('t', 7, 5);
     setCell(l, 0, 4, 1, '#'); setCell(l, 0, 4, 2, '#'); setCell(l, 0, 4, 3, '#');
     for (let y = 1; y < 4; y++) for (let x = 1; x < 6; x++) setCell(l, 1, x, y, '#');
-    setCell(l, 0, 5, 2, 'E');
+    setCell(l, 0, 5, 1, 'E'); // a cave in the top-right corner, open only downwards
     const r = validateLevel(l);
     expect(r.solve?.status).toBe('unsolvable');
     expect(r.ok).toBe(false);
+  });
+
+  it('requires the exit to be a cave in the wall with exactly one way in', () => {
+    const l = createEmptyLevel('t', 7, 5);
+    setCell(l, 0, 3, 2, 'E');
+    const cave = (r: ReturnType<typeof validateLevel>) => r.issues.some((i) => i.severity === 'error' && i.message.includes('小山洞'));
+    expect(cave(validateLevel(l))).toBe(true);
+    setCell(l, 0, 2, 2, '#'); setCell(l, 0, 4, 2, '#'); setCell(l, 0, 3, 3, '#');
+    expect(cave(validateLevel(l))).toBe(false);
   });
 
   it('rejects monster paths through walls', () => {

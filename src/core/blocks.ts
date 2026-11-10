@@ -69,7 +69,7 @@ export const BLOCKS: readonly BlockDef[] = [
     color: '#58d6e8', params: [], solid: 'never', opaque: 'never', behavior: 'core',
   },
   {
-    id: 'exit', char: 'E', label: '出口', description: '集齊核心後通關。',
+    id: 'exit', char: 'E', label: '出口', description: '牆上的小山洞：三面是牆、只留一個入口；集齊核心後走進去通關。',
     color: '#c46bff',
     params: [{ key: 'coresRequired', label: '需要核心數（0=全部）', type: 'int', default: 0, min: 0, max: 99 }],
     solid: 'never', opaque: 'never', behavior: 'exit', count: { min: 1 },

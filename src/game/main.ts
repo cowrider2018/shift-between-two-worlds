@@ -63,7 +63,7 @@ function handle(events: SimEvent[]): void {
         toast(e.what === 'core' ? `取得核心 ${sim.cores}/${sim.coresTotal}` : '獎勵 +1', 1.2);
         break;
       case 'lever':
-        toast(`拉桿 ${e.on ? '開' : '關'}（頻道 ${e.cell.props.channel}）`, 1.2);
+        toast(`拉桿 ${e.on ? '開' : '關'}`, 1.2);
         break;
       case 'kill':
         toast('靈魂消散 — 本體也消失了', 1.4);

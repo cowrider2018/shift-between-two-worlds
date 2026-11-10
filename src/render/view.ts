@@ -3,7 +3,7 @@
  */
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, Color, DirectionalLight, Fog, Group, HemisphereLight, Mesh, MeshBasicMaterial,
-  RingGeometry, Scene, Vector3,
+  Scene, Vector3,
 } from 'three';
 import type { DimIndex } from '../core/level';
 import type { MonsterState, Sim, SimEvent } from '../core/sim';
@@ -105,7 +105,6 @@ export class GameView {
   private readonly holeAt = new Vector3();
   private monsters: MonsterView[] = [];
   private hero!: CharacterInstance;
-  private readonly shiftRing: Mesh;
   private sim!: Sim;
   private shownDim: DimIndex | -1 = -1;
   private t = 0;
@@ -119,9 +118,6 @@ export class GameView {
     this.sun.shadow.bias = -0.0015;
     this.sun.shadow.normalBias = 0.04;
     this.scene.add(this.hemi, this.sun, this.sun.target, this.world);
-    this.shiftRing = new Mesh(new RingGeometry(0.3, 0.4, 20), glow('#7ff0ff'));
-    this.shiftRing.rotation.x = -Math.PI / 2;
-    this.scene.add(this.shiftRing);
   }
 
   setSim(sim: Sim): void {
@@ -205,10 +201,6 @@ export class GameView {
     this.hero.setOutfit(sim.sneaking ? 'hooded' : 'plain'); // cloak up while sneaking, off when standing
     this.hero.play(sim.sneaking ? (sim.moving ? 'crouch_walk' : 'crouch') : sim.moving ? 'walk' : 'idle', 0.15);
     this.hero.update(dt);
-    const canShift = sim.canShiftHere();
-    this.shiftRing.visible = canShift;
-    this.shiftRing.position.set(sim.x, 0.02, sim.y);
-    this.shiftRing.scale.setScalar(1 + Math.sin(this.t * 6) * 0.08);
 
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     this.follow.update(sim, dt);

@@ -8,7 +8,7 @@ import {
 } from 'three';
 import type { Cell, LevelGrid } from '../core/grid';
 import type { Sim } from '../core/sim';
-import { channelColor, type DimTheme } from './palette';
+import type { DimTheme } from './palette';
 import { cobble, glow, toon, wood } from './materials';
 import { withHole } from './cutaway';
 import { WALL_H, floorGeometry, wallGeometry } from './terrain';
@@ -60,11 +60,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     return { object: place(m(g, withHole(cobble('#ffffff', true))), cell) };
   },
 
-  spawn: (cell, ctx) => {
-    const ring = m(new RingGeometry(0.28, 0.38, 16), glow('#5fd16b'), 0, 0.012, 0, false);
-    ring.rotation.x = -Math.PI / 2;
-    return { object: onFloor(cell, ctx, ring) };
-  },
+  spawn: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
 
   reward: (cell, ctx) => {
     const gem = m(new OctahedronGeometry(0.2), toon('#f2c94c', '#6b5200'), 0, 0.4, 0);
@@ -80,12 +76,11 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   },
 
   lever: (cell, ctx) => {
-    const color = channelColor(Number(cell.props.channel));
     const base = m(new BoxGeometry(0.44, 0.16, 0.3), toon('#5a5560'), 0, 0.06, 0);
     const arm = new Group();
     arm.position.y = 0.1;
     arm.add(m(new CylinderGeometry(0.04, 0.04, 0.45, 6), toon('#3a3238'), 0, 0.16, 0));
-    arm.add(m(new IcosahedronGeometry(0.09), glow(color), 0, 0.46, 0));
+    arm.add(m(new IcosahedronGeometry(0.09), toon('#6a6470'), 0, 0.46, 0));
     const lamp = m(new BoxGeometry(0.1, 0.05, 0.32), glow('#333'), -0.17, 0.16, 0, false);
     const g = onFloor(cell, ctx, base, arm, lamp);
     let angle = -0.6;
@@ -96,13 +91,12 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
         const target = on ? 0.6 : -0.6;
         angle += (target - angle) * Math.min(1, dt * 12);
         arm.rotation.z = angle;
-        lamp.material = glow(on ? color : '#333333');
+        lamp.material = glow(on ? '#ffcf6b' : '#333333');
       },
     };
   },
 
   door: (cell, ctx) => {
-    const color = channelColor(Number(cell.props.channel));
     // span across the corridor: if walls are left/right, the door panel spans x
     const solidAt = (dx: number, dy: number) => ctx.grid.cell(cell.dim, cell.x + dx, cell.y + dy).def.solid === 'always';
     const spanX = solidAt(-1, 0) || solidAt(1, 0) || !(solidAt(0, -1) || solidAt(0, 1));
@@ -126,8 +120,6 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       if (!spanX) ring.rotation.y = Math.PI / 2;
       panel.add(ring);
     }
-    // channel colour band, so the lever that opens it can be matched by eye
-    panel.add(part(1.01, 0.08, 0.31, withHole(glow(color)), 0, 1.1, 0, false));
     const g = onFloor(cell, ctx, panel);
     let y = 0;
     return {

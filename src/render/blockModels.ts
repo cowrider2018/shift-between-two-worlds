@@ -9,7 +9,8 @@ import {
 import type { Cell, LevelGrid } from '../core/grid';
 import type { Sim } from '../core/sim';
 import { channelColor, type DimTheme } from './palette';
-import { glow, toon } from './materials';
+import { cobble, glow, toon } from './materials';
+import { WALL_H, floorGeometry, wallGeometry } from './terrain';
 
 export interface BlockView {
   object: Object3D;
@@ -22,14 +23,6 @@ export interface ModelCtx {
 }
 
 export type BlockModelFactory = (cell: Cell, ctx: ModelCtx) => BlockView;
-
-/** Wall height in tiles — taller than the troll so walls read as walls from the third-person camera. */
-const WALL_H = 1.6;
-
-const geo = {
-  floor: new BoxGeometry(1, 0.1, 1),
-  wall: new BoxGeometry(1, WALL_H, 1),
-};
 
 function place(o: Object3D, cell: Cell): Object3D {
   o.position.set(cell.x + 0.5, 0, cell.y + 0.5);
@@ -45,8 +38,7 @@ function m(g: ConstructorParameters<typeof Mesh>[0], mat: Material | Material[],
 }
 
 function floorTile(cell: Cell, ctx: ModelCtx): Mesh {
-  const tile = m(geo.floor, toon(ctx.theme.floor[(cell.x + cell.y) % 2]), 0, -0.05, 0, false);
-  return tile;
+  return m(floorGeometry(cell.x, cell.y), cobble(ctx.theme.floor[(cell.x + cell.y) % 2]), 0, 0, 0, false);
 }
 
 /** Floor plus decoration. */
@@ -63,10 +55,8 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   floor: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
 
   wall: (cell, ctx) => {
-    const side = toon(ctx.theme.wallSide);
-    const top = toon(ctx.theme.wallTop);
-    const w = m(geo.wall, [side, side, top, side, side, side], 0, WALL_H / 2, 0);
-    return { object: place(w, cell) };
+    const g = wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop);
+    return { object: place(m(g, cobble('#ffffff', true)), cell) };
   },
 
   spawn: (cell, ctx) => {

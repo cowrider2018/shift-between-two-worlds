@@ -1,3 +1,4 @@
+import { cobbleTexture } from './cobbleTexture';
 import {
   AdditiveBlending, Color, DataTexture, DoubleSide, MeshBasicMaterial, MeshToonMaterial, NearestFilter, RedFormat,
   type Material,
@@ -25,6 +26,17 @@ export function toon(color: string, emissive?: string, doubleSided = false): Mes
     m = new MeshToonMaterial({ color: new Color(color), gradientMap: toonRamp() });
     if (emissive) m.emissive = new Color(emissive);
     if (doubleSided) m.side = DoubleSide;
+    cache.set(key, m);
+  }
+  return m;
+}
+
+/** Toon material with the cobblestone texture; `vertexColors` tints per vertex instead of by `color`. */
+export function cobble(color: string, vertexColors = false): MeshToonMaterial {
+  const key = `cobble:${color}:${vertexColors}`;
+  let m = cache.get(key) as MeshToonMaterial | undefined;
+  if (!m) {
+    m = new MeshToonMaterial({ color: new Color(color), map: cobbleTexture(), gradientMap: toonRamp(), vertexColors });
     cache.set(key, m);
   }
   return m;

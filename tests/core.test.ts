@@ -115,13 +115,13 @@ describe('simulation on level01', () => {
     expect(sim.status).toBe('playing');
   });
 
-  /** A lone monster at (6, 2) facing west (180°) in dimension A, the player spawning at (spawnX, 2). */
-  const ambushLevel = (spawnX: number, facing = 180) => {
+  /** A lone monster at (6, 2) facing west (180°) in dimension `dim`, the player spawning beside it at (spawnX, 2). */
+  const ambushLevel = (spawnX: number, facing = 180, dim: 0 | 1 = 0) => {
     const l: Level = createEmptyLevel('t', 12, 5);
     setCell(l, 0, 10, 3, 'E');
     setCell(l, 0, 1, 1, '.');
-    setCell(l, 0, spawnX, 2, 'S');
-    l.dimensions[0].monsters.push({ id: 'm', path: [[6, 2]], mode: 'pingpong', speed: 1, pause: 0, viewRadius: 4, viewAngle: 90, facing });
+    setCell(l, dim, spawnX, 2, 'S');
+    l.dimensions[dim].monsters.push({ id: 'm', path: [[6, 2]], mode: 'pingpong', speed: 1, pause: 0, viewRadius: 4, viewAngle: 90, facing });
     return l;
   };
 
@@ -160,6 +160,40 @@ describe('simulation on level01', () => {
     tap(other, 'attack');
     expect(other.monsters[0].alive).toBe(true);
     expect(other.takedownT).toBe(0);
+  });
+
+  it('cannot take down an underside monster, even from behind: they are ghosts', () => {
+    const sim = new Sim(ambushLevel(7, 180, 1));
+    const m = sim.monsters[0];
+    expect(sim.dim).toBe(1);
+    sim.update(NO_INPUT, 1 / 60);
+    expect(m.seeing).toBe(false);
+    expect(sim.attackTarget()).toBeNull();
+    tap(sim, 'attack');
+    expect(m.alive).toBe(true);
+    expect(sim.takedownT).toBe(0);
+  });
+
+  it('a slain surface monster rises as a ghost in the underside that watches from where it fell', () => {
+    const sim = new Sim(ambushLevel(7));
+    const m = sim.monsters[0];
+    sim.update(NO_INPUT, 1 / 60);
+    const [x, y, angle] = [m.x, m.y, m.angle];
+    tap(sim, 'attack');
+    expect(m.alive).toBe(false);
+    expect(m.corpse).toEqual({ x, y, angle });
+    expect(m.risen).toBe(true);
+    expect(m.dim).toBe(1);
+    for (let i = 0; i < 150; i++) sim.update(NO_INPUT, 1 / 60); // takedown over; the ghost is unseen from A
+    expect(m.detect).toBe(0);
+    tap(sim, 'shift');
+    expect(sim.dim).toBe(1);
+    expect(sim.attackTarget()).toBeNull(); // right behind it, but ghosts cannot be killed
+    for (let i = 0; i < 60; i++) sim.update(NO_INPUT, 1 / 60);
+    expect([m.x, m.y, m.angle]).toEqual([x, y, angle]); // it stands watch instead of patrolling
+    expect(sim.hunter).toBeNull();
+    walkTo(sim, 4, 2); // round in front of it, into its light
+    expect(sim.hunter).toBe(m);
   });
 
   it('is caught when standing in a cone, but not while sneaking at the edge', () => {

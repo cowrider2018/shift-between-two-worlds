@@ -60,7 +60,15 @@ export class MonsterState {
   x: number;
   y: number;
   angle: number;
+  /** The body is alive. A surface (A) monster whose throat is cut leaves its body behind and rises as a ghost in the
+   *  underside (B): `dim` becomes 1 and it keeps watching from where it fell. */
   alive = true;
+  /** Risen as a ghost in the underside after its body died; it no longer patrols. */
+  risen = false;
+  /** Where the dead body lies, in its home dimension. */
+  corpse: { x: number; y: number; angle: number } | null = null;
+  /** The dimension it acts in now (its home until it rises). */
+  dim: DimIndex;
   /** 0..1, spotted at 1. */
   detect = 0;
   /** Left its patrol to chase the player down. */
@@ -70,7 +78,8 @@ export class MonsterState {
   private dir = 1;
   private pauseT = 0;
 
-  constructor(readonly def: MonsterDef, readonly dim: DimIndex) {
+  constructor(readonly def: MonsterDef, readonly home: DimIndex) {
+    this.dim = home;
     const [sx, sy] = def.path[0];
     this.x = sx + 0.5;
     this.y = sy + 0.5;
@@ -87,7 +96,7 @@ export class MonsterState {
 
   update(dt: number): void {
     const path = this.def.path;
-    if (!this.alive || path.length < 2) return;
+    if (!this.alive || this.risen || path.length < 2) return;
     const [tx, ty] = path[this.target];
     const gx = tx + 0.5;
     const gy = ty + 0.5;
@@ -206,13 +215,14 @@ export class Sim {
     );
   }
 
-  /** The nearest monster in the player's own dimension that can be taken down: in reach and not seeing the player. */
+  /** The nearest monster that can be taken down: alive in the surface (A) with the player, in reach and not seeing
+   *  them. Underside (B) monsters are ghosts and cannot be killed. */
   attackTarget(): MonsterState | null {
     if (this.hunter || this.takedownT > 0) return null;
     let best: MonsterState | null = null;
     let bestD = TUNING.attackRange;
     for (const m of this.monsters) {
-      if (!m.alive || m.dim !== this.dim || m.seeing) continue;
+      if (!m.alive || m.dim !== 0 || this.dim !== 0 || m.seeing) continue;
       const d = Math.hypot(m.x - this.x, m.y - this.y);
       if (d <= bestD) {
         best = m;
@@ -385,11 +395,15 @@ export class Sim {
     this.channels = next;
   }
 
-  /** Leap onto the target's head and cut its throat (nothing happens without a target). */
+  /** Leap onto the target's head and cut its throat (nothing happens without a target). The body falls; its ghost
+   *  rises in the underside where it stood, still watching the way it faced. */
   private tryAttack(): void {
     const m = this.attackTarget();
     if (!m) return;
     m.alive = false;
+    m.corpse = { x: m.x, y: m.y, angle: m.angle };
+    m.risen = true;
+    m.dim = 1;
     m.seeing = false;
     m.detect = 0;
     this.facing = Math.atan2(m.y - this.y, m.x - this.x);
@@ -420,7 +434,7 @@ export class Sim {
 
   private updateDetection(dt: number): void {
     for (const m of this.monsters) {
-      m.seeing = m.alive && m.dim === this.dim && this.monsterSeesPlayer(m);
+      m.seeing = (m.alive || m.risen) && m.dim === this.dim && this.monsterSeesPlayer(m);
       m.detect = m.seeing ? m.detect + TUNING.detectRise * dt : Math.max(0, m.detect - TUNING.detectFall * dt);
       if (m.detect >= 1 && !this.hunter) {
         m.detect = 1;

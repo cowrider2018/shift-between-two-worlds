@@ -49,7 +49,7 @@ class VisionCone {
   }
 
   update(sim: Sim, m: MonsterState): void {
-    const show = m.alive && m.dim === sim.dim;
+    const show = (m.alive || m.risen) && m.dim === sim.dim;
     this.mesh.visible = show;
     if (!show) return;
     const r = sim.viewRadius(m);
@@ -96,6 +96,9 @@ interface MonsterView {
   chest: Object3D;
   chestRestInv: Matrix4;
 }
+
+/** The character that acts for a monster: its risen ghost once its body has died, else the body. */
+const actor = (mv: MonsterView) => (mv.state.risen && mv.ghost ? mv.ghost : mv.body);
 
 /** Ghosts float a little above the floor, bobbing (phase by position so neighbours do not bob in step). */
 const hover = (t: number, phase: number) => 0.15 + Math.sin(t * 2 + phase) * 0.06;
@@ -215,8 +218,8 @@ export class GameView {
     }
     this.monsters = sim.monsters.map((state) => {
       // every underside (B) monster is a ghost: the look marks the dimension, not death
-      const body = new CharacterInstance('troll', state.dim === 1 ? 'ghost' : 'normal');
-      const ghost = state.dim === 0 ? new CharacterInstance('troll', 'ghost') : null;
+      const body = new CharacterInstance('troll', state.home === 1 ? 'ghost' : 'normal');
+      const ghost = state.home === 0 ? new CharacterInstance('troll', 'ghost') : null;
       const cone = new VisionCone();
       const alert = new Group();
       alert.add(new Mesh(new BoxGeometry(0.08, 0.22, 0.08), glow('#ff4040')));
@@ -270,7 +273,7 @@ export class GameView {
         const mv = this.monsters.find((v) => v.state === e.monster);
         if (mv) {
           this.catching = { mv, swingT: 0, hit: false, lean: 0 };
-          mv.body.trigger('attack');
+          actor(mv).trigger('attack');
           // a hunter catches up from behind, i.e. between the camera and the hero: swing round to watch side-on
           const line = Math.atan2(this.sim.y - e.monster.y, this.sim.x - e.monster.x);
           const sides = [line + Math.PI / 2, line - Math.PI / 2];
@@ -404,38 +407,52 @@ export class GameView {
     const moved = mv.stillT < WALK_HOLD;
     mv.lastX = m.x;
     mv.lastY = m.y;
-    const home = m.dim === sim.dim;
-    const pace = m.def.speed / 1.4;
     const caught = this.catching?.mv === mv;
-    mv.body.root.visible = home; // the dead stay where they fell
-    mv.body.root.position.set(m.x, m.dim === 1 ? hover(this.t, m.x) : 0, m.y);
-    if (!m.alive) {
-      mv.body.root.rotation.y = -m.angle; // the death clip plays once and holds its last frame
-    } else if (caught) {
-      // squared up to the hero for the swing (attack is a one-shot, so nothing else cuts it off)
-      mv.body.root.rotation.y = -Math.atan2(sim.y - m.y, sim.x - m.x);
-    } else {
-      // a hunter runs flat out after the hero
-      const anim = m.hunting ? 'walk' : m.detect > 0.3 ? 'alert' : moved ? 'walk' : 'idle';
-      mv.body.root.rotation.y = -m.angle;
-      mv.body.play(anim, 0.2, m.hunting ? TUNING.huntSpeed / 1.4 : anim === 'walk' ? pace : 1);
-    }
-    mv.body.update(dt);
-    mv.alert.visible = m.detect > 0.05;
-    mv.alert.scale.setScalar(0.6 + m.detect * 0.8);
+    const float = (grounded: boolean) => (grounded ? 0 : hover(this.t, m.x));
 
-    // monsters of the other dimension are never seen; a fallen surface monster haunts the underside where it died
+    // the body, in its home dimension (underside monsters are ghosts from the start)
+    const body = mv.body;
+    body.root.visible = m.home === sim.dim;
+    if (m.corpse) {
+      // the dead stay where they fell; the death clip plays once and holds its last frame
+      body.root.position.set(m.corpse.x, float(m.home === 0), m.corpse.y);
+      body.root.rotation.y = -m.corpse.angle;
+    } else {
+      body.root.position.set(m.x, float(m.home === 0), m.y);
+      this.animateLive(body, m, moved, caught);
+    }
+    body.update(dt);
+
+    // a fallen surface monster's ghost, watching from where it fell in the underside
     const ghost = mv.ghost;
     if (ghost) {
-      ghost.root.visible = !m.alive && sim.dim === 1;
-      if (ghost.root.visible) {
-        ghost.root.position.set(m.x, hover(this.t, m.x), m.y);
-        ghost.root.rotation.y = -m.angle;
-        ghost.play('idle', 0.2);
+      ghost.root.visible = m.risen && sim.dim === 1;
+      if (m.risen) {
+        ghost.root.position.set(m.x, float(false), m.y);
+        this.animateLive(ghost, m, moved, caught);
         ghost.update(dt);
       }
     }
+
+    const a = actor(mv);
+    if (mv.alert.parent !== a.root) a.root.add(mv.alert);
+    mv.alert.visible = m.detect > 0.05;
+    mv.alert.scale.setScalar(0.6 + m.detect * 0.8);
     mv.cone.update(sim, m);
+  }
+
+  /** Face and animate a monster that is up and about (a living body or a risen ghost). */
+  private animateLive(c: CharacterInstance, m: MonsterState, moved: boolean, caught: boolean): void {
+    const sim = this.sim;
+    if (caught) {
+      // squared up to the hero for the swing (attack is a one-shot, so nothing else cuts it off)
+      c.root.rotation.y = -Math.atan2(sim.y - m.y, sim.x - m.x);
+      return;
+    }
+    // a hunter runs flat out after the hero
+    const anim = m.hunting ? 'walk' : m.detect > 0.3 ? 'alert' : moved ? 'walk' : 'idle';
+    c.root.rotation.y = -m.angle;
+    c.play(anim, 0.2, m.hunting ? TUNING.huntSpeed / 1.4 : anim === 'walk' ? m.def.speed / 1.4 : 1);
   }
 
   private applyTheme(dim: DimIndex): void {

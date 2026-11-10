@@ -337,29 +337,46 @@ def build_hood():
 def build_cape():
     """
     Full-body cloak: wraps the back and both sides from a raised collar down to the ankles,
-    leaving only a narrow opening at the front. Gentle folds, flared hem. Weighted down the cape chain.
+    leaving only a narrow opening at the front. Weighted down the cape chain.
+    Cloth read: the sheet hangs in sharp pleats (alternating ridge / valley columns) that are born under
+    the shoulders, deepen towards the hem and drift sideways as they fall, so each fold line turns a few
+    times on the way down; uneven fold depths and a ragged, ridge-low hem keep it from looking machined.
     """
     wrap = math.radians(160)  # angle from the back to each front edge (front opening = 2 * 20°)
-    cols = 10
+    cols = 20  # even: ridge and valley columns alternate, so 10 pleats around
     k = THICK / 1.5  # radii below are sized for THICK = 1.5
     d = 0.8 + 0.2 * (DEPTH - 0.7) / 0.3  # x-radii (depth) shrink with the flatter trunk; sized for DEPTH = 0.7
-    rows = [  # (z, x-radius, y-radius, x-centre)
-        (0.445, 0.055, 0.062, -0.005),   # collar top
-        (0.385, 0.085, 0.14, -0.005),    # shoulders (dropped with the shoulder caps)
-        (0.33, 0.15 * k * d, 0.185, 0.0),
-        (0.25, 0.165 * k * d, 0.19 * k, 0.0),  # hips
-        (0.16, 0.17 * k * d, 0.2 * k, 0.0),
-        (0.065, 0.175 * k * d, 0.21 * k, 0.0),  # hem, just above the ankles
+    rows = [  # (z, x-radius, y-radius, x-centre, pleat depth, sideways drift in radians)
+        (0.445, 0.055, 0.062, -0.005, 0.0, 0.0),          # collar top
+        (0.385, 0.085, 0.14, -0.005, 0.0, 0.0),           # shoulders (dropped with the shoulder caps)
+        (0.355, 0.12 * k * d, 0.17, -0.002, 0.03, 0.0),   # pleats are born under the shoulders
+        (0.31, 0.155 * k * d, 0.185, 0.0, 0.05, 0.03),
+        (0.255, 0.163 * k * d, 0.19 * k, 0.0, 0.065, -0.02),  # hips: folds kink back
+        (0.205, 0.167 * k * d, 0.195 * k, 0.0, 0.08, 0.04),
+        (0.155, 0.17 * k * d, 0.2 * k, 0.0, 0.095, 0.0),
+        (0.105, 0.173 * k * d, 0.205 * k, 0.0, 0.11, 0.05),
+        (0.065, 0.178 * k * d, 0.212 * k, 0.0, 0.12, 0.02),  # hem, just above the ankles
     ]
+    # per-pleat depth jitter (fixed, so rebuilds are identical) and per-column hem drop
+    jitter = [1.0, 0.6, 1.3, 0.8, 1.15, 0.7, 1.25, 0.9, 1.1, 0.65, 1.2, 0.85, 1.0, 0.75, 1.3, 0.6, 1.1, 0.9, 1.2, 0.7, 1.0]
     rings = []
-    for r, (z, rx, ry, cx) in enumerate(rows):
-        t = r / (len(rows) - 1)
+    for r, (z, rx, ry, cx, depth, drift) in enumerate(rows):
+        last = r == len(rows) - 1
         ring = []
         for c in range(cols + 1):
-            a = -wrap + 2 * wrap * c / cols          # 0 = straight back
-            fold = 1 + 0.06 * t * math.sin(a * 3)    # cloth folds, deeper towards the hem
-            hem = (0.012 if c % 2 else -0.004) if r == len(rows) - 1 else 0.0
-            ring.append((cx - math.cos(a) * rx * fold, math.sin(a) * ry * fold, z - hem))
+            a = -wrap + 2 * wrap * c / cols  # 0 = straight back
+            edge = c in (0, cols)
+            if not edge:
+                a += drift * math.sin(a * 0.5 + r)  # fold lines wander sideways as they fall
+            ridge = c % 2 == 0
+            # ridges stand out, valleys tuck in a little less (the sheet must stay clear of the body)
+            fold = 1 + depth * jitter[c] * (1.0 if ridge else -0.35)
+            if edge:
+                fold = 1 + depth * 0.3  # front edges hang flat, slightly rolled out
+            drop = 0.0
+            if last:
+                drop = (0.014 if ridge else -0.006) * jitter[c] + 0.006 * math.sin(c * 1.7)
+            ring.append((cx - math.cos(a) * rx * fold, math.sin(a) * ry * fold, z - drop))
         rings.append(ring)
     cloak = lib.loft("cape", rings, "hero_cape", closed=False)
     clasp = lib.ico("clasp", (0.078, 0.0, 0.395), 0.014, "hero_buckle", 0)

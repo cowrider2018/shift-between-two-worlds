@@ -19,7 +19,7 @@
   "hero_buckle": { "color": "#e0b84a" },
   "hero_pants": { "color": "#e9dcc0" },
   "hero_boot": { "color": "#6b4428" },
-  "hero_cape": { "color": "#9b2335", "doubleSided": true },
+  "hero_cape": { "color": "#3d4757", "doubleSided": true },
   "hero_blade": { "color": "#dfe8f0" },
   "hero_grip": { "color": "#4a2e1c" }
 }

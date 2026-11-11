@@ -4,11 +4,13 @@
  * Maps once onto a face (u across the boards, v along them).
  */
 import { DataTexture, NearestFilter, NearestMipmapNearestFilter, RGBAFormat, SRGBColorSpace } from 'three';
-import { mulberry32, valueNoise } from './texgen';
+import { mulberry32, TEXEL_DENSITY, valueNoise } from './texgen';
 
-const W = 64;
-const H = 128;
-const BOARDS = 5;
+/** One texel per art pixel (DESIGN §4.1) on a door face: 1 wide, 1.5 tall (blockModels.ts doorH). */
+const W = TEXEL_DENSITY;
+const H = Math.round(TEXEL_DENSITY * 1.5);
+/** Boards across the door; W divides evenly so every board is the same whole number of texels. */
+const BOARDS = 4;
 
 let tex: DataTexture | null = null;
 

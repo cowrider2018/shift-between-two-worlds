@@ -4,12 +4,12 @@
  * Tiles seamlessly over COBBLE_SPAN world units.
  */
 import { DataTexture, NearestFilter, NearestMipmapNearestFilter, RGBAFormat, RepeatWrapping, SRGBColorSpace } from 'three';
-import { mulberry32, valueNoise } from './texgen';
+import { mulberry32, TEXEL_DENSITY, valueNoise } from './texgen';
 
 /** World units covered by one repeat of the texture. */
 export const COBBLE_SPAN = 2;
-/** Texels per repeat (power of two for mipmaps) and stones per repeat edge. */
-const SIZE = 128;
+/** Texels per repeat: one texel per art pixel (DESIGN §4.1); and stones per repeat edge. */
+const SIZE = COBBLE_SPAN * TEXEL_DENSITY;
 const STONES = 6;
 /** Mortar where the two nearest stone centres are this close in distance (in stone-cell units). */
 const MORTAR = 0.07;
@@ -84,6 +84,7 @@ export function cobbleTexture(): DataTexture {
   tex.colorSpace = SRGBColorSpace;
   tex.wrapS = tex.wrapT = RepeatWrapping;
   tex.magFilter = NearestFilter;
+  // mipmaps for distant or grazing floor under the perspective camera; without them it shimmers into moire
   tex.minFilter = NearestMipmapNearestFilter;
   tex.generateMipmaps = true;
   tex.needsUpdate = true;

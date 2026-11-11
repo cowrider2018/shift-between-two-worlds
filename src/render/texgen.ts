@@ -1,5 +1,9 @@
 /** Deterministic helpers shared by the procedural textures. */
 
+/** Texels per world unit for every procedural texture: about one per art pixel at the camera's default distance
+ *  (DESIGN §4.1). The shadow map is sized from it too. */
+export const TEXEL_DENSITY = 48;
+
 /** Seeded PRNG returning [0, 1). */
 export function mulberry32(seed: number): () => number {
   let a = seed;

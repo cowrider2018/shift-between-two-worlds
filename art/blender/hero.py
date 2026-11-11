@@ -327,7 +327,7 @@ def _cut_below(obj, z):
 # Root swing: on side_l and back the cone's underside (its base) left the skull in a thin, hard wedge. The first
 # two layers of the lock (rings 0..2) are swung toward the head centre by ROOT_FLARE degrees, pivoting on the
 # fourth ring, so the base turns into the skull and meets it at a wider, smoother angle.
-ROOT_FLARE = {"side_l": 30.0, "back": 30.0}
+ROOT_FLARE = {"side_l": 20.0, "back": 20.0}
 FLARE_PIVOT = 3  # ring index the root swings about
 
 

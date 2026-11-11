@@ -1,3 +1,4 @@
+import './bandedShading';
 import { cobbleTexture } from './cobbleTexture';
 import { woodTexture } from './woodTexture';
 import {

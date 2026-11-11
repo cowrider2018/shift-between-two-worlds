@@ -20,7 +20,7 @@ export type ParamSchema =
 /** `whenClosed` only makes sense together with the `door` behavior. */
 export type Condition = 'never' | 'always' | 'whenClosed';
 
-export type Behavior = 'none' | 'spawn' | 'core' | 'lever' | 'door' | 'exit';
+export type Behavior = 'none' | 'spawn' | 'lever' | 'door' | 'exit';
 
 export interface BlockDef {
   id: string;
@@ -65,13 +65,8 @@ export const BLOCKS: readonly BlockDef[] = [
     solid: 'whenClosed', opaque: 'whenClosed', behavior: 'door',
   },
   {
-    id: 'core', char: 'C', label: '核心', description: '集齊才能開啟出口。',
-    color: '#58d6e8', params: [], solid: 'never', opaque: 'never', behavior: 'core',
-  },
-  {
-    id: 'exit', char: 'E', label: '出口', description: '牆上的小山洞：三面是牆、只留一個入口；集齊核心後走進去通關。',
-    color: '#c46bff',
-    params: [{ key: 'coresRequired', label: '需要核心數（0=全部）', type: 'int', default: 0, min: 0, max: 99 }],
+    id: 'exit', char: 'E', label: '出口', description: '牆上的小山洞：三面是牆、只留一個入口；走進去通關。',
+    color: '#c46bff', params: [],
     solid: 'never', opaque: 'never', behavior: 'exit', count: { min: 1 },
   },
 ];

@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BLOCKS } from '../src/core/blocks';
 import { castRay } from '../src/core/grid';
-import { createEmptyLevel, parseLevel, serializeLevel, setCell, setProp, type Level } from '../src/core/level';
+import { createEmptyLevel, parseLevel, serializeLevel, setCell, type Level } from '../src/core/level';
 import { NO_INPUT, Sim, TUNING, type SimInput } from '../src/core/sim';
 import { validateLevel } from '../src/core/validate';
 
@@ -304,22 +304,4 @@ describe('simulation on level01', () => {
     expect(sim.status).toBe('won');
   });
 
-  it('requires both cores to win', () => {
-    const l = createEmptyLevel('t', 8, 3);
-    setCell(l, 0, 3, 1, 'C');
-    setCell(l, 1, 5, 1, 'C');
-    setCell(l, 0, 6, 1, 'E');
-    setProp(l, 0, 6, 1, 'coresRequired', 0);
-    const sim = new Sim(l);
-    walkTo(sim, 6, 1);
-    expect(sim.status).toBe('playing');
-    walkTo(sim, 4, 1);
-    tap(sim, 'shift');
-    walkTo(sim, 5, 1);
-    walkTo(sim, 4, 1);
-    tap(sim, 'shift');
-    walkTo(sim, 6, 1);
-    expect(sim.cores).toBe(2);
-    expect(sim.status).toBe('won');
-  });
 });

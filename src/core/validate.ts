@@ -122,14 +122,11 @@ export function validateLevel(level: Level): ValidationReport {
     }
   });
 
-  // --- exit requirement
-  const coreCount = cells.filter((c) => c.def.behavior === 'core').length;
+  // --- exit shape
   for (const e of cells.filter((c) => c.def.behavior === 'exit')) {
     const sides = grid.openSides(e.dim, e.x, e.y).length;
     if (sides !== 1)
       err(`${where(e.dim, e.x, e.y)} 出口是牆上的小山洞：三面要是牆、只留一個入口（現在有 ${sides} 個）`, { dim: e.dim, x: e.x, y: e.y });
-    if (Number(e.props.coresRequired) > coreCount)
-      err(`${where(e.dim, e.x, e.y)} 出口需要 ${e.props.coresRequired} 顆核心，但全關只有 ${coreCount} 顆`, { dim: e.dim, x: e.x, y: e.y });
   }
 
   if (issues.some((i) => i.severity === 'error')) return { issues, ok: false };
@@ -139,7 +136,6 @@ export function validateLevel(level: Level): ValidationReport {
   if (result.status === 'unsolvable') err(`無解：${result.reason}`);
   else if (result.status === 'skipped') warn(result.reason ?? '略過求解');
   else issues.push({ severity: 'info', message: `可解（最短 ${result.steps} 步，不計怪物）` });
-  for (const c of result.unreachableCores) warn(`${where(c.dim, c.x, c.y)} 核心無法取得`, { dim: c.dim, x: c.x, y: c.y });
 
   return { issues, solve: result, ok: !issues.some((i) => i.severity === 'error') };
 }

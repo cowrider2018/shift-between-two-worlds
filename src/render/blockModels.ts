@@ -9,7 +9,7 @@ import {
 import type { Cell, LevelGrid } from '../core/grid';
 import type { Sim } from '../core/sim';
 import type { DimTheme } from './palette';
-import { cobble, glow, toon, whitening, wood } from './materials';
+import { cobble, toon, whitening, wood } from './materials';
 import { throughMouth, withHole, type Mouth } from './cutaway';
 import { CAVE, WALL_H, caveGeometry, floorGeometry, wallGeometry } from './terrain';
 
@@ -50,7 +50,6 @@ function onFloor(cell: Cell, ctx: ModelCtx, ...deco: Object3D[]): Group {
   return g;
 }
 
-const bob = (t: number, phase: number) => 0.38 + Math.sin(t * 2.5 + phase) * 0.06;
 
 /** A round-topped arch outline standing on y = 0 (the exit cave's profile), grown by `grow` on every side. */
 function archShape(grow = 0): Shape {
@@ -129,22 +128,6 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
         y += (target - y) * Math.min(1, dt * 8);
         panel.position.y = y;
         panel.visible = y > -WALL_H + 0.05;
-      },
-    };
-  },
-
-  core: (cell, ctx) => {
-    const crystal = m(new IcosahedronGeometry(0.22), glow('#7ff0ff'), 0, 0.42, 0);
-    const halo = m(new TorusGeometry(0.32, 0.025, 4, 16), glow('#58d6e8'), 0, 0.42, 0, false);
-    const g = onFloor(cell, ctx, crystal, halo);
-    return {
-      object: g,
-      update: (sim, _dt, t) => {
-        const show = !sim.isPicked(cell);
-        crystal.visible = halo.visible = show;
-        crystal.position.y = halo.position.y = bob(t, cell.y);
-        crystal.rotation.set(t, t * 1.3, 0);
-        halo.rotation.set(Math.PI / 2 + Math.sin(t) * 0.4, t * 0.8, 0);
       },
     };
   },

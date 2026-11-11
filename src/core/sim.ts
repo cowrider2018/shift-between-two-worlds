@@ -46,7 +46,6 @@ export const NO_INPUT: SimInput = { moveX: 0, moveY: 0, sneak: false, shift: fal
 
 export type SimEvent =
   | { type: 'shift'; dim: DimIndex }
-  | { type: 'pickup'; what: 'core'; cell: Cell }
   | { type: 'lever'; cell: Cell; on: boolean }
   /** The hero leaps onto this monster's head and cuts its throat; it is dead from this moment on. */
   | { type: 'kill'; monster: MonsterState }
@@ -54,7 +53,6 @@ export type SimEvent =
   | { type: 'spotted'; monster: MonsterState }
   /** The hunting monster reached the player. */
   | { type: 'caught'; monster: MonsterState }
-  | { type: 'exitLocked'; have: number; need: number }
   | { type: 'won' };
 
 export class MonsterState {
@@ -151,15 +149,11 @@ export class Sim {
   sneaking = false;
   status: SimStatus = 'playing';
   time = 0;
-  cores = 0;
-  readonly coresTotal: number;
   readonly monsters: MonsterState[] = [];
-  private readonly picked = new Set<string>();
   private readonly levers = new Map<string, boolean>();
   private channels = new Map<number, boolean>();
   private events: SimEvent[] = [];
   private shiftT = 0;
-  private lastCell: Cell | null = null;
   /** The player's centre was past the middle of an exit cave last step. */
   private inCave = false;
   /** Seconds left of a takedown in progress (the hero is locked in its animation), 0 otherwise. */
@@ -170,7 +164,6 @@ export class Sim {
   constructor(readonly level: Level) {
     this.grid = new LevelGrid(level);
     const cells = this.grid.all();
-    this.coresTotal = cells.filter((c) => c.def.behavior === 'core').length;
     const spawn = cells.find((c) => c.def.behavior === 'spawn');
     if (spawn) {
       this.dim = spawn.dim;
@@ -180,7 +173,6 @@ export class Sim {
     level.dimensions.forEach((d, di) => {
       for (const m of d.monsters) if (m.path.length) this.monsters.push(new MonsterState(m, di as DimIndex));
     });
-    this.lastCell = this.currentCell();
   }
 
   // ---- queries ------------------------------------------------------------
@@ -189,10 +181,6 @@ export class Sim {
 
   private static itemKey(c: Cell): string {
     return `${c.dim}:${cellKey(c.x, c.y)}`;
-  }
-
-  isPicked(c: Cell): boolean {
-    return this.picked.has(Sim.itemKey(c));
   }
 
   leverOn(c: Cell): boolean {
@@ -272,12 +260,11 @@ export class Sim {
       this.takedownT = Math.max(0, this.takedownT - dt);
       this.moving = false;
     } else this.movePlayer(input, dt);
-    // once spotted there is no way out: no shifting, levers, pickups or exit — only running
+    // once spotted there is no way out: no shifting, levers or exit — only running
     if (!this.hunter && this.takedownT === 0) {
       if (input.shift) this.tryShift();
       if (input.interact) this.tryInteract();
       if (input.attack) this.tryAttack();
-      this.enterCell();
       this.enterCave();
     }
     for (const m of this.monsters) if (m !== this.hunter) m.update(dt);
@@ -378,7 +365,6 @@ export class Sim {
     this.dim = (1 - this.dim) as DimIndex;
     this.shiftT = TUNING.shiftCooldown;
     for (const m of this.monsters) m.detect = 0;
-    this.lastCell = this.currentCell();
     this.events.push({ type: 'shift', dim: this.dim });
   }
 
@@ -416,18 +402,6 @@ export class Sim {
     this.events.push({ type: 'kill', monster: m });
   }
 
-  private enterCell(): void {
-    const c = this.currentCell();
-    if (c === this.lastCell) return;
-    this.lastCell = c;
-    const b = c.def.behavior;
-    if (b === 'core' && !this.isPicked(c)) {
-      this.picked.add(Sim.itemKey(c));
-      this.cores++;
-      this.events.push({ type: 'pickup', what: b, cell: c });
-    }
-  }
-
   /** How far the player's centre is into the cave of exit cell `c`, measured from its mouth. */
   caveDepthOf(c: Cell): number {
     const [dx, dy] = this.grid.openSides(c.dim, c.x, c.y)[0] ?? [0, 0];
@@ -439,13 +413,8 @@ export class Sim {
     const c = this.currentCell();
     const inside = c.def.behavior === 'exit' && this.caveDepthOf(c) >= TUNING.caveDepth / 2;
     if (inside && !this.inCave) {
-      const need = Number(c.props.coresRequired) || this.coresTotal;
-      if (this.cores >= need) {
-        this.status = 'won';
-        this.events.push({ type: 'won' });
-      } else {
-        this.events.push({ type: 'exitLocked', have: this.cores, need });
-      }
+      this.status = 'won';
+      this.events.push({ type: 'won' });
     }
     this.inCave = inside;
   }

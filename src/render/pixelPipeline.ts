@@ -90,7 +90,10 @@ export class PixelPipeline {
           float dn = max(max(depthAt(uv + vec2(texel.x, 0.0)), depthAt(uv - vec2(texel.x, 0.0))),
                          max(depthAt(uv + vec2(0.0, texel.y)), depthAt(uv - vec2(0.0, texel.y))));
           c = pow(max(c, 0.0), vec3(1.0 / 2.2));
-          c = floor(c * levels + 0.5) / levels;
+          // quantise brightness only, scaling the colour along with it: hue and saturation survive, where rounding
+          // each channel on its own pushed dark browns toward olive
+          float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+          if (luma > 1e-4) c = min(c * (floor(luma * levels + 0.5) / levels) / luma, vec3(1.0));
           float hd = distance(px, hole.xy);
           bool rim = hd > hole.z * ${HOLE_INNER.toFixed(3)} - 1.5 && hd < hole.z + 1.5;
           if (!rim && (dn - d) / d > 0.07 && d < cameraFar * 0.99) c = mix(c, outline, 0.8);

@@ -306,6 +306,7 @@ def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, curl=0.0, cu
         nxt = path[k + 1][1] if k + 1 < len(path) else tip
         rings.append(ring(c, (nxt - c).normalized(), n, w))
     obj = lib.loft(name, rings, "hero_hair", tip=tip, start=start)
+    obj["rings"] = len(rings)
     if cut is not None:
         obj["cut"] = cut
     return obj
@@ -343,6 +344,31 @@ def _flare_roots(objs):
             rot = Quaternion(axis, math.radians(ROOT_FLARE[n]))
             for i in idx:
                 vs[i].co = pivot + rot @ (vs[i].co - pivot)
+        o.data.update()
+
+
+# Tip pull: the tips stuck far out and made the head look top-heavy and lopsided. On every lock the last two layers
+# (the last ring and the tip point) are drawn in toward the third-last ring to TIP_SHORTEN of their length and
+# swung TIP_SWING degrees toward the head centre about it, so the outline sits closer and more evenly round the head.
+TIP_SHORTEN = 0.75
+TIP_SWING = 15.0
+
+
+def _pull_tips(objs):
+    for o in objs:
+        R = o["rings"]
+        vs = o.data.vertices
+        pivot = sum((vs[(R - 3) * 6 + i].co for i in range(6)), Vector()) / 6
+        moved = list(range((R - 1) * 6, R * 6)) + [R * 6]         # the last ring and the tip point
+        tip = vs[R * 6].co.copy()
+        axis = (tip - pivot).cross(H - pivot)
+        rot = Quaternion(axis.normalized(), math.radians(TIP_SWING)) if axis.length > 1e-9 else Quaternion()
+        for i in moved:
+            vs[i].co = pivot + rot @ ((vs[i].co - pivot) * TIP_SHORTEN)
+        # the second-last ring is half of the second layer: it moves half as far
+        for i in range((R - 2) * 6, (R - 1) * 6):
+            half = Quaternion(rot.axis, rot.angle / 2) if axis.length > 1e-9 else Quaternion()
+            vs[i].co = pivot + half @ ((vs[i].co - pivot) * (1 + TIP_SHORTEN) / 2)
         o.data.update()
 
 
@@ -457,7 +483,9 @@ def _build_locks():
     objs = [build_lock(f"hair_{n}", *args) for n, *args in HAIR]
     assert len(objs) == 5
     _flare_roots(objs)
+    _pull_tips(objs)
     for o in objs:
+        del o["rings"]
         if "cut" in o:
             _cut_below(o, H.z + o["cut"])
             _lift_cap(o, H.z + o["cut"])

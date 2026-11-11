@@ -3,8 +3,13 @@
  * Yaw is player-controlled (mouse X / ← →), pitch too (mouse Y, clamped to CAMERA.min/maxElevationDeg); the boom length is player-zoomed (wheel / + −) between
  * CAMERA.minDistance (near the face) and CAMERA.distance (the default, farthest view). Walls between the
  * camera and the hero are cut away by a round hole (see cutaway.ts) instead of pulling the camera in.
+ *
+ * Pixel discipline: the camera's position is snapped so the plane through its look-at point moves across the
+ * low-res frame in whole art pixels (the sub-pixel remainder, `subpixel`, is applied by the upscale pass, so the
+ * view still scrolls smoothly), and characters are snapped to the art-pixel grid at their own depth. While the
+ * camera only translates, the hero and what is around it keep a stable pixel pattern instead of shimmering.
  */
-import { PerspectiveCamera } from 'three';
+import { PerspectiveCamera, Vector3 } from 'three';
 import { angleDiff } from '../core/grid';
 import type { Sim } from '../core/sim';
 
@@ -31,6 +36,8 @@ export const CAMERA = {
   keyTurnSpeed: 2.4,
 };
 
+const _v = new Vector3();
+
 export class FollowCamera {
   readonly camera = new PerspectiveCamera(CAMERA.fov, 1, 0.1, 60);
   /** Grid angle the camera looks along (0 = +x, π/2 = +y). */
@@ -44,6 +51,12 @@ export class FollowCamera {
   private ty = 0;
   /** A yaw the camera swings round to on its own (a cutscene beat), or null for player control only. */
   private yawTarget: number | null = null;
+  /** Camera offset from its pixel-snapped position, in art pixels (x right, y up); the upscale pass shifts by it. */
+  readonly subpixel = { x: 0, y: 0 };
+  /** Low-res frame height in art pixels (set by setViewport). */
+  private frameH = 1;
+  private readonly right = new Vector3();
+  private readonly up = new Vector3();
 
   /** Unit vector (grid coords) the camera faces on the ground plane. */
   forward(): [number, number] {
@@ -86,9 +99,16 @@ export class FollowCamera {
     this.zoomTarget = Math.min(CAMERA.distance, Math.max(CAMERA.minDistance, d));
   }
 
-  setAspect(aspect: number): void {
-    this.camera.aspect = aspect;
+  /** Fit the projection to a low-res frame of w×h art pixels. */
+  setViewport(w: number, h: number): void {
+    this.frameH = h;
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+
+  /** Art pixels per world unit in the image plane at view depth `z`. */
+  private pixelsPerUnit(z: number): number {
+    return this.frameH / (2 * z * Math.tan((this.camera.fov * Math.PI) / 360));
   }
 
   update(sim: Sim, dt: number): void {
@@ -106,5 +126,29 @@ export class FollowCamera {
     const cy = this.ty - fy * d * Math.cos(elev);
     this.camera.position.set(cx, th + d * Math.sin(elev), cy);
     this.camera.lookAt(this.tx, th, this.ty);
+    this.camera.updateMatrixWorld();
+    // snap so the look-at plane lands on whole art pixels; keep the remainder for the upscale pass
+    this.right.setFromMatrixColumn(this.camera.matrixWorld, 0);
+    this.up.setFromMatrixColumn(this.camera.matrixWorld, 1);
+    const ppu = this.pixelsPerUnit(d);
+    const p = this.camera.position;
+    const a = p.dot(this.right) * ppu;
+    const b = p.dot(this.up) * ppu;
+    this.subpixel.x = a - Math.round(a);
+    this.subpixel.y = b - Math.round(b);
+    p.addScaledVector(this.right, -this.subpixel.x / ppu).addScaledVector(this.up, -this.subpixel.y / ppu);
+    this.camera.updateMatrixWorld();
+  }
+
+  /** Move a world position onto the art-pixel grid at its own depth (in the image plane), so a moving character
+   *  keeps a stable pixel pattern instead of re-rasterising at sub-pixel offsets. Call after update(). */
+  snap(p: Vector3): Vector3 {
+    const v = _v.copy(p).applyMatrix4(this.camera.matrixWorldInverse);
+    const z = -v.z;
+    if (z <= this.camera.near) return p;
+    const k = this.pixelsPerUnit(z);
+    v.x = Math.round(v.x * k) / k;
+    v.y = Math.round(v.y * k) / k;
+    return p.copy(v.applyMatrix4(this.camera.matrixWorld));
   }
 }

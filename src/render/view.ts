@@ -251,7 +251,7 @@ export class GameView {
 
   resize(): void {
     const { w, h } = this.pipeline.resize(window.innerWidth, window.innerHeight);
-    this.follow.setAspect(w / h);
+    this.follow.setViewport(w, h);
   }
 
   onEvents(events: SimEvent[]): void {
@@ -306,6 +306,9 @@ export class GameView {
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     if (this.takedown) this.updateTakedown(this.takedown, dt);
     this.follow.update(sim, dt);
+    this.snapCharacters();
+    this.pipeline.subpixel.x = this.follow.subpixel.x;
+    this.pipeline.subpixel.y = this.follow.subpixel.y;
     this.updateHole();
     this.pipeline.render(this.scene, this.follow.camera);
   }
@@ -381,6 +384,15 @@ export class GameView {
       from.y + (to.y - from.y) * k + T.arc * 4 * k * (1 - k),
       from.z + (to.z - from.z) * k,
     );
+  }
+
+  /** Put every character on the camera's pixel grid (after all of them have been placed this frame). */
+  private snapCharacters(): void {
+    this.follow.snap(this.hero.root.position);
+    for (const mv of this.monsters) {
+      this.follow.snap(mv.body.root.position);
+      if (mv.ghost) this.follow.snap(mv.ghost.root.position);
+    }
   }
 
   /** Centre the camera hole (cutaway.ts) on the hero's body and cut everything nearer than the hero. */

@@ -1,21 +1,29 @@
 /**
- * DESIGN §4.1 — render the 3D scene at low resolution, then a post pass adds depth outlines,
- * colour quantisation and screen effects. The canvas is CSS-upscaled with nearest filtering.
+ * DESIGN §4.1 — render the 3D scene at low resolution (one render pixel = one art pixel), then a post pass adds
+ * depth outlines, colour quantisation and screen effects while upscaling to the screen with nearest sampling.
+ * The low-res frame is one art pixel larger on every side than the screen needs, so the upscale can shift it by
+ * the camera's sub-pixel remainder (FollowCamera.subpixel): geometry stays locked to the art-pixel grid while the
+ * view still scrolls smoothly.
  */
 import {
-  Camera, DepthTexture, PerspectiveCamera, Mesh, NearestFilter, OrthographicCamera, PlaneGeometry, Scene, ShaderMaterial,
+  DepthTexture, Mesh, type PerspectiveCamera, NearestFilter, OrthographicCamera, PlaneGeometry, Scene, ShaderMaterial,
   Color, Vector2, Vector3, WebGLRenderTarget, WebGLRenderer, BasicShadowMap, UnsignedIntType,
 } from 'three';
 import { HOLE_INNER } from './cutaway';
 
-/** Render resolution = screen resolution / PIXEL_SCALE (each art pixel is PIXEL_SCALE×PIXEL_SCALE screen pixels). */
+/** Screen pixels per art pixel. */
 export const PIXEL_SCALE = 3;
+/** Extra art pixels rendered on each side, room for the sub-pixel shift. */
+const MARGIN = 1;
 
 export class PixelPipeline {
   readonly renderer: WebGLRenderer;
   pixelSize = PIXEL_SCALE;
+  /** Low-res render target size, in art pixels (includes the margin). */
   width = 1;
   height = 1;
+  /** Camera sub-pixel remainder in art pixels (x right, y up), set per frame by the view. */
+  readonly subpixel = { x: 0, y: 0 };
   private readonly rt: WebGLRenderTarget;
   private readonly post: ShaderMaterial;
   private readonly postScene = new Scene();
@@ -39,6 +47,10 @@ export class PixelPipeline {
         tColor: { value: this.rt.texture },
         tDepth: { value: this.rt.depthTexture },
         texel: { value: new Vector2() },
+        rtSize: { value: new Vector2() },
+        screenSize: { value: new Vector2() },
+        scale: { value: 3 },
+        sub: { value: new Vector2() },
         levels: { value: 14 },
         outline: { value: new Color('#140f18') },
         flash: { value: 0 },
@@ -58,14 +70,17 @@ export class PixelPipeline {
         uniform sampler2D tColor;
         uniform float cameraNear, cameraFar;
         uniform sampler2D tDepth;
-        uniform vec2 texel;
+        uniform vec2 texel, rtSize, screenSize, sub;
+        uniform float scale;
         uniform float levels, flash, ripple, danger, time;
         uniform vec3 outline;
         uniform vec3 hole;
         varying vec2 vUv;
         float depthAt(vec2 uv) { return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, cameraNear, cameraFar); }
         void main() {
-          vec2 uv = vUv;
+          // screen pixel -> art pixel of the low-res frame, shifted by the camera's sub-pixel remainder
+          vec2 px = floor((gl_FragCoord.xy - screenSize * 0.5) / scale + rtSize * 0.5 + sub) + 0.5;
+          vec2 uv = px / rtSize;
           if (ripple > 0.0) {
             float row = floor(uv.y / texel.y);
             uv.x += floor(sin(row * 0.35 + time * 18.0) * 3.0 * ripple) * texel.x;
@@ -76,7 +91,7 @@ export class PixelPipeline {
                          max(depthAt(uv + vec2(0.0, texel.y)), depthAt(uv - vec2(0.0, texel.y))));
           c = pow(max(c, 0.0), vec3(1.0 / 2.2));
           c = floor(c * levels + 0.5) / levels;
-          float hd = distance(gl_FragCoord.xy, hole.xy);
+          float hd = distance(px, hole.xy);
           bool rim = hd > hole.z * ${HOLE_INNER.toFixed(3)} - 1.5 && hd < hole.z + 1.5;
           if (!rim && (dn - d) / d > 0.07 && d < cameraFar * 0.99) c = mix(c, outline, 0.8);
           vec2 q = vUv - 0.5;
@@ -94,28 +109,33 @@ export class PixelPipeline {
 
   /** Resize to the window; returns the low-res framebuffer size. */
   resize(cssW: number, cssH: number): { w: number; h: number } {
-    this.pixelSize = PIXEL_SCALE;
-    this.width = Math.max(1, Math.ceil(cssW / this.pixelSize));
-    this.height = Math.max(1, Math.ceil(cssH / this.pixelSize));
-    this.renderer.setSize(this.width, this.height, false);
-    this.canvas.style.width = `${this.width * this.pixelSize}px`;
-    this.canvas.style.height = `${this.height * this.pixelSize}px`;
+    const pixelSize = this.pixelSize;
+    const sw = Math.max(1, Math.floor(cssW));
+    const sh = Math.max(1, Math.floor(cssH));
+    this.width = Math.ceil(sw / pixelSize) + 2 * MARGIN;
+    this.height = Math.ceil(sh / pixelSize) + 2 * MARGIN;
+    this.renderer.setSize(sw, sh, false);
+    this.canvas.style.width = `${sw}px`;
+    this.canvas.style.height = `${sh}px`;
     this.rt.setSize(this.width, this.height);
-    (this.post.uniforms.texel.value as Vector2).set(1 / this.width, 1 / this.height);
+    const u = this.post.uniforms;
+    (u.texel.value as Vector2).set(1 / this.width, 1 / this.height);
+    (u.rtSize.value as Vector2).set(this.width, this.height);
+    (u.screenSize.value as Vector2).set(sw, sh);
+    u.scale.value = pixelSize;
     return { w: this.width, h: this.height };
   }
 
-  render(scene: Scene, camera: Camera): void {
+  render(scene: Scene, camera: PerspectiveCamera): void {
     const u = this.post.uniforms;
+    (u.sub.value as Vector2).set(this.subpixel.x, this.subpixel.y);
     u.flash.value = this.fx.flash;
     u.ripple.value = this.fx.ripple;
     u.danger.value = this.fx.danger;
     u.time.value = this.fx.time;
     (u.hole.value as Vector3).set(this.hole.x, this.hole.y, this.hole.r);
-    if (camera instanceof PerspectiveCamera) {
-      u.cameraNear.value = camera.near;
-      u.cameraFar.value = camera.far;
-    }
+    u.cameraNear.value = camera.near;
+    u.cameraFar.value = camera.far;
     this.renderer.setRenderTarget(this.rt);
     this.renderer.render(scene, camera);
     this.renderer.setRenderTarget(null);

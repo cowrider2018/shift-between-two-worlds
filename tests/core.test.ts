@@ -25,6 +25,8 @@ function walkTo(sim: Sim, x: number, y: number, extra: Partial<SimInput> = {}) {
   throw new Error(`could not reach ${x},${y}; at ${sim.x.toFixed(2)},${sim.y.toFixed(2)}`);
 }
 const tap = (sim: Sim, key: 'shift' | 'interact' | 'attack') => sim.update({ ...NO_INPUT, [key]: true }, 1 / 60);
+/** Space sends interact and attack together; the sim picks one. */
+const space = (sim: Sim) => sim.update({ ...NO_INPUT, interact: true, attack: true }, 1 / 60);
 
 describe('block registry', () => {
   it('has unique ids and chars', () => {
@@ -176,7 +178,7 @@ describe('simulation on level01', () => {
     const m = sim.monsters[0];
     sim.update(NO_INPUT, 1 / 60);
     expect(sim.attackTarget()).toBe(m);
-    tap(sim, 'attack');
+    space(sim); // no lever in reach, so the action key is a takedown
     expect(m.alive).toBe(false);
     expect(sim.drainEvents()).toContainEqual({ type: 'kill', monster: m });
     expect(sim.facing).toBeCloseTo(Math.PI); // turned to face its target
@@ -321,7 +323,8 @@ describe('simulation on level01', () => {
     const m2 = sim.monsters.find((m) => m.def.id === 'm2')!;
 
     walkTo(sim, 1, 7, { sneak: true });     // past m1's light, down to the lever
-    tap(sim, 'interact');                   // lever ch1 → the door beside the spawn opens
+    space(sim);                             // lever ch1 → the door beside the spawn opens
+    expect(sim.drainEvents().some((e) => e.type === 'lever')).toBe(true);
     walkTo(sim, 1, 1, { sneak: true });
     // wait, sneaking, for m2 to turn at the west end of its beat and walk off east
     let px = m2.x;

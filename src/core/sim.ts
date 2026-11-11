@@ -268,8 +268,9 @@ export class Sim {
     // once spotted there is no way out: no shifting, levers or exit — only running
     if (!this.hunter && this.takedownT === 0) {
       if (input.shift) this.tryShift();
-      if (input.interact) this.tryInteract();
-      if (input.attack) this.tryAttack();
+      // one key does both (DESIGN §2): a lever in reach takes the press, otherwise it is a takedown
+      if (input.interact && this.nearestLever()) this.tryInteract();
+      else if (input.attack) this.tryAttack();
       this.enterCave();
     }
     for (const m of this.monsters) if (m !== this.hunter) m.update(dt);

@@ -41,8 +41,8 @@ export class Input {
       if (e.repeat) return;
       this.down.add(e.code);
       if (e.key === 'Shift') this.shiftDownAt = performance.now();
-      if (e.code === 'KeyE') this.pending.interact = true;
-      if (e.code === 'Space' || e.code === 'KeyJ') this.pending.attack = true;
+      // Space is the one action key: the sim pulls a lever in reach, otherwise tries a takedown
+      if (e.code === 'Space') this.pending.interact = this.pending.attack = true;
       if (e.code === 'Equal' || e.code === 'NumpadAdd') this.zoomNotches -= 1;
       if (e.code === 'Minus' || e.code === 'NumpadSubtract') this.zoomNotches += 1;
       this.onKey.get(e.code)?.();
@@ -131,7 +131,7 @@ export class Input {
   take(): SimInput {
     const input: SimInput = {
       moveX: (this.any('KeyD') ? 1 : 0) - (this.any('KeyA') ? 1 : 0),
-      moveY: (this.any('KeyS', 'ArrowDown') ? 1 : 0) - (this.any('KeyW', 'ArrowUp') ? 1 : 0),
+      moveY: (this.any('KeyS') ? 1 : 0) - (this.any('KeyW') ? 1 : 0),
       sneak: this.any('ShiftLeft', 'ShiftRight'),
       ...this.pending,
     };

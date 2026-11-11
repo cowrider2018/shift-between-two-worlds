@@ -1,29 +1,50 @@
 {
   "format": 1,
   "id": "level03",
-  "name": "交界",
-  "size": {"w":12,"h":3},
+  "name": "迴環",
+  "size": {"w":9,"h":9},
   "dimensions": [
     {
       "rows": [
-        "############",
-        "#S.........#",
-        "############"
+        "#########",
+        "#.......#",
+        "#.###D#.#",
+        "#.###.#.#",
+        "#.SD###L#",
+        "#.###.#.#",
+        "#.###.#.#",
+        "#.......#",
+        "#########"
       ],
-      "props": {},
+      "props": {
+        "5,2": {"channel":1,"inverted":false},
+        "3,4": {"channel":1,"inverted":false},
+        "7,4": {"channel":1}
+      },
       "monsters": [
-        {"id":"s1","path":[[10,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":8.8,"viewAngle":70,"facing":180}
+        {"id":"s1","path":[[5,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":6,"viewAngle":70,"facing":270},
+        {"id":"s2","path":[[5,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":6,"viewAngle":70,"facing":90}
       ]
     },
     {
       "rows": [
-        "############",
-        "#.........E#",
-        "############"
+        "#########",
+        "#.......#",
+        "#.###.#.#",
+        "#.###.#.#",
+        "#..DE##.#",
+        "#.###.#.#",
+        "#.###D#.#",
+        "#.......#",
+        "#########"
       ],
-      "props": {},
+      "props": {
+        "3,4": {"channel":1,"inverted":false},
+        "5,6": {"channel":1,"inverted":true}
+      },
       "monsters": [
-        {"id":"g1","path":[[1,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":7,"viewAngle":70,"facing":0}
+        {"id":"g1","path":[[5,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":6,"viewAngle":70,"facing":270},
+        {"id":"g2","path":[[5,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":6,"viewAngle":70,"facing":90}
       ]
     }
   ]

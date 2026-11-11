@@ -356,36 +356,38 @@ describe('level02: the troll guards the lever with its ghost', () => {
   });
 });
 
-describe('level03: the two lights meet at a single cell', () => {
+describe('level03: one lever decides which half of the ring is lit', () => {
   const level03 = () => parseLevel(JSON.parse(load('level03.json'))).level!;
-  /** Hall cells (x of row 1) where a hero standing in `dim` is seen by nobody. */
-  const darkCells = (dim: 0 | 1, sneak: boolean) => {
-    const sim = new Sim(level03());
-    sim.dim = dim;
-    sim.sneaking = sneak;
-    const out: number[] = [];
-    for (let x = 1; x <= 9; x++) {
-      sim.x = x + 0.5;
-      sim.y = 1.5;
-      if (!sim.monsters.some((m) => m.dim === dim && sim.monsterSeesPlayer(m))) out.push(x);
-    }
-    return out;
+  /** Is a sneaking hero at (x, y) in `dim` seen by anyone? */
+  const lit = (sim: Sim, dim: 0 | 1, x: number, y: number) => {
+    const [px, py, pd, ps] = [sim.x, sim.y, sim.dim, sim.sneaking];
+    sim.dim = dim; sim.x = x + 0.5; sim.y = y + 0.5; sim.sneaking = true;
+    const seen = sim.monsters.some((m) => m.dim === dim && sim.monsterSeesPlayer(m));
+    sim.x = px; sim.y = py; sim.dim = pd; sim.sneaking = ps;
+    return seen;
   };
 
-  it('crouching shrinks the surface light to cells 1-5 and the underside light to cells 5-9, so the only way across is cell 5', () => {
-    expect(darkCells(0, true)).toEqual([1, 2, 3, 4, 5]);
-    expect(darkCells(1, true)).toEqual([5, 6, 7, 8, 9]);
-    expect(darkCells(0, false)).toEqual([1]);   // standing, only the spawn is dark
-    expect(darkCells(1, false)).toEqual([9]);
+  it('before the lever the bottom arc is lit in both dimensions and the top arc only in the underside', () => {
+    const sim = new Sim(level03());
+    expect([lit(sim, 0, 5, 7), lit(sim, 1, 5, 7)]).toEqual([true, true]);
+    expect([lit(sim, 0, 5, 1), lit(sim, 1, 5, 1)]).toEqual([false, true]);
   });
 
-  it('is won by sneaking to cell 5, shifting there and sneaking on to the cave', () => {
+  it('after the lever the top arc is lit in both dimensions and the bottom arc only on the surface', () => {
     const sim = new Sim(level03());
-    walkTo(sim, 5, 1, { sneak: true });
+    sim.x = 7.5; sim.y = 3.5;
+    tap(sim, 'interact');
+    expect([lit(sim, 0, 5, 1), lit(sim, 1, 5, 1)]).toEqual([true, true]);
+    expect([lit(sim, 0, 5, 7), lit(sim, 1, 5, 7)]).toEqual([true, false]);
+  });
+
+  it('is won by going round the top on the surface, pulling the lever, and coming back round the bottom in the underside', () => {
+    const sim = new Sim(level03());
+    for (const [x, y] of [[1, 4], [1, 1], [7, 1], [7, 3]]) walkTo(sim, x, y);
+    tap(sim, 'interact');
     tap(sim, 'shift');
     expect(sim.dim).toBe(1);
-    walkTo(sim, 9, 1, { sneak: true });
-    walkTo(sim, 10, 1);
+    for (const [x, y] of [[7, 7], [1, 7], [1, 4], [4, 4]]) walkTo(sim, x, y);
     expect(sim.status).toBe('won');
   });
 });

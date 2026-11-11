@@ -4,7 +4,7 @@
  */
 import {
   Camera, DepthTexture, PerspectiveCamera, Mesh, NearestFilter, OrthographicCamera, PlaneGeometry, Scene, ShaderMaterial,
-  Color, Vector2, Vector3, WebGLRenderTarget, WebGLRenderer, PCFShadowMap, UnsignedIntType,
+  Color, Vector2, Vector3, WebGLRenderTarget, WebGLRenderer, BasicShadowMap, UnsignedIntType,
 } from 'three';
 import { HOLE_INNER } from './cutaway';
 
@@ -30,7 +30,8 @@ export class PixelPipeline {
     this.renderer = new WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(1);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = PCFShadowMap;
+    // hard-edged, unfiltered shadows: a soft penumbra reads as a 3D render, not as drawn shading
+    this.renderer.shadowMap.type = BasicShadowMap;
     this.rt = new WebGLRenderTarget(1, 1, { minFilter: NearestFilter, magFilter: NearestFilter });
     this.rt.depthTexture = new DepthTexture(1, 1, UnsignedIntType);
     this.post = new ShaderMaterial({

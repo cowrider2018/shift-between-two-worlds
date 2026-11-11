@@ -17,6 +17,7 @@ import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
 import { THEMES } from './palette';
 import { PixelPipeline } from './pixelPipeline';
+import { TEXEL_DENSITY } from './texgen';
 
 const CONE_SEGMENTS = 32;
 
@@ -181,7 +182,6 @@ export class GameView {
     this.hemi.intensity = 1.5;
     this.sun.intensity = 1.8;
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.bias = -0.0015;
     this.sun.shadow.normalBias = 0.04;
     this.scene.add(this.hemi, this.sun, this.sun.target, this.world);
@@ -234,6 +234,13 @@ export class GameView {
     const s = Math.max(w, h);
     Object.assign(this.sun.shadow.camera, { left: -s, right: s, top: s, bottom: -s, near: 1, far: 50 });
     this.sun.shadow.camera.updateProjectionMatrix();
+    // about one shadow texel per art pixel, so hard shadow edges step like the rest of the art
+    const size = Math.min(4096, 2 ** Math.ceil(Math.log2(2 * s * TEXEL_DENSITY)));
+    if (this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
     this.shownDim = -1;
     this.catching = null;
     this.takedown = null;

@@ -347,19 +347,20 @@ def _flare_roots(objs):
         o.data.update()
 
 
-# Tip pull: the tips stuck far out and made the head look top-heavy and lopsided. On every lock the outer TIP_SPAN of
-# its length (measured along the ring centres to the tip) is bent in toward the head: about the point TIP_SPAN from
-# the tip, each ring is drawn in and swung toward the head centre in proportion to how far out it lies, the tip
-# itself by TIP_SHORTEN of its distance and TIP_SWING degrees, so the outline sits closer and more evenly round it.
+# Tip pull: the tips stuck far out and made the head look top-heavy and lopsided. On every lock the outer part of
+# its length (TIP_SPAN, or the lock's own span in TIP_OVERRIDE, measured along the ring centres to the tip) curls in
+# toward the head: past the point that far from the tip, every ring turns the rest of the lock a further TIP_STEP
+# degrees toward the head centre about itself, like a chain rolling up, and the rings are drawn in toward that point
+# in proportion to how far out they lie (the tip to TIP_SHORTEN of its distance).
 TIP_SPAN = 0.4
 TIP_SHORTEN = 0.75
-TIP_SWING = 15.0
-TIP_OVERRIDE = {"sweep_l": (0.65, 25.0), "sweep_r": (0.5, 15.0)}  # name: (span, swing) where the default is not enough
+TIP_STEP = 5.0  # degrees per ring
+TIP_OVERRIDE = {"sweep_l": 0.65, "sweep_r": 0.5}  # name: span
 
 
 def _pull_tips(objs):
     for (n, *_), o in zip(HAIR, objs):
-        span, swing = TIP_OVERRIDE.get(n, (TIP_SPAN, TIP_SWING))
+        span = TIP_OVERRIDE.get(n, TIP_SPAN)
         R = o["rings"]
         vs = o.data.vertices
         groups = [list(range(r * 6, r * 6 + 6)) for r in range(R)] + [[R * 6]]   # the rings, then the tip point
@@ -371,18 +372,23 @@ def _pull_tips(objs):
         k = next(i for i in range(1, len(cum)) if cum[i] >= s0)
         f = (s0 - cum[k - 1]) / max(cum[k] - cum[k - 1], 1e-9)
         pivot = centres[k - 1].lerp(centres[k], f)
-        axis = (centres[-1] - pivot).cross(H - pivot)
-        if axis.length < 1e-9:
-            continue
-        axis.normalize()
-        for g, sg in zip(groups, cum):
-            if sg <= s0:
-                continue
-            w = (sg - s0) / (cum[-1] - s0)
-            rot = Quaternion(axis, math.radians(swing) * w)
-            scale = 1 - (1 - TIP_SHORTEN) * w
+        # draw in
+        for g, sg in zip(groups[k:], cum[k:]):
+            scale = 1 - (1 - TIP_SHORTEN) * (sg - s0) / (cum[-1] - s0)
             for i in g:
-                vs[i].co = pivot + rot @ ((vs[i].co - pivot) * scale)
+                vs[i].co = pivot + (vs[i].co - pivot) * scale
+        # curl: a fixed turn at every ring along the way
+        hinge = pivot
+        for j in range(k, len(groups)):
+            tip = sum((vs[i].co for i in groups[-1]), Vector()) / len(groups[-1])
+            axis = (tip - hinge).cross(H - hinge)
+            if axis.length < 1e-9:
+                break
+            rot = Quaternion(axis.normalized(), math.radians(TIP_STEP))
+            for g in groups[j:]:
+                for i in g:
+                    vs[i].co = hinge + rot @ (vs[i].co - hinge)
+            hinge = sum((vs[i].co for i in groups[j]), Vector()) / len(groups[j])
         o.data.update()
 
 

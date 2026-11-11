@@ -347,9 +347,11 @@ def _flare_roots(objs):
         o.data.update()
 
 
-# Tip pull: the tips stuck far out and made the head look top-heavy and lopsided. On every lock the last two layers
-# (the last ring and the tip point) are drawn in toward the third-last ring to TIP_SHORTEN of their length and
-# swung TIP_SWING degrees toward the head centre about it, so the outline sits closer and more evenly round the head.
+# Tip pull: the tips stuck far out and made the head look top-heavy and lopsided. On every lock the outer TIP_SPAN of
+# its length (measured along the ring centres to the tip) is bent in toward the head: about the point TIP_SPAN from
+# the tip, each ring is drawn in and swung toward the head centre in proportion to how far out it lies, the tip
+# itself by TIP_SHORTEN of its distance and TIP_SWING degrees, so the outline sits closer and more evenly round it.
+TIP_SPAN = 0.4
 TIP_SHORTEN = 0.75
 TIP_SWING = 15.0
 
@@ -358,17 +360,27 @@ def _pull_tips(objs):
     for o in objs:
         R = o["rings"]
         vs = o.data.vertices
-        pivot = sum((vs[(R - 3) * 6 + i].co for i in range(6)), Vector()) / 6
-        moved = list(range((R - 1) * 6, R * 6)) + [R * 6]         # the last ring and the tip point
-        tip = vs[R * 6].co.copy()
-        axis = (tip - pivot).cross(H - pivot)
-        rot = Quaternion(axis.normalized(), math.radians(TIP_SWING)) if axis.length > 1e-9 else Quaternion()
-        for i in moved:
-            vs[i].co = pivot + rot @ ((vs[i].co - pivot) * TIP_SHORTEN)
-        # the second-last ring is half of the second layer: it moves half as far
-        for i in range((R - 2) * 6, (R - 1) * 6):
-            half = Quaternion(rot.axis, rot.angle / 2) if axis.length > 1e-9 else Quaternion()
-            vs[i].co = pivot + half @ ((vs[i].co - pivot) * (1 + TIP_SHORTEN) / 2)
+        groups = [list(range(r * 6, r * 6 + 6)) for r in range(R)] + [[R * 6]]   # the rings, then the tip point
+        centres = [sum((vs[i].co for i in g), Vector()) / len(g) for g in groups]
+        cum = [0.0]
+        for p, q in zip(centres, centres[1:]):
+            cum.append(cum[-1] + (q - p).length)
+        s0 = cum[-1] * (1 - TIP_SPAN)
+        k = next(i for i in range(1, len(cum)) if cum[i] >= s0)
+        f = (s0 - cum[k - 1]) / max(cum[k] - cum[k - 1], 1e-9)
+        pivot = centres[k - 1].lerp(centres[k], f)
+        axis = (centres[-1] - pivot).cross(H - pivot)
+        if axis.length < 1e-9:
+            continue
+        axis.normalize()
+        for g, sg in zip(groups, cum):
+            if sg <= s0:
+                continue
+            w = (sg - s0) / (cum[-1] - s0)
+            rot = Quaternion(axis, math.radians(TIP_SWING) * w)
+            scale = 1 - (1 - TIP_SHORTEN) * w
+            for i in g:
+                vs[i].co = pivot + rot @ ((vs[i].co - pivot) * scale)
         o.data.update()
 
 

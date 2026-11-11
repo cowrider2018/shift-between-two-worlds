@@ -322,6 +322,29 @@ def _cut_below(obj, z):
     bm.free()
 
 
+# Root swing: on side_l and back the cone's underside (its base) left the skull in a thin, hard wedge. The first
+# two layers of the lock (rings 0..2) are swung toward the head centre by ROOT_FLARE degrees, pivoting on the
+# fourth ring, so the base turns into the skull and meets it at a wider, smoother angle.
+ROOT_FLARE = {"side_l": 10.0, "back": 10.0}
+FLARE_PIVOT = 3  # ring index the root swings about
+
+
+def _flare_roots(objs):
+    for (n, *_), o in zip(HAIR, objs):
+        if n not in ROOT_FLARE:
+            continue
+        vs = o.data.vertices
+        pivot = sum((vs[FLARE_PIVOT * 6 + i].co for i in range(6)), Vector()) / 6
+        for r in range(FLARE_PIVOT):
+            idx = range(r * 6, r * 6 + 6)
+            c = sum((vs[i].co for i in idx), Vector()) / 6
+            axis = (c - pivot).cross(H - pivot).normalized()      # positive angles swing toward the head
+            rot = Quaternion(axis, math.radians(ROOT_FLARE[n]))
+            for i in idx:
+                vs[i].co = pivot + rot @ (vs[i].co - pivot)
+        o.data.update()
+
+
 # Scalp hug: a lock rises out of its buried root as a hard-edged cone, standing off the skull. Every lock vertex
 # within HUG_BAND of the scalp is pulled radially toward it, the more the closer it already is, down to HUG_MIN
 # (the height above the scalp h becomes HUG_MIN + (h - HUG_MIN) * smoothstep(HUG_MIN, HUG_BAND, h): monotonic,
@@ -350,6 +373,7 @@ def _hug_scalp(obj, fringe=False):
 def build_hair(name):
     objs = [build_lock(f"hair_{n}", *args) for n, *args in HAIR]
     assert len(objs) == 5
+    _flare_roots(objs)
     for (n, *_), o in zip(HAIR, objs):
         _hug_scalp(o, fringe=n == "sweep_l")
     return lib.join(name, objs)

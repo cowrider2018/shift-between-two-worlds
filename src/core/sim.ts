@@ -204,11 +204,11 @@ export class Sim {
     return m.def.viewRadius * (this.sneaking ? TUNING.sneakRadiusMul : 1);
   }
 
-  /** Visible distance along a ray from a monster in its own dimension (walls / closed doors occlude). */
+  /** Visible distance along a ray from a monster in its own dimension (walls, closed doors and an exit's rock sides occlude). */
   sightDistance(m: MonsterState, angle: number, maxDist: number): number {
-    return castRay(m.x, m.y, Math.cos(angle), Math.sin(angle), maxDist, (cx, cy) =>
-      this.grid.opaque(m.dim, cx, cy, this.channelOn),
-    );
+    return castRay(m.x, m.y, Math.cos(angle), Math.sin(angle), maxDist,
+      (cx, cy) => this.grid.opaque(m.dim, cx, cy, this.channelOn),
+      (ax, ay, bx, by) => this.grid.walled(m.dim, ax, ay, bx, by));
   }
 
   /** The nearest monster that can be taken down: alive in the surface (A) with the player, in reach and not seeing
@@ -297,8 +297,10 @@ export class Sim {
     const d = Math.hypot(dx, dy);
     if (d > 1e-6) {
       const step = Math.min(d, TUNING.huntSpeed * dt);
+      const fx = Math.floor(m.x);
+      const fy = Math.floor(m.y);
       const p = moveBox(m.x, m.y, (dx / d) * step, (dy / d) * step, TUNING.monsterHalfSize, (cx, cy) =>
-        this.grid.solid(m.dim, cx, cy, this.channelOn),
+        this.grid.blocksMover(m.dim, cx, cy, this.channelOn, fx, fy),
       );
       m.x = p.x;
       m.y = p.y;
@@ -326,6 +328,7 @@ export class Sim {
         const nx = x + ox;
         const ny = y + oy;
         if (!this.grid.inBounds(nx, ny) || dist[ny * w + nx] >= 0) continue;
+        if (this.grid.walled(dim, x, y, nx, ny)) continue;
         if (this.grid.solid(dim, nx, ny, this.channelOn) && !(nx === mx && ny === my)) continue;
         dist[ny * w + nx] = dist[k] + 1;
         queue.push(ny * w + nx);
@@ -338,7 +341,7 @@ export class Sim {
       const ny = my + oy;
       if (!this.grid.inBounds(nx, ny)) continue;
       const d = dist[ny * w + nx];
-      if (d >= 0 && d < bestD && !this.grid.solid(dim, nx, ny, this.channelOn)) {
+      if (d >= 0 && d < bestD && !this.grid.solid(dim, nx, ny, this.channelOn) && !this.grid.walled(dim, mx, my, nx, ny)) {
         best = [nx, ny];
         bestD = d;
       }
@@ -358,8 +361,10 @@ export class Sim {
     }
     this.facing = Math.atan2(my, mx);
     const speed = TUNING.playerSpeed * (this.sneaking ? TUNING.sneakSpeedMul : 1) * dt;
+    const fx = Math.floor(this.x);
+    const fy = Math.floor(this.y);
     const p = moveBox(this.x, this.y, mx * speed, my * speed, TUNING.playerHalfSize, (cx, cy) =>
-      this.grid.solid(this.dim, cx, cy, this.channelOn),
+      this.grid.blocksMover(this.dim, cx, cy, this.channelOn, fx, fy),
     );
     this.x = p.x;
     this.y = p.y;
@@ -369,6 +374,8 @@ export class Sim {
     if (this.shiftT > 0) return;
     this.dim = (1 - this.dim) as DimIndex;
     this.shiftT = TUNING.shiftCooldown;
+    // landing inside an exit's rock is not walking into the cave: only a later walk in through the mouth counts
+    if (this.currentCell().def.behavior === 'exit') this.inCave = true;
     for (const m of this.monsters) m.detect = 0;
     this.events.push({ type: 'shift', dim: this.dim });
   }
@@ -409,7 +416,7 @@ export class Sim {
 
   /** How far the player's centre is into the cave of exit cell `c`, measured from its mouth. */
   caveDepthOf(c: Cell): number {
-    const [dx, dy] = this.grid.openSides(c.dim, c.x, c.y)[0] ?? [0, 0];
+    const [dx, dy] = this.grid.exitMouth(c);
     return 0.5 - ((this.x - c.x - 0.5) * dx + (this.y - c.y - 0.5) * dy);
   }
 

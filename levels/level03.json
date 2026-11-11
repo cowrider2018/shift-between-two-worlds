@@ -40,6 +40,7 @@
       ],
       "props": {
         "3,4": {"channel":1,"inverted":false},
+        "4,4": {"dir":3},
         "5,6": {"channel":1,"inverted":true}
       },
       "monsters": [

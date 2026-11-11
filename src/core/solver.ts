@@ -77,11 +77,11 @@ export function solve(grid: LevelGrid): SolveResult {
       for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = x + ox;
         const ny = y + oy;
-        if (grid.inBounds(nx, ny) && !grid.solid(d, nx, ny, ch)) push(d, nx, ny, lm);
+        if (grid.inBounds(nx, ny) && !grid.solid(d, nx, ny, ch) && !grid.walled(d, x, y, nx, ny)) push(d, nx, ny, lm);
       }
-      // shifting is allowed anywhere; landing inside a solid cell is a dead end, so skip it
+      // shifting is allowed anywhere; landing inside a solid cell or an exit's rock is a dead end, so skip it
       const od = (1 - d) as DimIndex;
-      if (!grid.solid(od, x, y, ch)) push(od, x, y, lm);
+      if (!grid.solid(od, x, y, ch) && grid.cell(od, x, y).def.behavior !== 'exit') push(od, x, y, lm);
       const li = leverIndex.get(here);
       if (li !== undefined) push(d, x, y, lm ^ (1 << li));
     }

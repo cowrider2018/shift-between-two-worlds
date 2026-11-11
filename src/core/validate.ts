@@ -111,12 +111,13 @@ export function validateLevel(level: Level): ValidationReport {
       if (!(m.viewAngle > 0 && m.viewAngle <= 360)) err(`怪物 ${m.id} 視野角度必須在 (0, 360]`, at);
       m.path.forEach(([x, y], i) => {
         if (!grid.inBounds(x, y)) err(`怪物 ${m.id} 第 ${i} 個路徑點 (${x},${y}) 超出範圍`, at);
-        else if (!neverSolid(grid.cell(dim, x, y).def)) err(`怪物 ${m.id} 路徑點 ${where(dim, x, y)} 不在可走格上`, { ...at, x, y });
+        else if (!neverSolid(grid.cell(dim, x, y).def) || grid.cell(dim, x, y).def.behavior === 'exit')
+          err(`怪物 ${m.id} 路徑點 ${where(dim, x, y)} 不在可走格上`, { ...at, x, y });
       });
       const segs = m.path.map((p, i) => [p, m.path[i + 1]] as const).slice(0, -1);
       if (m.mode === 'loop' && m.path.length > 2) segs.push([m.path[m.path.length - 1], m.path[0]]);
       for (const [a, b] of segs) {
-        const blocked = segmentCells(a, b).find(([x, y]) => !neverSolid(grid.cell(dim, x, y).def));
+        const blocked = segmentCells(a, b).find(([x, y]) => !neverSolid(grid.cell(dim, x, y).def) || grid.cell(dim, x, y).def.behavior === 'exit');
         if (blocked) err(`怪物 ${m.id} 的路徑 (${a}) → (${b}) 穿過 ${where(dim, blocked[0], blocked[1])}`, { ...at, x: blocked[0], y: blocked[1] });
       }
     }
@@ -124,9 +125,10 @@ export function validateLevel(level: Level): ValidationReport {
 
   // --- exit shape
   for (const e of cells.filter((c) => c.def.behavior === 'exit')) {
-    const sides = grid.openSides(e.dim, e.x, e.y).length;
-    if (sides !== 1)
-      err(`${where(e.dim, e.x, e.y)} 出口是牆上的小山洞：三面要是牆、只留一個入口（現在有 ${sides} 個）`, { dim: e.dim, x: e.x, y: e.y });
+    const [dx, dy] = grid.exitMouth(e);
+    const mouth = grid.cell(e.dim, e.x + dx, e.y + dy);
+    if (!grid.inBounds(mouth.x, mouth.y) || mouth.def.solid === 'always' || mouth.def.behavior === 'exit')
+      err(`${where(e.dim, e.x, e.y)} 出口的開口朝向 ${where(e.dim, mouth.x, mouth.y)}，那裡走不進來`, { dim: e.dim, x: e.x, y: e.y });
   }
 
   if (issues.some((i) => i.severity === 'error')) return { issues, ok: false };

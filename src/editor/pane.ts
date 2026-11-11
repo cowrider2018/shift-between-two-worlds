@@ -80,6 +80,13 @@ export class Pane {
         ctx.font = `bold ${Math.round(c * 0.5)}px ui-monospace, monospace`;
         ctx.fillText(cell.def.char, px + c / 2, py + c / 2 + 1);
       }
+      if (b === 'exit') {
+        // the cave mouth: a bright bar along the one open side
+        const [dx, dy] = g.exitMouth(cell);
+        ctx.fillStyle = '#ffffff';
+        const t = Math.max(3, c * 0.14);
+        ctx.fillRect(px + (dx > 0 ? c - t : 0), py + (dy > 0 ? c - t : 0), dx === 0 ? c : t, dy === 0 ? c : t);
+      }
       if (b === 'lever' || b === 'door') {
         const ch = Number(cell.props.channel);
         ctx.strokeStyle = channelColor(ch);

@@ -5,6 +5,9 @@
 import { BLOCK_BY_CHAR, WALL, evalCondition, resolveProps, type BlockDef, type ChannelFn, type Props } from './blocks';
 import { cellKey, type DimIndex, type Level } from './level';
 
+/** Exit `dir` values: 0 up (-y), 1 right (+x), 2 down (+y), 3 left (-x). */
+export const EXIT_DIRS: readonly [number, number][] = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+
 export interface Cell {
   dim: DimIndex;
   x: number;
@@ -47,11 +50,39 @@ export class LevelGrid {
     return dim === undefined ? [...this.cells[0], ...this.cells[1]] : this.cells[dim];
   }
 
-  /** The 4-neighbour offsets of (x, y) that are not permanent wall: the ways into the cell. */
-  openSides(dim: DimIndex, x: number, y: number): [number, number][] {
-    return ([[0, -1], [1, 0], [0, 1], [-1, 0]] as [number, number][]).filter(
-      ([dx, dy]) => this.cell(dim, x + dx, y + dy).def.solid !== 'always',
-    );
+  /** The way out of an exit cave: the offset of its one open side, from its `dir` parameter (DESIGN §3.6). */
+  exitMouth(c: Cell): [number, number] {
+    return EXIT_DIRS[Number(c.props.dir ?? 0)] ?? EXIT_DIRS[0];
+  }
+
+  /** An exit is rock on three sides: true when the step between neighbouring cells a and b goes through one of them. */
+  walled(dim: DimIndex, ax: number, ay: number, bx: number, by: number): boolean {
+    const shut = (ex: number, ey: number, ox: number, oy: number) => {
+      const e = this.cell(dim, ex, ey);
+      if (e.def.behavior !== 'exit') return false;
+      const [dx, dy] = this.exitMouth(e);
+      return ox !== ex + dx || oy !== ey + dy;
+    };
+    return shut(ax, ay, bx, by) || shut(bx, by, ax, ay);
+  }
+
+  /**
+   * Collision for a body whose centre is in cell (fromX, fromY): solid cells, plus an exit's three rock sides. From
+   * outside an exit only its mouth cell leads in; from inside it only the mouth cell leads out.
+   */
+  blocksMover(dim: DimIndex, x: number, y: number, channelOn: ChannelFn, fromX: number, fromY: number): boolean {
+    if (this.solid(dim, x, y, channelOn)) return true;
+    if (x === fromX && y === fromY) return false;
+    const mouthOf = (ex: number, ey: number) => {
+      const e = this.cell(dim, ex, ey);
+      if (e.def.behavior !== 'exit') return null;
+      const [dx, dy] = this.exitMouth(e);
+      return [ex + dx, ey + dy];
+    };
+    const inside = mouthOf(fromX, fromY);
+    if (inside) return x !== inside[0] || y !== inside[1];
+    const into = mouthOf(x, y);
+    return !!into && (fromX !== into[0] || fromY !== into[1]);
   }
 
   /** The lever at the same cell in the other dimension, if any: the two are one switch and always move together. */
@@ -79,6 +110,8 @@ export class LevelGrid {
 export function castRay(
   ox: number, oy: number, dx: number, dy: number, maxDist: number,
   blocked: (x: number, y: number) => boolean,
+  /** Optional walls between cells (an exit's rock sides): blocks the step from (ax, ay) into (bx, by). */
+  walled?: (ax: number, ay: number, bx: number, by: number) => boolean,
 ): number {
   let cx = Math.floor(ox);
   let cy = Math.floor(oy);
@@ -90,6 +123,8 @@ export function castRay(
   let tMaxY = dy > 0 ? (cy + 1 - oy) * tDeltaY : dy < 0 ? (oy - cy) * tDeltaY : Infinity;
   for (let i = 0; i < 4096; i++) {
     let t: number;
+    const px = cx;
+    const py = cy;
     if (tMaxX < tMaxY) {
       t = tMaxX;
       tMaxX += tDeltaX;
@@ -100,7 +135,7 @@ export function castRay(
       cy += stepY;
     }
     if (t >= maxDist) return maxDist;
-    if (blocked(cx, cy)) return t;
+    if (blocked(cx, cy) || walled?.(px, py, cx, cy)) return t;
   }
   return maxDist;
 }

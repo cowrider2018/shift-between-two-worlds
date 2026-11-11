@@ -65,8 +65,9 @@ export const BLOCKS: readonly BlockDef[] = [
     solid: 'whenClosed', opaque: 'whenClosed', behavior: 'door',
   },
   {
-    id: 'exit', char: 'E', label: '出口', description: '牆上的小山洞：三面是牆、只留一個入口；走進去通關。',
-    color: '#c46bff', params: [],
+    id: 'exit', char: 'E', label: '出口',
+    description: '一塊挖了小山洞的岩石：只有開口那一面能進出，其他三面是牆（會擋路也擋視線）；走進去通關。',
+    color: '#c46bff', params: [{ key: 'dir', label: '開口方向（0 上 1 右 2 下 3 左）', type: 'int', default: 0, min: 0, max: 3 }],
     solid: 'never', opaque: 'never', behavior: 'exit', count: { min: 1 },
   },
 ];

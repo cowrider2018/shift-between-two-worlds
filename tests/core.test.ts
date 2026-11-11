@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BLOCKS } from '../src/core/blocks';
 import { castRay } from '../src/core/grid';
-import { createEmptyLevel, parseLevel, serializeLevel, setCell, type Level } from '../src/core/level';
+import { createEmptyLevel, parseLevel, serializeLevel, setCell, setProp, type Level } from '../src/core/level';
 import { NO_INPUT, Sim, TUNING, type SimInput } from '../src/core/sim';
 import { validateLevel } from '../src/core/validate';
 
@@ -59,19 +59,19 @@ describe('validator', () => {
     const l = createEmptyLevel('t', 7, 5);
     setCell(l, 0, 4, 1, '#'); setCell(l, 0, 4, 2, '#'); setCell(l, 0, 4, 3, '#');
     for (let y = 1; y < 4; y++) for (let x = 1; x < 6; x++) setCell(l, 1, x, y, '#');
-    setCell(l, 0, 5, 1, 'E'); // a cave in the top-right corner, open only downwards
+    setCell(l, 0, 5, 1, 'E'); setProp(l, 0, 5, 1, 'dir', 2); // a cave in the top-right corner, open only downwards
     const r = validateLevel(l);
     expect(r.solve?.status).toBe('unsolvable');
     expect(r.ok).toBe(false);
   });
 
-  it('requires the exit to be a cave in the wall with exactly one way in', () => {
+  it('requires the exit to open onto a cell that can be walked into', () => {
     const l = createEmptyLevel('t', 7, 5);
-    setCell(l, 0, 3, 2, 'E');
-    const cave = (r: ReturnType<typeof validateLevel>) => r.issues.some((i) => i.severity === 'error' && i.message.includes('小山洞'));
-    expect(cave(validateLevel(l))).toBe(true);
-    setCell(l, 0, 2, 2, '#'); setCell(l, 0, 4, 2, '#'); setCell(l, 0, 3, 3, '#');
-    expect(cave(validateLevel(l))).toBe(false);
+    setCell(l, 0, 3, 1, 'E'); // in the open, its mouth up into the border wall
+    const bad = (r: ReturnType<typeof validateLevel>) => r.issues.some((i) => i.severity === 'error' && i.message.includes('開口'));
+    expect(bad(validateLevel(l))).toBe(true);
+    setProp(l, 0, 3, 1, 'dir', 2); // turned to face down into the room, with no walls round it
+    expect(bad(validateLevel(l))).toBe(false);
   });
 
   it('rejects monster paths through walls', () => {
@@ -93,7 +93,7 @@ describe('paired levers', () => {
     setCell(l, 0, 3, 1, 'D'); l.dimensions[0].props['3,1'] = { channel: 2, inverted: false };
     setCell(l, 1, 3, 1, '#');
     setCell(l, 0, 2, 1, 'S');
-    setCell(l, 0, 6, 1, 'E');
+    setCell(l, 0, 6, 1, 'E'); l.dimensions[0].props['6,1'] = { dir: 3 };
     setCell(l, 1, 6, 1, '#');
     for (let x = 4; x < 6; x++) setCell(l, 1, x, 1, '#');
     return l;
@@ -301,7 +301,7 @@ describe('simulation on level01', () => {
     const sim = new Sim(level01());
     sim.monsters.length = 0;
     const exit = sim.grid.all().find((c) => c.dim === 0 && c.def.behavior === 'exit')!;
-    const [dx, dy] = sim.grid.openSides(0, exit.x, exit.y)[0];
+    const [dx, dy] = sim.grid.exitMouth(exit);
     // stand two cells out in front of the mouth, then walk straight in
     sim.x = exit.x + 0.5 + dx * 2;
     sim.y = exit.y + 0.5 + dy * 2;
@@ -428,6 +428,60 @@ describe('level03: one lever decides which half of the ring is lit', () => {
     tap(sim, 'shift');
     expect(sim.dim).toBe(1);
     for (const [x, y] of [[7, 7], [1, 7], [1, 4], [4, 4]]) walkTo(sim, x, y);
+    expect(sim.status).toBe('won');
+  });
+});
+
+describe('exit cave', () => {
+  /** An exit standing in the middle of an open room, its mouth facing left (dir 3). */
+  const room = () => {
+    const l = createEmptyLevel('t', 9, 7);
+    setCell(l, 0, 4, 3, 'E'); setProp(l, 0, 4, 3, 'dir', 3);
+    return l;
+  };
+
+  it('is rock on its three closed sides: walking into them stops at the cell edge', () => {
+    for (const [sx, sy, mx, my] of [[4.5, 1.5, 0, 1], [6.5, 3.5, -1, 0], [4.5, 5.5, 0, -1]]) {
+      const sim = new Sim(room());
+      sim.x = sx; sim.y = sy;
+      for (let i = 0; i < 120; i++) sim.update({ ...NO_INPUT, moveX: mx, moveY: my }, 1 / 60);
+      expect(sim.currentCell().def.id).not.toBe('exit');
+      expect(sim.status).toBe('playing');
+    }
+  });
+
+  it('is walked into through its mouth, and from inside only the mouth leads out', () => {
+    const sim = new Sim(room());
+    sim.x = 3.5; sim.y = 3.5;
+    for (let i = 0; i < 13; i++) sim.update({ ...NO_INPUT, moveX: 1 }, 1 / 60); // just inside, not yet won
+    expect(sim.currentCell().def.id).toBe('exit');
+    expect(sim.status).toBe('playing');
+    for (let i = 0; i < 60; i++) sim.update({ ...NO_INPUT, moveY: 1 }, 1 / 60); // the side wall holds
+    expect(Math.floor(sim.y)).toBe(3);
+    for (let i = 0; i < 60; i++) sim.update({ ...NO_INPUT, moveX: 1 }, 1 / 60);
+    expect(sim.status).toBe('won');
+  });
+
+  it('blocks sight through its rock sides but not through its mouth', () => {
+    const l = room();
+    l.dimensions[0].monsters.push({ id: 'm', path: [[4, 1]], mode: 'pingpong', speed: 1, pause: 0, viewRadius: 6, viewAngle: 40, facing: 90 });
+    const sim = new Sim(l);
+    sim.x = 4.5; sim.y = 5.5; // straight below, behind the cave
+    expect(sim.monsterSeesPlayer(sim.monsters[0])).toBe(false);
+    sim.x = 4.5; sim.y = 2.5; // in front of the rock: seen
+    expect(sim.monsterSeesPlayer(sim.monsters[0])).toBe(true);
+  });
+
+  it('shifting into it from the other dimension does not count as walking in', () => {
+    const l = room();
+    setCell(l, 1, 4, 3, '.');
+    const sim = new Sim(l);
+    sim.dim = 1; sim.x = 4.5; sim.y = 3.5;
+    tap(sim, 'shift');
+    expect(sim.dim).toBe(0);
+    expect(sim.status).toBe('playing');
+    for (let i = 0; i < 60; i++) sim.update({ ...NO_INPUT, moveX: -1 }, 1 / 60); // out through the mouth
+    for (let i = 0; i < 60; i++) sim.update({ ...NO_INPUT, moveX: 1 }, 1 / 60); // and back in
     expect(sim.status).toBe('won');
   });
 });

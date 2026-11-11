@@ -133,8 +133,8 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   },
 
   exit: (cell, ctx) => {
-    // a small cave dug into the rock: plain wall outside, a tunnel behind its one open side that fades into light
-    const [dx, dz] = ctx.grid.openSides(cell.dim, cell.x, cell.y)[0] ?? [0, 1];
+    // a block of rock with a small cave dug into it: plain wall on three sides, a tunnel behind the open one that fades into light
+    const [dx, dz] = ctx.grid.exitMouth(cell);
     const mouth = { dx, dz, floor: ctx.theme.floor[0] };
     const stone = withHole(cobble('#ffffff', true));
     const rock = m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, mouth), stone);

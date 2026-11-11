@@ -147,8 +147,8 @@ interface CatchSequence {
 }
 
 /** Camera hole: radius as a fraction of screen height at the farthest zoom (grows as the camera closes in so it
- *  keeps framing the hero, capped at HOLE_RADIUS_MAX), aimed at the hero's mid-body; geometry closer to the
- *  camera than the hero by more than the margin is cut. */
+ *  keeps framing the hero, capped at HOLE_RADIUS_MAX), aimed at the hero's mid-body. The cut volume's
+ *  hemispherical cap ends HOLE_DEPTH_MARGIN in front of the hero. */
 const HOLE_RADIUS = 0.2;
 const HOLE_RADIUS_MAX = 0.6;
 const HOLE_BODY_Y = 0.75;
@@ -408,7 +408,7 @@ export class GameView {
     }
   }
 
-  /** Centre the camera hole (cutaway.ts) on the hero's body and cut everything nearer than the hero. */
+  /** Centre the camera hole (cutaway.ts) on the hero's body: a cylinder from the camera, rounded off toward the hero. */
   private updateHole(): void {
     const cam = this.follow.camera;
     cam.updateMatrixWorld();
@@ -420,8 +420,10 @@ export class GameView {
     const r = height * Math.min(HOLE_RADIUS_MAX, (HOLE_RADIUS * CAMERA.distance) / this.follow.distance);
     HOLE.uHoleCenter.value.set((p.x * 0.5 + 0.5) * width, (p.y * 0.5 + 0.5) * height);
     HOLE.uHoleRadius.value = r;
-    HOLE.uHoleDepth.value = depth - HOLE_DEPTH_MARGIN;
-    this.pipeline.hole = { x: HOLE.uHoleCenter.value.x, y: HOLE.uHoleCenter.value.y, r };
+    // the screen radius as a world radius at the hero's depth: the cap is a sphere of the cylinder's own width
+    const world = (r * 2 * depth * Math.tan((cam.fov * Math.PI) / 360)) / (height * cam.zoom);
+    HOLE.uHoleCap.value.set(depth - HOLE_DEPTH_MARGIN, world);
+    this.pipeline.hole = { x: HOLE.uHoleCenter.value.x, y: HOLE.uHoleCenter.value.y, r, tip: depth - HOLE_DEPTH_MARGIN, capR: world };
   }
 
   private updateMonster(mv: MonsterView, dt: number): void {

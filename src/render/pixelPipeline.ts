@@ -11,7 +11,7 @@ import {
   DepthTexture, Mesh, type PerspectiveCamera, NearestFilter, OrthographicCamera, PlaneGeometry, Scene, ShaderMaterial,
   Color, Vector2, Vector3, WebGLRenderTarget, WebGLRenderer, BasicShadowMap, UnsignedIntType,
 } from 'three';
-import { HOLE_INNER } from './cutaway';
+import { HOLE_INNER, HOLE_SCALE_GLSL } from './cutaway';
 
 /** Screen pixels per art pixel. */
 export const PIXEL_SCALE = 3;
@@ -43,7 +43,7 @@ export class PixelPipeline {
    *  and its colour, set per frame by the view. */
   readonly sun = { dir: new Vector2(), color: new Color('#ffffff') };
   /** Camera hole in render pixels (see cutaway.ts); depth outlines are skipped across its dithered rim. */
-  hole = { x: 0, y: 0, r: 0 };
+  hole = { x: 0, y: 0, r: 0, tip: 0, capR: 0 };
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -73,6 +73,7 @@ export class PixelPipeline {
         cameraNear: { value: 0.1 },
         cameraFar: { value: 60 },
         hole: { value: new Vector3() },
+        holeCap: { value: new Vector2() },
       },
       vertexShader: /* glsl */ `
         varying vec2 vUv;
@@ -90,6 +91,8 @@ export class PixelPipeline {
         uniform vec2 sunDir;
         uniform vec3 sunColor;
         uniform vec3 hole;
+        uniform vec2 holeCap;
+        ${HOLE_SCALE_GLSL}
         varying vec2 vUv;
         float depthAt(vec2 uv) { return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, cameraNear, cameraFar); }
         /** Is the pixel at uv (depth d) a silhouette pixel whose outward side faces the sun? */
@@ -123,7 +126,8 @@ export class PixelPipeline {
           float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
           if (luma > 1e-4) c = min(c * (floor(luma * levels + 0.5) / levels) / luma, vec3(1.0));
           float hd = distance(px, hole.xy);
-          bool rim = hd > hole.z * ${HOLE_INNER.toFixed(3)} - 1.5 && hd < hole.z + 1.5;
+          float hr = hole.z * holeScale(d, holeCap);
+          bool rim = hr > 0.0 && hd > hr * ${HOLE_INNER.toFixed(3)} - 1.5 && hd < hr + 1.5;
           float far = (max(max(dl, dr), max(dd, du)) - d) / d;
           if (!rim && d < cameraFar * 0.99) {
             bool lit = false;
@@ -191,6 +195,7 @@ export class PixelPipeline {
     u.danger.value = this.fx.danger;
     u.time.value = this.fx.time;
     (u.hole.value as Vector3).set(this.hole.x, this.hole.y, this.hole.r);
+    (u.holeCap.value as Vector2).set(this.hole.tip, this.hole.capR);
     u.cameraNear.value = camera.near;
     u.cameraFar.value = camera.far;
     (u.sunDir.value as Vector2).copy(this.sun.dir);

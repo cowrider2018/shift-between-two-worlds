@@ -1,8 +1,11 @@
 /**
  * Camera cutaway: a round hole punched through tall geometry between the camera and the hero.
  *
- * Materials wrapped with `withHole` discard fragments that are nearer to the camera than the hero and fall
- * inside a screen-space circle around the hero. The inner HOLE_INNER of the radius is fully open; across the
+ * Materials wrapped with `withHole` discard fragments inside a cut volume: a cylinder along the view (a fixed
+ * screen-space circle round the hero) from the camera up to the hero, closed on the hero's side by a hemisphere
+ * whose tip sits just in front of the hero. Walls nearer the camera than the cap get the full circle; across the
+ * cap the circle shrinks with depth like a sphere's cross-section, so a wall hugging the hero is cut less rather
+ * than the hole snapping shut at one depth plane. The inner HOLE_INNER of the radius is fully open; across the
  * outer rim the surface comes back through an ordered (Bayer) dither, so the edge fades by pixel density
  * rather than by transparency. gl_FragCoord is in low-res render pixels, so the dither is in art pixels.
  */
@@ -16,9 +19,19 @@ export const HOLE = {
   uHoleCenter: { value: new Vector2() },
   /** Radius in render pixels. */
   uHoleRadius: { value: 1 },
-  /** View-space depth; only fragments nearer than this are cut. 0 disables the hole. */
-  uHoleDepth: { value: 0 },
+  /** x: view-space depth of the cap's tip (nothing at or past it is cut; 0 disables the hole);
+   *  y: the cap's radius in world units at that depth (the cylinder's radius). */
+  uHoleCap: { value: new Vector2() },
 };
+
+/** GLSL: how much of the hole's screen radius applies at view depth z (1 in the cylinder, shrinking across the
+ *  hemispherical cap, 0 at and beyond the tip). Shared with the outline pass so it skips the same dithered rim. */
+export const HOLE_SCALE_GLSL = /* glsl */ `
+float holeScale(float z, vec2 cap) {
+  if (z >= cap.x) return 0.0;
+  float k = (z - (cap.x - cap.y)) / max(cap.y, 1e-4);
+  return k <= 0.0 ? 1.0 : sqrt(1.0 - k * k);
+}`;
 
 const VERT_DECL = /* glsl */ `#include <common>
 varying float vHoleDepth;`;
@@ -27,13 +40,15 @@ vHoleDepth = -mvPosition.z;`;
 const FRAG_DECL = /* glsl */ `#include <common>
 uniform vec2 uHoleCenter;
 uniform float uHoleRadius;
-uniform float uHoleDepth;
+uniform vec2 uHoleCap;
 varying float vHoleDepth;
+${HOLE_SCALE_GLSL}
 float holeBayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
 float holeBayer4(vec2 a) { return holeBayer2(0.5 * a) * 0.25 + holeBayer2(a); }`;
 const FRAG_BODY = /* glsl */ `#include <clipping_planes_fragment>
-if (vHoleDepth < uHoleDepth) {
-  float holeD = distance(gl_FragCoord.xy, uHoleCenter) / uHoleRadius;
+float holeS = holeScale(vHoleDepth, uHoleCap);
+if (holeS > 0.0) {
+  float holeD = distance(gl_FragCoord.xy, uHoleCenter) / (uHoleRadius * holeS);
   if (holeD < 1.0) {
     float keep = (holeD - ${HOLE_INNER.toFixed(3)}) / ${(1 - HOLE_INNER).toFixed(3)};
     if (keep <= holeBayer4(gl_FragCoord.xy)) discard;

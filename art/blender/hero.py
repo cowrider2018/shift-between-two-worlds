@@ -265,7 +265,8 @@ def _slerp(a, b, t):
 def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, curl=0.0, cut=None, tail=0.0, steps=7):
     """One thick turning cone: hexagonal cross-section width:thickness = LOCK_RATIO, root buried in the skull.
     curl lifts the tip straight up (on top of the outward flick), so a side lock ends turned upward.
-    cut (height relative to the head centre) slices the lock level and drops everything below it.
+    cut (height relative to the head centre) is recorded on the object; _build_locks slices the lock level there
+    and drops everything below it, after the ring-based edits that need the untouched ring layout.
     tail (a fraction of the lock's arc) instead continues the same lock backward past its root along its own
     path, narrowing to a second point: one mesh, a leaf pointed at both ends."""
     a, b = _sph(*exit_dir), _sph(*end_dir)
@@ -306,7 +307,7 @@ def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, curl=0.0, cu
         rings.append(ring(c, (nxt - c).normalized(), n, w))
     obj = lib.loft(name, rings, "hero_hair", tip=tip, start=start)
     if cut is not None:
-        _cut_below(obj, H.z + cut)
+        obj["cut"] = cut
     return obj
 
 
@@ -370,13 +371,22 @@ def _hug_scalp(obj, fringe=False):
     obj.data.update()
 
 
-def build_hair(name):
+def _build_locks():
+    """The locks in HAIR order: built, roots swung, cut level, pressed to the scalp."""
     objs = [build_lock(f"hair_{n}", *args) for n, *args in HAIR]
     assert len(objs) == 5
     _flare_roots(objs)
+    for o in objs:
+        if "cut" in o:
+            _cut_below(o, H.z + o["cut"])
+            del o["cut"]
     for (n, *_), o in zip(HAIR, objs):
         _hug_scalp(o, fringe=n == "sweep_l")
-    return lib.join(name, objs)
+    return objs
+
+
+def build_hair(name):
+    return lib.join(name, _build_locks())
 
 
 # Hood cross-section: an egg — narrower toward the top, fuller toward the bottom — on a gentle superellipse, so the

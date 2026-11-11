@@ -354,10 +354,12 @@ def _flare_roots(objs):
 TIP_SPAN = 0.4
 TIP_SHORTEN = 0.75
 TIP_SWING = 15.0
+TIP_OVERRIDE = {"sweep_l": (0.65, 25.0), "sweep_r": (0.5, 15.0)}  # name: (span, swing) where the default is not enough
 
 
 def _pull_tips(objs):
-    for o in objs:
+    for (n, *_), o in zip(HAIR, objs):
+        span, swing = TIP_OVERRIDE.get(n, (TIP_SPAN, TIP_SWING))
         R = o["rings"]
         vs = o.data.vertices
         groups = [list(range(r * 6, r * 6 + 6)) for r in range(R)] + [[R * 6]]   # the rings, then the tip point
@@ -365,7 +367,7 @@ def _pull_tips(objs):
         cum = [0.0]
         for p, q in zip(centres, centres[1:]):
             cum.append(cum[-1] + (q - p).length)
-        s0 = cum[-1] * (1 - TIP_SPAN)
+        s0 = cum[-1] * (1 - span)
         k = next(i for i in range(1, len(cum)) if cum[i] >= s0)
         f = (s0 - cum[k - 1]) / max(cum[k] - cum[k - 1], 1e-9)
         pivot = centres[k - 1].lerp(centres[k], f)
@@ -377,7 +379,7 @@ def _pull_tips(objs):
             if sg <= s0:
                 continue
             w = (sg - s0) / (cum[-1] - s0)
-            rot = Quaternion(axis, math.radians(TIP_SWING) * w)
+            rot = Quaternion(axis, math.radians(swing) * w)
             scale = 1 - (1 - TIP_SHORTEN) * w
             for i in g:
                 vs[i].co = pivot + rot @ ((vs[i].co - pivot) * scale)

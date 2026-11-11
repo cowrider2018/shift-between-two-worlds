@@ -378,6 +378,7 @@ def _hug_scalp(obj, fringe=False):
 # removed. Each edge of the lock then simply ends on the cone, and the flat faces are only split, never bent. The
 # cone's facets are seamed exactly where the lock's edges cross it, so the cap continues the grid of faces above.
 CAP_LIFT = 75.0
+CAP_MERGE = 0.006  # vertices of the cut lock closer than this are merged into one
 
 
 def _lift_cap(obj, z):
@@ -440,6 +441,14 @@ def _lift_cap(obj, z):
     lib.apply_modifiers(obj)
     bpy.data.objects.remove(cutter)
     bpy.data.meshes.remove(me)
+    # the cut leaves near-coincident vertices (two seams a few millimetres apart, boolean slivers): merge them,
+    # the lock's own edges are all well over a centimetre
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=CAP_MERGE)
+    bmesh.ops.dissolve_degenerate(bm, edges=bm.edges, dist=1e-6)
+    bm.to_mesh(obj.data)
+    bm.free()
     lib.flat(obj)
 
 

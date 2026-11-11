@@ -1,6 +1,6 @@
 """
 Hero (DESIGN §4.2): small chibi adventurer — a primitive head (sphere, box eyes, small human ears) with
-hair made of five thick turning cones (see HAIR), on an anatomical body: green tunic with belt, cream leggings, boots,
+hair made of five thick turning cones, one continued into a tail over the crown (see HAIR), on an anatomical body: green tunic with belt, cream leggings, boots,
 short sword. Stocky pear-shaped trunk; short legs of straight trouser tubes with wider boots worn over them.
 
 Outfits are modular parts on one skeleton (see VARIANTS):
@@ -236,12 +236,13 @@ def build_head():
 HEAD_R = 0.15 * HEAD_K
 EAR_TOP = 0.028  # top of the ears above the head centre: locks that would hide an ear are cut level here
 LOCK_RATIO = 2.0  # width : thickness, never flatter than this
+TAIL_TAPER = 2.5  # how a tail closes toward its back point (1 = straight sides, larger = fuller)
 # Fitted numerically: scalp ~95% covered, ~7% double-covered, face and ears clear; every lock >= 0.2 wide
 # and bending >= 70 degrees around the head (big locks, no small filler spikes). The back hairline sits high and
 # the back stays close to the skull (locks sunk in, not flattened); every tip flicks well outward from 40% along,
 # and forward-facing tips stop above the brow (no bangs over the eyes).
 HAIR = [
-    ("sweep_r", (151, 88), (-96, 14), 0.200, 3.50, 0.14, 0.045, 0.085),  # right of the face: short, tip turned up
+    ("sweep_r", (151, 88), (-96, 14), 0.200, 3.50, 0.14, 0.045, 0.085, None, 0.4),  # right of the face: short, tip turned up; its tail over the crown covers the root of sweep_l
     ("sweep_l", (56, 52), (-48, 27), 0.224, 3.43, -0.05, 0.138),
     ("side_l", (97, 16), (-13, 60), 0.200, 2.66, 0.09, 0.127),
     ("side_r", (236, 0), (-22, 45), 0.300, 3.39, -0.45, 0.035, 0.0, EAR_TOP),  # filler above the right ear: flat on the scalp, cut level at the ear top
@@ -261,10 +262,12 @@ def _slerp(a, b, t):
     return (a * math.sin((1 - t) * om) + b * math.sin(t * om)) / math.sin(om)
 
 
-def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, curl=0.0, cut=None, steps=7):
+def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, curl=0.0, cut=None, tail=0.0, steps=7):
     """One thick turning cone: hexagonal cross-section width:thickness = LOCK_RATIO, root buried in the skull.
     curl lifts the tip straight up (on top of the outward flick), so a side lock ends turned upward.
-    cut (height relative to the head centre) slices the lock level and drops everything below it."""
+    cut (height relative to the head centre) slices the lock level and drops everything below it.
+    tail (a fraction of the lock's arc) instead continues the same lock backward past its root along its own
+    path, narrowing to a second point: one mesh, a leaf pointed at both ends."""
     a, b = _sph(*exit_dir), _sph(*end_dir)
 
     def ring(centre, along, normal, w):
@@ -281,12 +284,27 @@ def build_lock(name, exit_dir, end_dir, width, taper, depth, flick, curl=0.0, cu
         w = width * (1 - u ** taper)
         bend = max(0.0, (u - 0.4) / 0.6) ** 2                     # the tip turns away from the head
         pts.append((n, H + n * (HEAD_R + depth * w / LOCK_RATIO + flick * bend) + Z * (curl * bend), w))
-    root = H + a * HEAD_R * 0.3                                     # buried root: the lock grows out of the skull
-    rings = [ring(root, (pts[1][1] - root).normalized(), a, width * 1.05)]
-    for k, (n, c, w) in enumerate(pts):
-        nxt = pts[k + 1][1] if k + 1 < len(pts) else tip
+    start = None
+    if tail:
+        # the tail: the same path extrapolated to u < 0, the width closing like a leaf toward its back point
+        back = []
+        for k in range(math.ceil(tail * steps), 0, -1):
+            u = -tail * k / math.ceil(tail * steps)
+            n = _slerp(a, b, u).normalized()
+            w = width * (1 - (-u / tail) ** TAIL_TAPER)
+            back.append((n, H + n * (HEAD_R + depth * w / LOCK_RATIO), w))
+        n0 = _slerp(a, b, -tail).normalized()
+        start = H + n0 * (HEAD_R + depth * width * 0.05 / LOCK_RATIO)
+        path = back[1:] + pts
+        rings = []
+    else:
+        root = H + a * HEAD_R * 0.3                                 # buried root: the lock grows out of the skull
+        rings = [ring(root, (pts[1][1] - root).normalized(), a, width * 1.05)]
+        path = pts
+    for k, (n, c, w) in enumerate(path):
+        nxt = path[k + 1][1] if k + 1 < len(path) else tip
         rings.append(ring(c, (nxt - c).normalized(), n, w))
-    obj = lib.loft(name, rings, "hero_hair", tip=tip)
+    obj = lib.loft(name, rings, "hero_hair", tip=tip, start=start)
     if cut is not None:
         _cut_below(obj, H.z + cut)
     return obj
@@ -437,13 +455,13 @@ def _hood_volume():
 
 
 def build_hooded_hair(name):
-    """The five locks cut down to what lies inside the hood, so they show in the face opening but never poke out."""
+    """The locks cut down to what lies inside the hood, so they show in the face opening but never poke out."""
     hair = build_hair(name)
     vol = _hood_volume()
     mod = hair.modifiers.new("hood_cut", "BOOLEAN")
     mod.operation = "INTERSECT"
     mod.solver = "EXACT"
-    mod.use_self = True  # the five locks overlap each other
+    mod.use_self = True  # the locks overlap each other
     mod.use_hole_tolerant = True
     mod.object = vol
     lib.apply_modifiers(hair)

@@ -375,23 +375,52 @@ def _hug_scalp(obj, fringe=False):
 # side of the skull, almost at right angles to it. The cap is turned CAP_LIFT degrees upward about the line where it
 # meets the scalp. Rather than bending the cap's vertices (which folds the faces around it), the lock is cut along
 # the turned cap itself: a cone opening up and out from the scalp's circle at the cut height, everything outside it
-# removed. Each edge of the lock then simply ends on the cone, and the flat faces are only split, never bent.
+# removed. Each edge of the lock then simply ends on the cone, and the flat faces are only split, never bent. The
+# cone's facets are seamed exactly where the lock's edges cross it, so the cap continues the grid of faces above.
 CAP_LIFT = 75.0
-CAP_SEGMENTS = 24  # facets of the cone around the head: as coarse as the rest of it
 
 
 def _lift_cap(obj, z):
     import bmesh
     r0 = math.sqrt(max(HEAD_R ** 2 - (z - H.z) ** 2, 0.0))          # the scalp's radius at the cut height
     rise = 0.3
+    slope = 1 / math.tan(math.radians(CAP_LIFT))
+    # seam the cone exactly where the lock's own edges cross it, so the cap's facets continue the faces above
+    # (one cap facet under each face, meeting along the same lines) instead of crossing them at random
+    def outside(co):
+        return math.hypot(co.x - H.x, co.y - H.y) - r0 - max(co.z - z, 0.0) * slope
+    angles = []
+    for e in obj.data.edges:
+        p, q = (obj.data.vertices[i].co for i in e.vertices)
+        fp, fq = outside(p), outside(q)
+        if (fp > 0) == (fq > 0) or min(p.z, q.z) < z - 1e-6:
+            continue
+        c = p.lerp(q, fp / (fp - fq))
+        angles.append(math.atan2(c.y - H.y, c.x - H.x) % (2 * math.pi))
+    angles.sort()
+    seams = []
+    for a in angles:
+        if not seams or a - seams[-1] > math.radians(0.5):
+            seams.append(a)
+    if seams and 2 * math.pi - seams[-1] + seams[0] < math.radians(0.5):
+        seams.pop()
+    # close the ring away from the lock with a few plain seams
+    filled = []
+    for k, a in enumerate(seams):
+        filled.append(a)
+        b = seams[(k + 1) % len(seams)] + (2 * math.pi if k + 1 == len(seams) else 0.0)
+        gap = b - a
+        if gap > math.radians(40):
+            extra = int(gap // math.radians(30))
+            filled += [a + gap * (i + 1) / (extra + 1) for i in range(extra)]
+    seams = filled or [2 * math.pi * k / 12 for k in range(12)]
     # the cutter: a solid ring around the vertical axis through the head, its inner wall the turned cap
-    profile = [(r0, z - 0.05), (r0, z), (r0 + rise / math.tan(math.radians(CAP_LIFT)), z + rise),
+    profile = [(r0, z - 0.05), (r0, z), (r0 + rise * slope, z + rise),
                (1.0, z + rise), (1.0, z - 0.05)]
-    seg = CAP_SEGMENTS
+    seg = len(seams)
     bm = bmesh.new()
     rows = []
-    for k in range(seg):
-        a = 2 * math.pi * k / seg
+    for a in seams:
         rows.append([bm.verts.new((H.x + r * math.cos(a), H.y + r * math.sin(a), h)) for r, h in profile])
     n = len(profile)
     for k in range(seg):

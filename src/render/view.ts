@@ -164,6 +164,7 @@ export class GameView {
   private dims: [Group, Group] = [new Group(), new Group()];
   private blocks: BlockView[] = [];
   private readonly holeAt = new Vector3();
+  private readonly sunDir = new Vector3();
   private monsters: MonsterView[] = [];
   private hero!: CharacterInstance;
   private sim!: Sim;
@@ -310,6 +311,7 @@ export class GameView {
     this.pipeline.subpixel.x = this.follow.subpixel.x;
     this.pipeline.subpixel.y = this.follow.subpixel.y;
     this.updateHole();
+    this.updateSunOnScreen();
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
@@ -384,6 +386,17 @@ export class GameView {
       from.y + (to.y - from.y) * k + T.arc * 4 * k * (1 - k),
       from.z + (to.z - from.z) * k,
     );
+  }
+
+  /** Project the sun's direction onto the screen for the post pass's lit-side rim. */
+  private updateSunOnScreen(): void {
+    const s = this.pipeline.sun;
+    const v = this.sunDir.subVectors(this.sun.position, this.sun.target.position);
+    v.transformDirection(this.follow.camera.matrixWorldInverse);
+    s.dir.set(v.x, v.y);
+    if (s.dir.lengthSq() > 1e-6) s.dir.normalize();
+    else s.dir.set(0, 0);
+    s.color.copy(this.sun.color);
   }
 
   /** Put every character on the camera's pixel grid (after all of them have been placed this frame). */

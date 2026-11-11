@@ -1,6 +1,8 @@
 /**
  * DESIGN §4.1 — render the 3D scene at low resolution (one render pixel = one art pixel), then a post pass adds
  * depth outlines, colour quantisation and screen effects while upscaling to the screen with nearest sampling.
+ * Silhouettes are read per art pixel: the edge facing the sun gets a RIM_WIDTH-pixel rim of light, the edge facing
+ * away the dark outline.
  * The low-res frame is one art pixel larger on every side than the screen needs, so the upscale can shift it by
  * the camera's sub-pixel remainder (FollowCamera.subpixel): geometry stays locked to the art-pixel grid while the
  * view still scrolls smoothly.
@@ -15,6 +17,12 @@ import { HOLE_INNER } from './cutaway';
 export const PIXEL_SCALE = 3;
 /** Extra art pixels rendered on each side, room for the sub-pixel shift. */
 const MARGIN = 1;
+/** Depth jump between neighbouring pixels, relative to the pixel's depth, that counts as a silhouette edge. */
+const SILHOUETTE = 0.07;
+/** A silhouette pixel whose outward direction is within this cosine of the on-screen sun direction gets the rim. */
+const RIM_FACING = 0.35;
+/** Rim thickness in art pixels: the silhouette pixel plus this many minus one more inward, on the same surface. */
+const RIM_WIDTH = 2;
 
 export class PixelPipeline {
   readonly renderer: WebGLRenderer;
@@ -31,6 +39,9 @@ export class PixelPipeline {
 
   /** Effects driven by the game. */
   readonly fx = { flash: 0, ripple: 0, danger: 0, time: 0 };
+  /** Sun direction projected onto the screen (unit, x right, y up; zero when the sun is straight along the view)
+   *  and its colour, set per frame by the view. */
+  readonly sun = { dir: new Vector2(), color: new Color('#ffffff') };
   /** Camera hole in render pixels (see cutaway.ts); depth outlines are skipped across its dithered rim. */
   hole = { x: 0, y: 0, r: 0 };
 
@@ -53,6 +64,8 @@ export class PixelPipeline {
         sub: { value: new Vector2() },
         levels: { value: 14 },
         outline: { value: new Color('#140f18') },
+        sunDir: { value: new Vector2() },
+        sunColor: { value: new Color() },
         flash: { value: 0 },
         ripple: { value: 0 },
         danger: { value: 0 },
@@ -74,9 +87,22 @@ export class PixelPipeline {
         uniform float scale;
         uniform float levels, flash, ripple, danger, time;
         uniform vec3 outline;
+        uniform vec2 sunDir;
+        uniform vec3 sunColor;
         uniform vec3 hole;
         varying vec2 vUv;
         float depthAt(vec2 uv) { return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, cameraNear, cameraFar); }
+        /** Is the pixel at uv (depth d) a silhouette pixel whose outward side faces the sun? */
+        bool sunEdge(vec2 uv, float d) {
+          float dl = depthAt(uv - vec2(texel.x, 0.0));
+          float dr = depthAt(uv + vec2(texel.x, 0.0));
+          float dd = depthAt(uv - vec2(0.0, texel.y));
+          float du = depthAt(uv + vec2(0.0, texel.y));
+          if ((max(max(dl, dr), max(dd, du)) - d) / d <= ${SILHOUETTE.toFixed(3)}) return false;
+          // outward = toward the farther neighbours
+          vec2 out2 = vec2(dr - dl, du - dd);
+          return dot(out2, sunDir) / max(length(out2), 1e-5) > ${RIM_FACING.toFixed(2)};
+        }
         void main() {
           // screen pixel -> art pixel of the low-res frame, shifted by the camera's sub-pixel remainder
           vec2 px = floor((gl_FragCoord.xy - screenSize * 0.5) / scale + rtSize * 0.5 + sub) + 0.5;
@@ -87,8 +113,10 @@ export class PixelPipeline {
           }
           vec3 c = texture2D(tColor, uv).rgb;
           float d = depthAt(uv);
-          float dn = max(max(depthAt(uv + vec2(texel.x, 0.0)), depthAt(uv - vec2(texel.x, 0.0))),
-                         max(depthAt(uv + vec2(0.0, texel.y)), depthAt(uv - vec2(0.0, texel.y))));
+          float dl = depthAt(uv - vec2(texel.x, 0.0));
+          float dr = depthAt(uv + vec2(texel.x, 0.0));
+          float dd = depthAt(uv - vec2(0.0, texel.y));
+          float du = depthAt(uv + vec2(0.0, texel.y));
           c = pow(max(c, 0.0), vec3(1.0 / 2.2));
           // quantise brightness only, scaling the colour along with it: hue and saturation survive, where rounding
           // each channel on its own pushed dark browns toward olive
@@ -96,7 +124,33 @@ export class PixelPipeline {
           if (luma > 1e-4) c = min(c * (floor(luma * levels + 0.5) / levels) / luma, vec3(1.0));
           float hd = distance(px, hole.xy);
           bool rim = hd > hole.z * ${HOLE_INNER.toFixed(3)} - 1.5 && hd < hole.z + 1.5;
-          if (!rim && (dn - d) / d > 0.07 && d < cameraFar * 0.99) c = mix(c, outline, 0.8);
+          float far = (max(max(dl, dr), max(dd, du)) - d) / d;
+          if (!rim && d < cameraFar * 0.99) {
+            bool lit = false;
+            if (far > ${SILHOUETTE.toFixed(3)}) {
+              // a silhouette pixel: facing the sun -> rim light, else ink
+              lit = sunEdge(uv, d);
+              // sel-out: the nearer side of the jump darkens into its own colour instead of one flat ink
+              if (!lit) c = mix(c * 0.45, outline, 0.35);
+            } else {
+              // inner rim pixels: the rim grows inward from the sun-facing silhouette. Any pixel within RIM_WIDTH-1
+              // (square) on the sun's side and on the same surface that is a sun-facing silhouette pixel lights this
+              // one too. Looking at the whole neighbourhood, not one step along a rounded sun direction, keeps the
+              // band solid on slanted edges (a single diagonal step skipped every other pixel there)
+              const int R = ${RIM_WIDTH - 1};
+              for (int oy = -R; oy <= R; oy++) {
+                for (int ox = -R; ox <= R; ox++) {
+                  vec2 o = vec2(float(ox), float(oy));
+                  if (lit || o == vec2(0.0) || dot(o, sunDir) <= 0.0) continue;
+                  vec2 q = uv + o * texel;
+                  float dq = depthAt(q);
+                  if (abs(dq - d) / d > ${SILHOUETTE.toFixed(3)}) continue;
+                  if (sunEdge(q, dq)) lit = true;
+                }
+              }
+            }
+            if (lit) c = min(c * 1.45 + sunColor * 0.12, vec3(1.0));
+          }
           vec2 q = vUv - 0.5;
           float vig = smoothstep(0.25, 0.75, length(q * vec2(1.3, 1.0)));
           c = mix(c, vec3(0.85, 0.08, 0.1), vig * danger * 0.75);
@@ -139,6 +193,8 @@ export class PixelPipeline {
     (u.hole.value as Vector3).set(this.hole.x, this.hole.y, this.hole.r);
     u.cameraNear.value = camera.near;
     u.cameraFar.value = camera.far;
+    (u.sunDir.value as Vector2).copy(this.sun.dir);
+    (u.sunColor.value as Color).copy(this.sun.color).convertLinearToSRGB();
     this.renderer.setRenderTarget(this.rt);
     this.renderer.render(scene, camera);
     this.renderer.setRenderTarget(null);

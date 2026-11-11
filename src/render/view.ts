@@ -200,7 +200,11 @@ export class GameView {
     }
     for (const dim of [0, 1] as DimIndex[]) {
       const ctx = { theme: THEMES[dim], grid: sim.grid };
-      for (const cell of sim.grid.all(dim)) {
+      // the ring of rock just outside the grid: the outermost wall wherever the level's border is open
+      const { w, h } = sim.level.size;
+      const ring = [];
+      for (let y = -1; y <= h; y++) for (let x = -1; x <= w; x++) if (x < 0 || y < 0 || x >= w || y >= h) ring.push(sim.grid.cell(dim, x, y));
+      for (const cell of [...sim.grid.all(dim), ...ring]) {
         const factory = BLOCK_MODELS[cell.def.id];
         if (!factory) continue;
         const v = factory(cell, ctx);

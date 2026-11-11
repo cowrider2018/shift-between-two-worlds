@@ -11,7 +11,7 @@ import type { Sim } from '../core/sim';
 import type { DimTheme } from './palette';
 import { cobble, toon, whitening, wood } from './materials';
 import { throughMouth, withHole, type Mouth } from './cutaway';
-import { CAVE, WALL_H, caveGeometry, floorGeometry, wallGeometry } from './terrain';
+import { CAVE, WALL_H, caveGeometry, floorGeometry, isOuterRock, outerWallGeometry, wallGeometry } from './terrain';
 
 export interface BlockView {
   object: Object3D;
@@ -66,12 +66,22 @@ function archShape(grow = 0): Shape {
 /** Haze in the cave: [depth, opacity] of each thin veil of white light, thickening towards the back. */
 const CAVE_HAZE: [number, number][] = [[0.42, 0.3], [0.5, 0.4], [0.58, 0.5], [0.66, 0.6], [0.74, 0.75]];
 
+/** Raise an outermost wall (see isOuterRock) on up to OUTER_H; the upper part casts no shadow. */
+function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx): void {
+  if (!isOuterRock(ctx.grid, cell.dim, cell.x, cell.y)) return;
+  const geo = outerWallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop);
+  g.add(m(geo, withHole(cobble('#ffffff', true)), 0, 0, 0, false));
+}
+
 export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   floor: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
 
   wall: (cell, ctx) => {
     const g = wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop);
-    return { object: place(m(g, withHole(cobble('#ffffff', true))), cell) };
+    const group = new Group();
+    group.add(m(g, withHole(cobble('#ffffff', true))));
+    addOuterWall(group, cell, ctx);
+    return { object: place(group, cell) };
   },
 
   spawn: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
@@ -167,6 +177,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     inside.add(light);
     const g = new Group();
     g.add(rock, tunnel, inside);
+    addOuterWall(g, cell, ctx);
     place(g, cell);
     return { object: g };
   },

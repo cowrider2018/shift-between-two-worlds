@@ -21,6 +21,14 @@ const BEVEL = 0.14;
 const CORNER = 0.32;
 const FILLET = 0.32;
 
+/**
+ * Height of the outermost walls (rock on the grid border, and the ring just outside it): tall enough that their
+ * top never shows. Measured: the highest point on them any camera pose sees before the fog (far = 20) hides it
+ * is 7.37 tiles (level01, 8° pitch, hero in a corner); rounded up to 8, plus 2 to spare. (The top frustum edge
+ * at the lowest pitch reaches about 9 at fog depth, so this holds for bigger levels too.)
+ */
+export const OUTER_H = 10;
+
 type IsWall = (x: number, z: number) => boolean;
 type Sdf = (x: number, z: number) => number;
 
@@ -62,7 +70,7 @@ interface Snapped { p: [number, number, number]; n: [number, number, number] }
 
 class WallShape {
   private readonly cache = new Map<string, Sdf>();
-  constructor(private readonly isWall: IsWall) {}
+  constructor(private readonly isWall: IsWall, private readonly height = WALL_H) {}
 
   private sdfNear(x: number, z: number): Sdf {
     const vx = Math.round(x);
@@ -78,8 +86,8 @@ class WallShape {
 
   /**
    * Snap a point of a flat patch onto the rounded wall. `side` points lie on a vertical face and are moved
-   * horizontally onto the footprint outline; `top` points lie at WALL_H and are only pulled in when outside
-   * the footprint. Anything within BEVEL of the outline and above WALL_H − BEVEL lands on the top bevel.
+   * horizontally onto the footprint outline; `top` points lie at the wall's height and are only pulled in when outside
+   * the footprint. Anything within BEVEL of the outline and above height − BEVEL lands on the top bevel.
    */
   shape(x: number, y: number, z: number, side: boolean): Snapped {
     const f = this.sdfNear(x, z);
@@ -98,7 +106,7 @@ class WallShape {
       z -= gz * s;
       e = 0;
     }
-    const base = WALL_H - BEVEL;
+    const base = this.height - BEVEL;
     if (e < BEVEL && y > base) {
       const dx = gx * (BEVEL - e);
       const dz = gz * (BEVEL - e);
@@ -121,7 +129,9 @@ const FINE: number[] = (() => {
   return [...out].sort((a, b) => a - b);
 })();
 const COARSE = [0, 1];
-const HEIGHTS = [0, WALL_H - BEVEL, ...[1, 2, 3, 4].map((k) => WALL_H - BEVEL + (BEVEL * k) / 4)];
+/** Rows of a side face from `from` up to a bevelled top at `top`. */
+const faceHeights = (from: number, top: number) => [from, top - BEVEL, ...[1, 2, 3, 4].map((k) => top - BEVEL + (BEVEL * k) / 4)];
+const HEIGHTS = faceHeights(0, WALL_H);
 
 interface RawVertex { p: [number, number, number]; n: [number, number, number]; uv: [number, number]; c: Color; w?: number }
 
@@ -256,7 +266,7 @@ function caveLayout(cx: number, cz: number, m: CaveMouth) {
 }
 
 /** The open face of a cave cell, cut round the arch (snapped onto the rounded wall like any other face). */
-function caveFace(b: MeshBuilder, cx: number, cz: number, m: CaveMouth): void {
+function caveFace(b: MeshBuilder, cx: number, cz: number, m: CaveMouth, HEIGHTS: number[]): void {
   const { face, out, r, spring, a0, a1, o0, o1, top, TH } = caveLayout(cx, cz, m);
   const span = (lo: number, hi: number) => [lo, ...FINE.filter((v) => v > lo + 1e-3 && v < hi - 1e-3), hi];
   const lift = HEIGHTS.filter((h) => h > top);
@@ -340,32 +350,14 @@ function isRock(grid: LevelGrid, dim: DimIndex, x: number, z: number): boolean {
   return def.solid === 'always' || def.behavior === 'exit';
 }
 
-/**
- * Geometry for the wall at (cx, cz), in coordinates local to the cell centre (cx + .5, 0, cz + .5).
- * Also used for the exit cell, whose cave mouth is added on top (blockModels.ts).
- * Vertex colours blend `sideColor` → `topColor` by how upward each point faces.
- */
-export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
-  topColor: string, cave?: CaveMouth): BufferGeometry {
-  const isWall: IsWall = (x, z) => isRock(grid, dim, x, z);
-  const shape = new WallShape(isWall);
-  const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
-  let exposed = false;
-  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!isWall(cx + dx, cz + dz)) exposed = true;
-  const B = exposed ? FINE : COARSE;
-  const n = B.length;
-  const H = HEIGHTS;
+/** The outermost rock, raised to OUTER_H: rock on the grid border, and everything outside the grid. */
+export function isOuterRock(grid: LevelGrid, dim: DimIndex, x: number, z: number): boolean {
+  return isRock(grid, dim, x, z) && (x <= 0 || z <= 0 || x >= grid.w - 1 || z >= grid.h - 1);
+}
 
-  b.patch(n, n, (i, j) => [cx + B[i], WALL_H, cz + B[j]], false, [0, 1, 0]);
-  const open = (dx: number, dz: number) => !isWall(cx + dx, cz + dz) && !(cave && cave.dx === dx && cave.dz === dz);
-  if (cave) caveFace(b, cx, cz, cave);
-  if (open(1, 0)) b.patch(n, H.length, (i, j) => [cx + 1, H[j], cz + B[i]], true, [1, 0, 0]);
-  if (open(-1, 0)) b.patch(n, H.length, (i, j) => [cx, H[j], cz + B[i]], true, [-1, 0, 0]);
-  if (open(0, 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz + 1], true, [0, 0, 1]);
-  if (open(0, -1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz], true, [0, 0, -1]);
-
-  // Fillet tops: at a corner where this wall's two neighbours are walls but the diagonal cell is open,
-  // the rounded inner corner spills into that open cell; its sides come from the neighbours' faces.
+/** Rounded inner-corner tops at height y: where this wall's two neighbours are walls but the diagonal cell is
+ *  open, the corner spills into that open cell; its sides come from the neighbours' faces. */
+function fillets(b: MeshBuilder, isWall: IsWall, cx: number, cz: number, y: number): void {
   for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
     if (isWall(cx + sx, cz + sz) || !isWall(cx + sx, cz) || !isWall(cx, cz + sz)) continue;
     const vx = cx + (sx > 0 ? 1 : 0);
@@ -380,9 +372,60 @@ export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
       const r0 = FILLET * 0.95;
       const r1 = FILLET / Math.max(c, s);
       const r = r0 + ((r1 - r0) * j) / 4;
-      return [ox - sx * c * r, WALL_H, oz - sz * s * r];
+      return [ox - sx * c * r, y, oz - sz * s * r];
     }, false, [0, 1, 0]);
   }
+}
+
+/**
+ * Geometry for the wall at (cx, cz), in coordinates local to the cell centre (cx + .5, 0, cz + .5).
+ * Also used for the exit cell, whose cave mouth is added on top (blockModels.ts).
+ * Vertex colours blend `sideColor` → `topColor` by how upward each point faces.
+ */
+export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
+  topColor: string, cave?: CaveMouth): BufferGeometry {
+  const isWall: IsWall = (x, z) => isRock(grid, dim, x, z);
+  // an outermost wall stops at WALL_H here (no top, no bevel); outerWallGeometry carries it on up
+  const outer = isOuterRock(grid, dim, cx, cz);
+  const shape = new WallShape(isWall, outer ? OUTER_H : WALL_H);
+  const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
+  let exposed = false;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!isWall(cx + dx, cz + dz)) exposed = true;
+  const B = exposed ? FINE : COARSE;
+  const n = B.length;
+  const H = outer ? [0, WALL_H] : HEIGHTS;
+
+  if (!outer) b.patch(n, n, (i, j) => [cx + B[i], WALL_H, cz + B[j]], false, [0, 1, 0]);
+  const open = (dx: number, dz: number) => !isWall(cx + dx, cz + dz) && !(cave && cave.dx === dx && cave.dz === dz);
+  if (cave) caveFace(b, cx, cz, cave, H);
+  if (open(1, 0)) b.patch(n, H.length, (i, j) => [cx + 1, H[j], cz + B[i]], true, [1, 0, 0]);
+  if (open(-1, 0)) b.patch(n, H.length, (i, j) => [cx, H[j], cz + B[i]], true, [-1, 0, 0]);
+  if (open(0, 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz + 1], true, [0, 0, 1]);
+  if (open(0, -1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz], true, [0, 0, -1]);
+  fillets(b, isWall, cx, cz, WALL_H);
+  return b.build();
+}
+
+/**
+ * The part of an outermost wall (isOuterRock) above WALL_H, up to OUTER_H, local to the cell centre like
+ * wallGeometry. Its footprint is the outermost rock alone, so it also rises above the ordinary walls that meet it.
+ * A separate mesh so it casts no shadow: a cliff that tall would darken half the level.
+ */
+export function outerWallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
+  topColor: string): BufferGeometry {
+  const isWall: IsWall = (x, z) => isOuterRock(grid, dim, x, z);
+  const b = new MeshBuilder(new WallShape(isWall, OUTER_H), [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
+  let exposed = false;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!isWall(cx + dx, cz + dz)) exposed = true;
+  const B = exposed ? FINE : COARSE;
+  const n = B.length;
+  const H = faceHeights(WALL_H, OUTER_H);
+  b.patch(n, n, (i, j) => [cx + B[i], OUTER_H, cz + B[j]], false, [0, 1, 0]);
+  if (!isWall(cx + 1, cz)) b.patch(n, H.length, (i, j) => [cx + 1, H[j], cz + B[i]], true, [1, 0, 0]);
+  if (!isWall(cx - 1, cz)) b.patch(n, H.length, (i, j) => [cx, H[j], cz + B[i]], true, [-1, 0, 0]);
+  if (!isWall(cx, cz + 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz + 1], true, [0, 0, 1]);
+  if (!isWall(cx, cz - 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz], true, [0, 0, -1]);
+  fillets(b, isWall, cx, cz, OUTER_H);
   return b.build();
 }
 

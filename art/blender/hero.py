@@ -327,21 +327,21 @@ def _cut_below(obj, z):
 # (the height above the scalp h becomes HUG_MIN + (h - HUG_MIN) * smoothstep(HUG_MIN, HUG_BAND, h): monotonic,
 # so nothing folds), while the upper surfaces and
 # the tips, further out, keep their shape. The root bulges settle onto the head instead of jutting from it.
-# Not in front of the face (within FACE_ZONE of straight forward from the head centre, faded over FACE_FADE), so
-# the fringe keeps its edge against the face.
+# Every lock is pressed, except where sweep_l (the fringe) meets the face: its part within FACE_ZONE of straight
+# forward from the head centre is left as it is (faded over FACE_FADE), so the fringe keeps its edge on the brow.
 HUG_BAND = 0.06
 HUG_MIN = 0.014   # never pressed closer to the scalp than this: the ears stand ~0.011 off it and must stay under
-FACE_ZONE = 0.5   # cos of the angle from straight forward inside which the hair is left as it is
+FACE_ZONE = 0.5   # cos of the angle from straight forward inside which the fringe is left as it is
 FACE_FADE = 0.15  # the hug fades out over this much of that cosine before the face zone
 
 
-def _hug_scalp(obj):
+def _hug_scalp(obj, fringe=False):
     for v in obj.data.vertices:
         d = v.co - H
         h = d.length - HEAD_R
         if h <= HUG_MIN:
             continue                                                # already as close as it may get
-        keep = _smoothstep(FACE_ZONE - FACE_FADE, FACE_ZONE, d.normalized().x)
+        keep = _smoothstep(FACE_ZONE - FACE_FADE, FACE_ZONE, d.normalized().x) if fringe else 0.0
         pulled = HUG_MIN + (h - HUG_MIN) * _smoothstep(HUG_MIN, HUG_BAND, h)
         v.co = H + d.normalized() * (HEAD_R + h + (pulled - h) * (1 - keep))
     obj.data.update()
@@ -350,8 +350,8 @@ def _hug_scalp(obj):
 def build_hair(name):
     objs = [build_lock(f"hair_{n}", *args) for n, *args in HAIR]
     assert len(objs) == 5
-    for o in objs:
-        _hug_scalp(o)
+    for (n, *_), o in zip(HAIR, objs):
+        _hug_scalp(o, fringe=n == "sweep_l")
     return lib.join(name, objs)
 
 

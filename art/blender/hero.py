@@ -371,14 +371,45 @@ def _hug_scalp(obj, fringe=False):
     obj.data.update()
 
 
+# Cap lift: a lock cut level (side_r, at the top of the ear) is closed by a flat cap that sticks straight out of the
+# side of the skull, almost at right angles to it. The cap is hinged where it meets the scalp and lifted CAP_LIFT
+# degrees upward: each cap vertex turns about the scalp's horizontal tangent at its own bearing, so the far edge
+# rises most and the cap leans up against the head instead of standing off it.
+CAP_LIFT = 60.0
+
+
+def _lift_cap(obj, z):
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    r0 = math.sqrt(max(HEAD_R ** 2 - (z - H.z) ** 2, 0.0))          # the scalp's radius at the cut height
+    moved = set()
+    for v in bm.verts:
+        if abs(v.co.z - z) > 1e-6:
+            continue
+        d = Vector((v.co.x - H.x, v.co.y - H.y, 0.0))
+        if d.length < 1e-9:
+            continue
+        d.normalize()
+        hinge = Vector((H.x, H.y, z)) + d * r0
+        v.co = hinge + Quaternion(d.cross(Z), math.radians(CAP_LIFT)) @ (v.co - hinge)
+        moved.add(v)
+    # the cap and the faces around it are no longer flat: split them into triangles explicitly
+    bent = [f for f in bm.faces if len(f.verts) > 3 and any(v in moved for v in f.verts)]
+    bmesh.ops.triangulate(bm, faces=bent, quad_method="BEAUTY", ngon_method="BEAUTY")
+    bm.to_mesh(obj.data)
+    bm.free()
+
+
 def _build_locks():
-    """The locks in HAIR order: built, roots swung, cut level, pressed to the scalp."""
+    """The locks in HAIR order: built, roots swung, cut level (and the cap lifted), pressed to the scalp."""
     objs = [build_lock(f"hair_{n}", *args) for n, *args in HAIR]
     assert len(objs) == 5
     _flare_roots(objs)
     for o in objs:
         if "cut" in o:
             _cut_below(o, H.z + o["cut"])
+            _lift_cap(o, H.z + o["cut"])
             del o["cut"]
     for (n, *_), o in zip(HAIR, objs):
         _hug_scalp(o, fringe=n == "sweep_l")

@@ -428,3 +428,35 @@ describe('level04: one lever, two doors facing opposite ways', () => {
     });
   }
 });
+
+describe('level05: where the throat is cut decides where the ghost looks', () => {
+  const level05 = () => parseLevel(JSON.parse(load('level05.json'))).level!;
+  /** Does the troll's ghost light the cell in front of the exit (B 10,2) even for a sneaking hero? */
+  const ghostWatchesExit = (sim: Sim) => {
+    const ghost = sim.monsters.find((m) => m.def.id === 't1')!;
+    expect(ghost.risen).toBe(true);
+    sim.dim = 1; sim.x = 10.5; sim.y = 2.5; sim.sneaking = true;
+    return sim.monsterSeesPlayer(ghost);
+  };
+  const toTheGate = 'SHIFT ~1,2 ~2,2 ~3,2 ~4,2 SHIFT ~3,2 ~2,2';
+
+  it('can be won without a kill by letting the troll walk through you in the underside', () => {
+    expect(runScript(level05(), 'w0.15 SHIFT 1,2 ~2,2 ~3,2 ~4,2 SHIFT 5,2 6,2 7,2 8,2 ~9,2 SHIFT 10,2 11,2').status).toBe('won');
+  });
+
+  it('a kill early in the gate leaves the ghost too far from the exit to matter', () => {
+    const sim = runScript(level05(), `w0.05 ${toTheGate} ~1,2 ~2,2 KILL 3,2 4,2 5,2 6,2 7,2 8,2 9,2 10,2 SHIFT ~11,2`);
+    expect(sim.status).toBe('won');
+  });
+
+  it('a kill from the far side leaves the ghost looking back down the gate', () => {
+    const sim = runScript(level05(), `w0.15 ${toTheGate} ~1,2 ~2,2 ~3,2 ~4,2 ~5,2 ~6,2 ~7,2 ~8,2 ~9,2 ~8,2 KILL 9,2 SHIFT 10,2 11,2`);
+    expect(sim.status).toBe('won');
+  });
+
+  it('a kill deep in the gate leaves the ghost staring at the exit', () => {
+    const sim = runScript(level05(), `${toTheGate} 1,2 ~2,2 ~3,2 ~4,2 ~5,2 ~6,2 ~7,2 KILL`);
+    expect(sim.status).toBe('playing');
+    expect(ghostWatchesExit(sim)).toBe(true);
+  });
+});

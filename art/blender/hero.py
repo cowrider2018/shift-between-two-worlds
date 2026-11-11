@@ -373,9 +373,10 @@ def _hug_scalp(obj, fringe=False):
 
 # Cap lift: a lock cut level (side_r, at the top of the ear) is closed by a flat cap that sticks straight out of the
 # side of the skull, almost at right angles to it. The cap is hinged where it meets the scalp and lifted CAP_LIFT
-# degrees upward: each cap vertex turns about the scalp's horizontal tangent at its own bearing, so the far edge
-# rises most and the cap leans up against the head instead of standing off it.
-CAP_LIFT = 60.0
+# degrees upward: each cap vertex outside the scalp turns about the scalp's horizontal tangent at its own bearing
+# (the part inside the skull stays put), so the far edge rises most and the cap leans up against the head instead
+# of standing off it.
+CAP_LIFT = 75.0
 
 
 def _lift_cap(obj, z):
@@ -388,9 +389,9 @@ def _lift_cap(obj, z):
         if abs(v.co.z - z) > 1e-6:
             continue
         d = Vector((v.co.x - H.x, v.co.y - H.y, 0.0))
-        if d.length < 1e-9:
-            continue
-        d.normalize()
+        if d.length < r0:
+            continue                                                # inside the skull: hidden, and turning it
+        d.normalize()                                               # would swing it down out of the jaw
         hinge = Vector((H.x, H.y, z)) + d * r0
         v.co = hinge + Quaternion(d.cross(Z), math.radians(CAP_LIFT)) @ (v.co - hinge)
         moved.add(v)

@@ -292,9 +292,10 @@ def catmull_rom(points, samples_per_segment=4):
     return out
 
 
-def loft(name, rings, mat, tip=None, closed=True):
+def loft(name, rings, mat, tip=None, closed=True, start=None):
     """
-    Skin a list of vertex rings (equal length) into quads; optional point `tip` closes the last ring.
+    Skin a list of vertex rings (equal length) into quads; optional point `tip` closes the last ring,
+    optional point `start` closes the first one.
     closed=False leaves the ring open (a sheet, e.g. a cloak with a front opening).
     """
     n = len(rings[0])
@@ -310,6 +311,10 @@ def loft(name, rings, mat, tip=None, closed=True):
         t = len(verts) - 1
         last = (len(rings) - 1) * n
         faces += [(last + i, last + (i + 1) % n, t) for i in range(span)]
+    if start is not None:
+        verts.append(Vector(start))
+        s = len(verts) - 1
+        faces += [((i + 1) % n, i, s) for i in range(span)]
     return mesh_from(name, verts, faces, mat)
 
 

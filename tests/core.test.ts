@@ -409,25 +409,25 @@ describe('level03: one lever decides which half of the ring is lit', () => {
 
   it('before the lever the bottom arc is lit in both dimensions and the top arc only in the underside', () => {
     const sim = new Sim(level03());
-    expect([lit(sim, 0, 5, 7), lit(sim, 1, 5, 7)]).toEqual([true, true]);
-    expect([lit(sim, 0, 5, 1), lit(sim, 1, 5, 1)]).toEqual([false, true]);
+    expect([lit(sim, 0, 3, 7), lit(sim, 1, 3, 7)]).toEqual([true, true]);
+    expect([lit(sim, 0, 3, 1), lit(sim, 1, 3, 1)]).toEqual([false, true]);
   });
 
   it('after the lever the top arc is lit in both dimensions and the bottom arc only on the surface', () => {
     const sim = new Sim(level03());
-    sim.x = 7.5; sim.y = 3.5;
+    sim.x = 5.5; sim.y = 3.5;
     tap(sim, 'interact');
-    expect([lit(sim, 0, 5, 1), lit(sim, 1, 5, 1)]).toEqual([true, true]);
-    expect([lit(sim, 0, 5, 7), lit(sim, 1, 5, 7)]).toEqual([true, false]);
+    expect([lit(sim, 0, 3, 1), lit(sim, 1, 3, 1)]).toEqual([true, true]);
+    expect([lit(sim, 0, 3, 7), lit(sim, 1, 3, 7)]).toEqual([true, false]);
   });
 
   it('is won by going round the top on the surface, pulling the lever, and coming back round the bottom in the underside', () => {
     const sim = new Sim(level03());
-    for (const [x, y] of [[1, 4], [1, 1], [7, 1], [7, 3]]) walkTo(sim, x, y);
+    for (const [x, y] of [[1, 1], [5, 1], [5, 3]]) walkTo(sim, x, y);
     tap(sim, 'interact');
     tap(sim, 'shift');
     expect(sim.dim).toBe(1);
-    for (const [x, y] of [[7, 7], [1, 7], [1, 4], [4, 4]]) walkTo(sim, x, y);
+    for (const [x, y] of [[5, 7], [1, 7], [1, 4], [3, 4]]) walkTo(sim, x, y);
     expect(sim.status).toBe('won');
   });
 });

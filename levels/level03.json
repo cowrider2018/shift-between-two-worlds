@@ -2,50 +2,52 @@
   "format": 1,
   "id": "level03",
   "name": "迴環",
-  "size": {"w":9,"h":9},
+  "size": {"w":7,"h":9},
   "dimensions": [
     {
       "rows": [
-        "#########",
-        "#.......#",
-        "#.###D#.#",
-        "#.###.#.#",
-        "#.SD###L#",
-        "#.###.#.#",
-        "#.###.#.#",
-        "#.......#",
-        "#########"
+        "#######",
+        "#.....#",
+        "#.#D#.#",
+        "#.#.#.#",
+        "#SDE#L#",
+        "#.#.#.#",
+        "#.#.#.#",
+        "#.....#",
+        "#######"
       ],
       "props": {
-        "5,2": {"channel":1,"inverted":false},
-        "3,4": {"channel":1,"inverted":false},
-        "7,4": {"channel":1}
+        "3,2": {"channel":1,"inverted":false},
+        "2,4": {"channel":1,"inverted":false},
+        "3,4": {"dir":3},
+        "5,4": {"channel":1}
       },
       "monsters": [
-        {"id":"s1","path":[[5,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":6,"viewAngle":70,"facing":270},
-        {"id":"s2","path":[[5,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":6,"viewAngle":70,"facing":90}
+        {"id":"m1","path":[[3,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":90},
+        {"id":"m2","path":[[3,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":270}
       ]
     },
     {
       "rows": [
-        "#########",
-        "#.......#",
-        "#.###.#.#",
-        "#.###.#.#",
-        "#..DE##.#",
-        "#.###.#.#",
-        "#.###D#.#",
-        "#.......#",
-        "#########"
+        "#######",
+        "#.....#",
+        "#.#.#.#",
+        "#.#.#.#",
+        "#.DE#L#",
+        "#.#.#.#",
+        "#.#D#.#",
+        "#.....#",
+        "#######"
       ],
       "props": {
-        "3,4": {"channel":1,"inverted":false},
-        "4,4": {"dir":3},
-        "5,6": {"channel":1,"inverted":true}
+        "2,4": {"channel":1,"inverted":false},
+        "3,4": {"dir":3},
+        "5,4": {"channel":1},
+        "3,6": {"channel":1,"inverted":true}
       },
       "monsters": [
-        {"id":"g1","path":[[5,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":6,"viewAngle":70,"facing":270},
-        {"id":"g2","path":[[5,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":6,"viewAngle":70,"facing":90}
+        {"id":"m3","path":[[3,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":270},
+        {"id":"m4","path":[[3,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":90}
       ]
     }
   ]

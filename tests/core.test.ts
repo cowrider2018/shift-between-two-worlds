@@ -305,3 +305,53 @@ describe('simulation on level01', () => {
   });
 
 });
+
+describe('level02: the troll guards the lever with its ghost', () => {
+  const level02 = () => parseLevel(JSON.parse(load('level02.json'))).level!;
+  const walkX = (sim: Sim, x: number, extra: Partial<SimInput> = {}) => walkTo(sim, x - 0.5, 1, extra);
+  /** Stand behind the troll (in A) until the B ghost has walked west past us and turned its back. */
+  const waitForGhostWest = (sim: Sim) => {
+    const g = sim.monsters.find((m) => m.def.id === 'g1')!;
+    let px = g.x;
+    for (let i = 0; i < 6000; i++) {
+      sim.update(NO_INPUT, 1 / 60);
+      if (g.x < 4.5 && g.x < px) return;
+      px = g.x;
+    }
+  };
+
+  it('wins by pulling the lever in B first and only then cutting the troll down', () => {
+    const sim = new Sim(level02());
+    walkX(sim, 5.4);                        // right behind the troll's back
+    waitForGhostWest(sim);
+    tap(sim, 'shift'); walkX(sim, 7.6); tap(sim, 'interact');
+    walkX(sim, 5.4); tap(sim, 'shift');     // back behind the troll before the ghost turns round
+    tap(sim, 'attack');
+    expect(sim.monsters[0].alive).toBe(false);
+    for (let i = 0; i < Math.ceil(TUNING.takedownTime * 60); i++) sim.update(NO_INPUT, 1 / 60);
+    walkX(sim, 10.8);
+    expect(sim.status).toBe('won');
+  });
+
+  it('a kill before the lever leaves the troll\'s ghost staring at the lever', () => {
+    const sim = new Sim(level02());
+    walkX(sim, 5.4);
+    tap(sim, 'attack');
+    for (let i = 0; i < Math.ceil(TUNING.takedownTime * 60); i++) sim.update(NO_INPUT, 1 / 60);
+    waitForGhostWest(sim);
+    tap(sim, 'shift');
+    walkX(sim, 7.6, { sneak: true });
+    expect(sim.status).toBe('caught');
+    expect(sim.hunter?.def.id).toBe('t1');
+  });
+
+  it('the living troll lights the exit even for a sneaking hero', () => {
+    const sim = new Sim(level02());
+    walkX(sim, 5.4);
+    waitForGhostWest(sim);
+    tap(sim, 'shift'); walkX(sim, 7.6); tap(sim, 'interact');
+    walkX(sim, 8.6); tap(sim, 'shift');
+    walkX(sim, 10.8, { sneak: true });
+    expect(sim.status).toBe('caught');
+  });
+});

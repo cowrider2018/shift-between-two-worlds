@@ -372,35 +372,46 @@ def _hug_scalp(obj, fringe=False):
 
 
 # Cap lift: a lock cut level (side_r, at the top of the ear) is closed by a flat cap that sticks straight out of the
-# side of the skull, almost at right angles to it. The cap is hinged where it meets the scalp and lifted CAP_LIFT
-# degrees upward: each cap vertex turns about the scalp's horizontal tangent at its own bearing, so the far edge
-# rises most and the cap leans up against the head instead of standing off it. The buried part of the cap swings
-# down as the outer part swings up; whatever of it ends below the cut height is sliced off again.
+# side of the skull, almost at right angles to it. The cap is turned CAP_LIFT degrees upward about the line where it
+# meets the scalp. Rather than bending the cap's vertices (which folds the faces around it), the lock is cut along
+# the turned cap itself: a cone opening up and out from the scalp's circle at the cut height, everything outside it
+# removed. Each edge of the lock then simply ends on the cone, and the flat faces are only split, never bent.
 CAP_LIFT = 75.0
+CAP_SEGMENTS = 24  # facets of the cone around the head: as coarse as the rest of it
 
 
 def _lift_cap(obj, z):
     import bmesh
-    bm = bmesh.new()
-    bm.from_mesh(obj.data)
     r0 = math.sqrt(max(HEAD_R ** 2 - (z - H.z) ** 2, 0.0))          # the scalp's radius at the cut height
-    moved = set()
-    for v in bm.verts:
-        if abs(v.co.z - z) > 1e-6:
-            continue
-        d = Vector((v.co.x - H.x, v.co.y - H.y, 0.0))
-        if d.length < 1e-9:
-            continue
-        d.normalize()
-        hinge = Vector((H.x, H.y, z)) + d * r0
-        v.co = hinge + Quaternion(d.cross(Z), math.radians(CAP_LIFT)) @ (v.co - hinge)
-        moved.add(v)
-    # the cap and the faces around it are no longer flat: split them into triangles explicitly
-    bent = [f for f in bm.faces if len(f.verts) > 3 and any(v in moved for v in f.verts)]
-    bmesh.ops.triangulate(bm, faces=bent, quad_method="BEAUTY", ngon_method="BEAUTY")
-    bm.to_mesh(obj.data)
+    rise = 0.3
+    # the cutter: a solid ring around the vertical axis through the head, its inner wall the turned cap
+    profile = [(r0, z - 0.05), (r0, z), (r0 + rise / math.tan(math.radians(CAP_LIFT)), z + rise),
+               (1.0, z + rise), (1.0, z - 0.05)]
+    seg = CAP_SEGMENTS
+    bm = bmesh.new()
+    rows = []
+    for k in range(seg):
+        a = 2 * math.pi * k / seg
+        rows.append([bm.verts.new((H.x + r * math.cos(a), H.y + r * math.sin(a), h)) for r, h in profile])
+    n = len(profile)
+    for k in range(seg):
+        A, B = rows[k], rows[(k + 1) % seg]
+        for i in range(n):
+            j = (i + 1) % n
+            bm.faces.new((A[i], A[j], B[j], B[i]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new("cap_cutter")
+    bm.to_mesh(me)
     bm.free()
-    _cut_below(obj, z)                                              # the buried part swung down: cut off what pokes out
+    cutter = lib.link(bpy.data.objects.new("cap_cutter", me))
+    mod = obj.modifiers.new("cap_lift", "BOOLEAN")
+    mod.operation = "DIFFERENCE"
+    mod.solver = "EXACT"
+    mod.object = cutter
+    lib.apply_modifiers(obj)
+    bpy.data.objects.remove(cutter)
+    bpy.data.meshes.remove(me)
+    lib.flat(obj)
 
 
 def _build_locks():

@@ -398,3 +398,33 @@ describe('level03: sentries rule the surface, ghosts walk the underside', () => 
     });
   }
 });
+
+describe('level04: one lever, two doors facing opposite ways', () => {
+  const level04 = () => parseLevel(JSON.parse(load('level04.json'))).level!;
+
+  it('pulling a lever opens the north door, shuts the west door and with it the sentry\'s light', () => {
+    const sim = new Sim(level04());
+    const s1 = sim.monsters.find((m) => m.def.id === 's1')!;
+    const north = sim.grid.cell(0, 6, 2);
+    const west = sim.grid.cell(0, 2, 4);
+    sim.x = 1.5; sim.y = 4.5; // the west avenue, in line with the open west door
+    expect(sim.doorOpen(west) && !sim.doorOpen(north)).toBe(true);
+    expect(sim.monsterSeesPlayer(s1)).toBe(true);
+    sim.x = 8.5; sim.y = 6.5; // beside the surface lever
+    tap(sim, 'interact');
+    expect(!sim.doorOpen(west) && sim.doorOpen(north)).toBe(true);
+    sim.x = 1.5; sim.y = 4.5;
+    expect(sim.monsterSeesPlayer(s1)).toBe(false);
+  });
+
+  const routes = {
+    'west door (no lever, slip in behind the room ghost)': 'w0.10 SHIFT 1,6 1,5 ~1,4 ~1,3 1,2 ~1,3 1,4 ~2,4 ~3,4 ~4,4 SHIFT 5,4 6,4 7,4',
+    'surface lever (past the south sentry through B)': 'SHIFT 2,7 3,7 4,7 5,7 6,7 7,7 8,7 SHIFT 8,6 LEVER SHIFT 8,7 7,7 6,7 5,7 4,7 3,7 2,7 SHIFT 1,7 1,6 1,5 1,4 1,3 1,2 1,1 2,1 3,1 4,1 5,1 6,1 6,2 6,3 6,4 7,4',
+    'underside lever (along the north corridor)': 'SHIFT 1,6 1,5 ~1,4 ~1,3 1,2 1,1 2,1 3,1 4,1 5,1 6,1 7,1 ~8,1 8,2 LEVER SHIFT 8,1 7,1 6,1 6,2 6,3 6,4 7,4',
+  };
+  for (const [name, script] of Object.entries(routes)) {
+    it(`can be won through the ${name}`, () => {
+      expect(runScript(level04(), script).status).toBe('won');
+    });
+  }
+});

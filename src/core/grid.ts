@@ -54,6 +54,13 @@ export class LevelGrid {
     );
   }
 
+  /** The lever at the same cell in the other dimension, if any: the two are one switch and always move together. */
+  leverTwin(c: Cell): Cell | null {
+    if (c.def.behavior !== 'lever') return null;
+    const t = this.cell((1 - c.dim) as DimIndex, c.x, c.y);
+    return t.def.behavior === 'lever' ? t : null;
+  }
+
   solid(dim: DimIndex, x: number, y: number, channelOn: ChannelFn): boolean {
     const c = this.cell(dim, x, y);
     return evalCondition(c.def.solid, c.def, c.props, channelOn);

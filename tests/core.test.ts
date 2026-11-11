@@ -83,6 +83,46 @@ describe('validator', () => {
   });
 });
 
+describe('paired levers', () => {
+  /** A lever at (1, 1) in both dimensions on different channels; door (3, 1) in A answers channel 2 only. */
+  const paired = () => {
+    const l = createEmptyLevel('t', 7, 3);
+    for (let x = 0; x < 7; x++) { setCell(l, 0, x, 0, '#'); setCell(l, 0, x, 2, '#'); setCell(l, 1, x, 0, '#'); setCell(l, 1, x, 2, '#'); }
+    setCell(l, 0, 1, 1, 'L'); l.dimensions[0].props['1,1'] = { channel: 1 };
+    setCell(l, 1, 1, 1, 'L'); l.dimensions[1].props['1,1'] = { channel: 2 };
+    setCell(l, 0, 3, 1, 'D'); l.dimensions[0].props['3,1'] = { channel: 2, inverted: false };
+    setCell(l, 1, 3, 1, '#');
+    setCell(l, 0, 2, 1, 'S');
+    setCell(l, 0, 6, 1, 'E');
+    setCell(l, 1, 6, 1, '#');
+    for (let x = 4; x < 6; x++) setCell(l, 1, x, 1, '#');
+    return l;
+  };
+
+  it('move together: pulling one throws its twin and switches both channels', () => {
+    const sim = new Sim(paired());
+    const a = sim.grid.cell(0, 1, 1);
+    const b = sim.grid.cell(1, 1, 1);
+    tap(sim, 'interact');
+    expect([sim.leverOn(a), sim.leverOn(b)]).toEqual([true, true]);
+    expect([sim.channelOn(1), sim.channelOn(2)]).toEqual([true, true]);
+    tap(sim, 'shift');
+    tap(sim, 'interact'); // from the other side, back off together
+    expect([sim.leverOn(a), sim.leverOn(b), sim.channelOn(2)]).toEqual([false, false, false]);
+  });
+
+  it('count as one switch for the solver', () => {
+    // a second door on channel 1 (opened by the surface twin) blocks the hall too: both doors open needs one lever on and
+    // the other off, which a pair can never be
+    const l = paired();
+    setCell(l, 0, 4, 1, 'D'); l.dimensions[0].props['4,1'] = { channel: 1, inverted: true };
+    expect(validateLevel(l).solve?.status).toBe('unsolvable');
+    // the same layout with the twins on separate cells (no longer a pair) is solvable
+    setCell(l, 1, 1, 1, '.'); setCell(l, 1, 2, 1, 'L'); l.dimensions[1].props['2,1'] = { channel: 2 };
+    expect(validateLevel(l).solve?.status).toBe('solved');
+  });
+});
+
 describe('ray cast', () => {
   it('stops at the first blocked cell', () => {
     const d = castRay(0.5, 0.5, 1, 0, 10, (x) => x === 3);

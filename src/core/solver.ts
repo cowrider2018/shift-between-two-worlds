@@ -21,17 +21,25 @@ export function solve(grid: LevelGrid): SolveResult {
   const spawn = all.find((c) => c.def.behavior === 'spawn');
   if (!spawn) return { status: 'unsolvable', reason: '沒有出生點' };
 
+  // one switch per lever, except that a lever and its twin in the other dimension share one
+  const leverIndex = new Map<Cell, number>();
+  let L = 0;
+  for (const c of levers) {
+    if (leverIndex.has(c)) continue;
+    leverIndex.set(c, L);
+    const twin = grid.leverTwin(c);
+    if (twin) leverIndex.set(twin, L);
+    L++;
+  }
+
   const W = grid.w;
   const H = grid.h;
-  const L = levers.length;
   const total = 2 * W * H * 2 ** L;
   if (L > 16 || total > MAX_STATES) {
     return { status: 'skipped', reason: `狀態空間過大（拉桿 ${L}），略過求解` };
   }
 
-  const leverIndex = new Map<Cell, number>(levers.map((c, i) => [c, i]));
-
-  const channelFn = (mask: number) => (ch: number) => levers.some((c, i) => (mask >> i) & 1 && c.props.channel === ch);
+  const channelFn = (mask: number) => (ch: number) => levers.some((c) => (mask >> leverIndex.get(c)!) & 1 && c.props.channel === ch);
 
   const encode = (d: number, x: number, y: number, lm: number) => ((lm * 2 + d) * H + y) * W + x;
   const visited = new Uint8Array(total);

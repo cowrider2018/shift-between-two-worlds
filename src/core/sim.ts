@@ -183,8 +183,13 @@ export class Sim {
     return `${c.dim}:${cellKey(c.x, c.y)}`;
   }
 
+  /** Levers at the same cell in both dimensions share one state (DESIGN §3.5). */
+  private leverKey(c: Cell): string {
+    return this.grid.leverTwin(c) ? `*:${cellKey(c.x, c.y)}` : Sim.itemKey(c);
+  }
+
   leverOn(c: Cell): boolean {
-    return this.levers.get(Sim.itemKey(c)) ?? false;
+    return this.levers.get(this.leverKey(c)) ?? false;
   }
 
   doorOpen(c: Cell): boolean {
@@ -372,7 +377,7 @@ export class Sim {
     const lever = this.nearestLever();
     if (!lever) return;
     const on = !this.leverOn(lever);
-    this.levers.set(Sim.itemKey(lever), on);
+    this.levers.set(this.leverKey(lever), on);
     this.recomputeChannels();
     this.events.push({ type: 'lever', cell: lever, on });
   }

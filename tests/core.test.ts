@@ -355,3 +355,46 @@ describe('level02: the troll guards the lever with its ghost', () => {
     expect(sim.status).toBe('caught');
   });
 });
+
+/**
+ * Replay a route script at a fixed 0.05 s step: `x,y` runs one cell (`~x,y` sneaks it), `wN` waits N seconds
+ * sneaking, `SHIFT` shifts and waits out the cooldown, `LEVER` pulls a lever in reach, `KILL` cuts the nearest
+ * throat and waits out the takedown. Routes were found by a stealth search with a safety margin on every cone.
+ */
+function runScript(level: Level, script: string): Sim {
+  const DT = 0.05;
+  const sim = new Sim(level);
+  const step = (extra: Partial<SimInput> = {}) => sim.update({ ...NO_INPUT, sneak: true, ...extra }, DT);
+  for (const tok of script.split(' ')) {
+    if (sim.status !== 'playing') break;
+    if (tok === 'SHIFT') { step({ shift: true }); for (let i = 0; i < 6; i++) step(); }
+    else if (tok === 'LEVER') step({ interact: true });
+    else if (tok === 'KILL') { step({ attack: true }); while (sim.takedownT > 0 && sim.status === 'playing') step(); }
+    else if (tok.startsWith('w')) for (let i = 0; i < Math.round(parseFloat(tok.slice(1)) / DT); i++) step();
+    else {
+      const sneak = tok.startsWith('~');
+      const [tx, ty] = tok.replace('~', '').split(',').map(Number);
+      const ox = tx - Math.floor(sim.x), oy = ty - Math.floor(sim.y);
+      const ticks = sneak ? 11 : 7;
+      const s = 1 / (ticks * DT) / (TUNING.playerSpeed * (sneak ? TUNING.sneakSpeedMul : 1));
+      for (let i = 0; i < ticks; i++) step({ moveX: ox * s, moveY: oy * s, sneak });
+      sim.x = tx + 0.5;
+      sim.y = ty + 0.5;
+    }
+  }
+  return sim;
+}
+
+describe('level03: sentries rule the surface, ghosts walk the underside', () => {
+  const level03 = () => parseLevel(JSON.parse(load('level03.json'))).level!;
+  const routes = {
+    'north (west avenue in B, top street weaving)': 'SHIFT 1,6 1,5 1,4 1,3 1,2 ~1,1 SHIFT 2,1 ~3,1 ~4,1 SHIFT 5,1 6,1 7,1 8,1 9,1 SHIFT 10,1 11,1',
+    'middle (across the central avenue)': 'SHIFT 1,6 1,5 1,4 ~2,4 SHIFT ~3,4 ~2,4 ~3,4 ~2,4 ~3,4 SHIFT 4,4 5,4 6,4 7,4 SHIFT 8,4 9,4 10,4 10,3 10,2 10,1 11,1',
+    'south (bottom street in B, then behind the sentries)': 'SHIFT ~2,7 ~3,7 ~4,7 ~5,7 ~6,7 ~7,7 7,6 SHIFT 7,5 7,4 8,4 9,4 10,4 10,3 10,2 10,1 11,1',
+  };
+  for (const [name, script] of Object.entries(routes)) {
+    it(`can be won by the ${name} route`, () => {
+      expect(runScript(level03(), script).status).toBe('won');
+    });
+  }
+});

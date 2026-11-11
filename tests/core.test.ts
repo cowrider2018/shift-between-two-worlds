@@ -355,3 +355,37 @@ describe('level02: the troll guards the lever with its ghost', () => {
     expect(sim.status).toBe('caught');
   });
 });
+
+describe('level03: the two lights meet at a single cell', () => {
+  const level03 = () => parseLevel(JSON.parse(load('level03.json'))).level!;
+  /** Hall cells (x of row 1) where a hero standing in `dim` is seen by nobody. */
+  const darkCells = (dim: 0 | 1, sneak: boolean) => {
+    const sim = new Sim(level03());
+    sim.dim = dim;
+    sim.sneaking = sneak;
+    const out: number[] = [];
+    for (let x = 1; x <= 9; x++) {
+      sim.x = x + 0.5;
+      sim.y = 1.5;
+      if (!sim.monsters.some((m) => m.dim === dim && sim.monsterSeesPlayer(m))) out.push(x);
+    }
+    return out;
+  };
+
+  it('crouching shrinks the surface light to cells 1-5 and the underside light to cells 5-9, so the only way across is cell 5', () => {
+    expect(darkCells(0, true)).toEqual([1, 2, 3, 4, 5]);
+    expect(darkCells(1, true)).toEqual([5, 6, 7, 8, 9]);
+    expect(darkCells(0, false)).toEqual([1]);   // standing, only the spawn is dark
+    expect(darkCells(1, false)).toEqual([9]);
+  });
+
+  it('is won by sneaking to cell 5, shifting there and sneaking on to the cave', () => {
+    const sim = new Sim(level03());
+    walkTo(sim, 5, 1, { sneak: true });
+    tap(sim, 'shift');
+    expect(sim.dim).toBe(1);
+    walkTo(sim, 9, 1, { sneak: true });
+    walkTo(sim, 10, 1);
+    expect(sim.status).toBe('won');
+  });
+});

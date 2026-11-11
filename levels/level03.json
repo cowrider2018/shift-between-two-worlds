@@ -1,0 +1,30 @@
+{
+  "format": 1,
+  "id": "level03",
+  "name": "交界",
+  "size": {"w":12,"h":3},
+  "dimensions": [
+    {
+      "rows": [
+        "############",
+        "#S.........#",
+        "############"
+      ],
+      "props": {},
+      "monsters": [
+        {"id":"s1","path":[[10,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":8.8,"viewAngle":70,"facing":180}
+      ]
+    },
+    {
+      "rows": [
+        "############",
+        "#.........E#",
+        "############"
+      ],
+      "props": {},
+      "monsters": [
+        {"id":"g1","path":[[1,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":7,"viewAngle":70,"facing":0}
+      ]
+    }
+  ]
+}

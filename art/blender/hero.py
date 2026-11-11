@@ -354,7 +354,7 @@ def _flare_roots(objs):
 # in proportion to how far out they lie (the tip to TIP_SHORTEN of its distance).
 TIP_SPAN = 0.4
 TIP_SHORTEN = 0.75
-TIP_STEP = 5.0  # degrees per ring
+TIP_STEP = 3.0  # degrees per ring
 TIP_OVERRIDE = {"sweep_l": 0.65, "sweep_r": 0.5}  # name: span
 
 

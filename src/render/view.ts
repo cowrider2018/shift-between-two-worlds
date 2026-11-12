@@ -343,8 +343,8 @@ export class GameView {
     const other = (1 - shown) as DimIndex;
     // the other side's level and monsters as they stand there (not the hero, who is on this side, nor the
     // vision cones, which lie flat on the floor)
-    // this side's motes stay, in the other side's colour: their reflection
-    const shows: [Object3D, boolean][] = [[this.hero.root, false], [this.backdrop.mesh, false], [this.abyss.points[shown], true], [this.abyss.points[other], false]];
+    // the other side's motes too: they share this side's layout, so they mirror the ones rising here
+    const shows: [Object3D, boolean][] = [[this.hero.root, false], [this.backdrop.mesh, false], [this.abyss.points[shown], false], [this.abyss.points[other], true]];
     for (const mv of this.monsters) {
       // the same rules as updateMonster, for the other dimension
       shows.push([mv.body.root, mv.state.home === other], [mv.cone.mesh, false]);
@@ -365,9 +365,7 @@ export class GameView {
     r.setRenderTarget(this.backdrop.mirror);
     r.setClearColor(0x000000, 0);
     r.clear();
-    this.abyss.reflect(shown, true);
     r.render(this.scene, this.follow.camera);
-    this.abyss.reflect(shown, false);
     r.setRenderTarget(null);
     r.setClearColor(this.clearColor, clearAlpha);
     this.scene.background = background;

@@ -10,6 +10,7 @@ const UP = new Vector3(0, 1, 0);
 import { angleDiff } from '../core/grid';
 import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
+import { Abyss } from './abyss';
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE } from './cutaway';
@@ -178,6 +179,7 @@ export class GameView {
   private readonly yawQuat = new Quaternion();
   private shownDim: DimIndex | -1 = -1;
   private readonly backdrop = new Backdrop();
+  private readonly abyss = new Abyss();
   private readonly clearColor = new Color();
   /** Fog for the reflection: it sinks into the shown dimension's background with distance. It thickens at half
    *  the rate of a 4..16 fog (both ends doubled), so the reflection stays visible twice as far. */
@@ -200,11 +202,13 @@ export class GameView {
     this.world.clear();
     this.dims = [new Group(), new Group()];
     this.blocks = [];
-    this.world.add(...this.dims);
+    // the motes ride in the world so the reflection pass mirrors them with the level
+    this.world.add(...this.dims, ...this.abyss.points);
     if (!this.hero) {
       this.hero = new CharacterInstance('hero', 'normal', 'plain');
       this.scene.add(this.hero.root);
     }
+    this.abyss.setLevel(sim.grid, sim.level.size.w, sim.level.size.h);
     for (const dim of [0, 1] as DimIndex[]) {
       const ctx = { theme: THEMES[dim], grid: sim.grid };
       // the ring of rock just outside the grid: the outermost wall wherever the level's border is open
@@ -324,6 +328,7 @@ export class GameView {
     this.updateHole();
     this.updateSunOnScreen();
     this.backdrop.update(this.pipeline.width, this.pipeline.height, this.follow.camera, this.t);
+    this.abyss.update(this.t);
     this.renderMirror();
     this.pipeline.render(this.scene, this.follow.camera);
   }
@@ -338,7 +343,8 @@ export class GameView {
     const other = (1 - shown) as DimIndex;
     // the other side's level and monsters as they stand there (not the hero, who is on this side, nor the
     // vision cones, which lie flat on the floor)
-    const shows: [Object3D, boolean][] = [[this.hero.root, false], [this.backdrop.mesh, false]];
+    // this side's motes stay, in the other side's colour: their reflection
+    const shows: [Object3D, boolean][] = [[this.hero.root, false], [this.backdrop.mesh, false], [this.abyss.points[shown], true], [this.abyss.points[other], false]];
     for (const mv of this.monsters) {
       // the same rules as updateMonster, for the other dimension
       shows.push([mv.body.root, mv.state.home === other], [mv.cone.mesh, false]);
@@ -359,7 +365,9 @@ export class GameView {
     r.setRenderTarget(this.backdrop.mirror);
     r.setClearColor(0x000000, 0);
     r.clear();
+    this.abyss.reflect(shown, true);
     r.render(this.scene, this.follow.camera);
+    this.abyss.reflect(shown, false);
     r.setRenderTarget(null);
     r.setClearColor(this.clearColor, clearAlpha);
     this.scene.background = background;
@@ -538,6 +546,7 @@ export class GameView {
     this.shownDim = dim;
     this.scene.background = new Color(THEMES[dim].background);
     this.backdrop.setDim(dim);
+    this.abyss.setDim(dim);
     this.light(dim);
   }
 

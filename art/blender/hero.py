@@ -498,6 +498,21 @@ def _lift_cap(obj, z):
     lib.flat(obj)
 
 
+# Crown drop: the highest lock stood too tall on the crown. Its vertices are lowered by up to CROWN_DROP (about two
+# art pixels at the default camera distance), fading in from CROWN_FROM above the head centre to the lock's top, so
+# its lower parts stay where they are and nothing folds (the drop's slope stays well under 1).
+CROWN_DROP = {"sweep_r": 0.03}
+CROWN_FROM = 0.15
+
+
+def _drop_crown(obj, drop):
+    vs = obj.data.vertices
+    lo, hi = H.z + CROWN_FROM, max(v.co.z for v in vs)
+    for v in vs:
+        v.co.z -= drop * _smoothstep(lo, hi, v.co.z)
+    obj.data.update()
+
+
 def _build_locks():
     """The locks in HAIR order: built, roots swung, cut level (and the cap lifted), pressed to the scalp."""
     objs = [build_lock(f"hair_{n}", *args) for n, *args in HAIR]
@@ -512,6 +527,8 @@ def _build_locks():
             del o["cut"]
     for (n, *_), o in zip(HAIR, objs):
         _hug_scalp(o, fringe=n == "sweep_l")
+        if n in CROWN_DROP:
+            _drop_crown(o, CROWN_DROP[n])
     return objs
 
 

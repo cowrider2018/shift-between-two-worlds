@@ -11,7 +11,7 @@ import { angleDiff } from '../core/grid';
 import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
 import { Backdrop } from './backdrop';
-import { BLOCK_MODELS, OUTER_TOP, type BlockView } from './blockModels';
+import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE } from './cutaway';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
@@ -322,7 +322,7 @@ export class GameView {
     this.pipeline.subpixel.y = this.follow.subpixel.y;
     this.updateHole();
     this.updateSunOnScreen();
-    this.backdrop.update(this.pipeline.width, this.pipeline.height, this.t);
+    this.backdrop.update(this.pipeline.width, this.pipeline.height, this.follow.camera, this.t);
     this.renderMirror();
     this.pipeline.render(this.scene, this.follow.camera);
   }
@@ -336,11 +336,8 @@ export class GameView {
     const shown = this.shownDim as DimIndex;
     const other = (1 - shown) as DimIndex;
     // the other side's level and monsters as they stand there (not the hero, who is on this side, nor the
-    // vision cones, which lie flat on the floor); not the raised outer rock either, which would just hang down
-    // as a wall
-    const tops: Object3D[] = [];
-    this.dims[other].traverse((o) => { if (o.name === OUTER_TOP) tops.push(o); });
-    const shows: [Object3D, boolean][] = [[this.hero.root, false], [this.backdrop.mesh, false], ...tops.map((o) => [o, false] as [Object3D, boolean])];
+    // vision cones, which lie flat on the floor)
+    const shows: [Object3D, boolean][] = [[this.hero.root, false], [this.backdrop.mesh, false]];
     for (const mv of this.monsters) {
       // the same rules as updateMonster, for the other dimension
       shows.push([mv.body.root, mv.state.home === other], [mv.cone.mesh, false]);

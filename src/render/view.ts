@@ -328,19 +328,26 @@ export class GameView {
   }
 
   /**
-   * Render the other dimension's level mirrored about the floor plane (y -> -y), from this camera, into the
+   * Render the other dimension (level and monsters) mirrored about the floor plane (y -> -y), from this camera, into the
    * backdrop's reflection: upside down directly beneath this level, in its own light. The lights are mirrored
    * with it so its tops stay lit; fog fades it with depth into this dimension's background.
    */
   private renderMirror(): void {
     const shown = this.shownDim as DimIndex;
     const other = (1 - shown) as DimIndex;
-    // level only: no characters, and not the raised outer rock, which would just hang down as a wall
+    // the other side's level and monsters as they stand there (not the hero, who is on this side, nor the
+    // vision cones, which lie flat on the floor); not the raised outer rock either, which would just hang down
+    // as a wall
     const tops: Object3D[] = [];
     this.dims[other].traverse((o) => { if (o.name === OUTER_TOP) tops.push(o); });
-    const hidden = [this.hero.root, this.backdrop.mesh, ...tops, ...this.monsters.flatMap((mv) => [mv.body.root, mv.cone.mesh, ...(mv.ghost ? [mv.ghost.root] : [])])];
-    const was = hidden.map((o) => o.visible);
-    for (const o of hidden) o.visible = false;
+    const shows: [Object3D, boolean][] = [[this.hero.root, false], [this.backdrop.mesh, false], ...tops.map((o) => [o, false] as [Object3D, boolean])];
+    for (const mv of this.monsters) {
+      // the same rules as updateMonster, for the other dimension
+      shows.push([mv.body.root, mv.state.home === other], [mv.cone.mesh, false]);
+      if (mv.ghost) shows.push([mv.ghost.root, mv.state.risen && other === 1]);
+    }
+    const was = shows.map(([o]) => o.visible);
+    for (const [o, v] of shows) o.visible = v;
     this.light(other);
     this.mirrorFog.color.copy(this.backdrop.bg);
     this.scene.fog = this.mirrorFog;
@@ -360,7 +367,7 @@ export class GameView {
     this.scene.background = background;
     for (const v of flip) v.y = -v.y;
     this.light(shown);
-    hidden.forEach((o, i) => (o.visible = was[i]));
+    shows.forEach(([o], i) => (o.visible = was[i]));
   }
 
   /** True once a caught sequence has played out (the game restarts the level then). */

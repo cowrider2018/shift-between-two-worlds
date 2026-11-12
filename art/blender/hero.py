@@ -356,11 +356,15 @@ TIP_SPAN = 0.4
 TIP_SHORTEN = 0.75
 TIP_STEP = 3.0  # degrees per ring
 TIP_OVERRIDE = {"sweep_l": 0.65, "sweep_r": 0.5}  # name: span
+# The crown lock and the back lock curl in less: barely turned (TIP_STEP degrees per ring) and drawn out a touch
+# (TIP_SHORTEN above 1 lengthens) instead of shortened.  name: (shorten, step)
+TIP_SHAPE = {"sweep_r": (1.01, 1.0), "back": (1.01, 1.0)}
 
 
 def _pull_tips(objs):
     for (n, *_), o in zip(HAIR, objs):
         span = TIP_OVERRIDE.get(n, TIP_SPAN)
+        shorten, step = TIP_SHAPE.get(n, (TIP_SHORTEN, TIP_STEP))
         R = o["rings"]
         vs = o.data.vertices
         groups = [list(range(r * 6, r * 6 + 6)) for r in range(R)] + [[R * 6]]   # the rings, then the tip point
@@ -374,7 +378,7 @@ def _pull_tips(objs):
         pivot = centres[k - 1].lerp(centres[k], f)
         # draw in
         for g, sg in zip(groups[k:], cum[k:]):
-            scale = 1 - (1 - TIP_SHORTEN) * (sg - s0) / (cum[-1] - s0)
+            scale = 1 - (1 - shorten) * (sg - s0) / (cum[-1] - s0)
             for i in g:
                 vs[i].co = pivot + (vs[i].co - pivot) * scale
         # curl: a fixed turn at every ring along the way
@@ -384,7 +388,7 @@ def _pull_tips(objs):
             axis = (tip - hinge).cross(H - hinge)
             if axis.length < 1e-9:
                 break
-            rot = Quaternion(axis.normalized(), math.radians(TIP_STEP))
+            rot = Quaternion(axis.normalized(), math.radians(step))
             for g in groups[j:]:
                 for i in g:
                     vs[i].co = hinge + rot @ (vs[i].co - hinge)
@@ -498,10 +502,10 @@ def _lift_cap(obj, z):
     lib.flat(obj)
 
 
-# Crown drop: the highest lock stood too tall on the crown. Its vertices are lowered by up to CROWN_DROP (about two
-# art pixels at the default camera distance), fading in from CROWN_FROM above the head centre to the lock's top, so
+# Crown drop: the highest lock stood too tall on the crown. Its vertices are lowered by up to CROWN_DROP (about one
+# art pixel at the default camera distance), fading in from CROWN_FROM above the head centre to the lock's top, so
 # its lower parts stay where they are and nothing folds (the drop's slope stays well under 1).
-CROWN_DROP = {"sweep_r": 0.03}
+CROWN_DROP = {"sweep_r": 0.015}
 CROWN_FROM = 0.15
 
 

@@ -3,7 +3,7 @@
  * A factory returns an Object3D positioned at the cell origin plus an optional per-frame update.
  */
 import {
-  BoxGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PointLight, Shape, Vector3, ShapeGeometry, TorusGeometry,
+  AdditiveBlending, BoxGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PointLight, Shape, Vector3, ShapeGeometry, TorusGeometry,
   type Material, type Object3D,
 } from 'three';
 import type { Cell, LevelGrid } from '../core/grid';
@@ -73,6 +73,92 @@ function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx): void {
   g.add(m(geo, withHole(cobble('#ffffff', true)), 0, 0, 0, false));
 }
 
+/** Underside door: light leaking through the seams between its boards (woodTexture BOARDS = 4). */
+const SEAM_GLOW = '#ff3a24';
+/** ...and the soul haze drifting out of them. */
+const WISP_GLOW = '#7fe8dc';
+const WISPS = 7;
+
+type DoorPart = (along: number, h: number, across: number, mat: Material, a: number, y: number, off?: number, shadow?: boolean) => Mesh;
+
+/**
+ * The underside's door glows from within: every seam between boards is lit in broken, flickering stretches on both
+ * faces, and faint wisps seep out of the seams and rise, swaying, until they thin away. All of it rides on the panel,
+ * so it sinks and hides with the door when it opens.
+ */
+function hauntDoor(cell: Cell, doorH: number, alongX: boolean, part: DoorPart): { object: Object3D; update(dt: number, t: number): void } {
+  const g = new Group();
+  const seed = (cell.x * 73856093) ^ (cell.y * 19349663);
+  let s = seed >>> 0;
+  const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const seams = [-0.25, 0, 0.25];
+  // broken stretches of light along each seam, each flickering on its own phase
+  const cracks: { mat: MeshBasicMaterial; base: number; phase: number; speed: number }[] = [];
+  for (const a of seams) {
+    let y = 0.05 + rand() * 0.12;
+    while (y < doorH - 0.1) {
+      const len = Math.min(doorH - 0.05 - y, 0.18 + rand() * 0.4);
+      const base = 0.45 + rand() * 0.55;
+      const mat = withHole(new MeshBasicMaterial({ color: SEAM_GLOW, transparent: true, opacity: base, depthWrite: false, blending: AdditiveBlending }));
+      for (const side of [-1, 1]) g.add(part(0.022, len, 0.004, mat, a, y + len / 2, side * 0.152, false));
+      cracks.push({ mat, base, phase: rand() * 6.28, speed: 2 + rand() * 5 });
+      y += len + 0.04 + rand() * 0.2;
+    }
+  }
+  // red light spilling out onto the floor and walls round the door
+  const light = new PointLight(SEAM_GLOW, 0.9, 2.2, 1.6);
+  light.position.y = doorH * 0.45;
+  g.add(light);
+  // wisps: each rises from a random seam on a random face, sways, swells and fades, then starts over
+  const wispGeo = new IcosahedronGeometry(0.05, 0);
+  const wisps = Array.from({ length: WISPS }, () => {
+    const mat = withHole(new MeshBasicMaterial({ color: WISP_GLOW, transparent: true, opacity: 0, depthWrite: false, blending: AdditiveBlending }));
+    const mesh = new Mesh(wispGeo, mat);
+    mesh.renderOrder = 3;
+    g.add(mesh);
+    const w = { mesh, mat, age: rand() * 3, life: 1, a: 0, side: 1, y0: 0, sway: 0, drift: 0 };
+    return w;
+  });
+  const respawn = (w: (typeof wisps)[number]) => {
+    w.age = 0;
+    w.life = 2.2 + rand() * 1.8;
+    w.a = seams[Math.floor(rand() * seams.length)] + (rand() - 0.5) * 0.03;
+    w.side = rand() < 0.5 ? -1 : 1;
+    w.y0 = 0.15 + rand() * (doorH - 0.5);
+    w.sway = rand() * 6.28;
+    w.drift = 0.08 + rand() * 0.12;
+  };
+  for (const w of wisps) {
+    const age = w.age;
+    respawn(w);
+    w.age = age % w.life;
+  }
+  return {
+    object: g,
+    update: (dt, t) => {
+      let sum = 0;
+      for (const c of cracks) {
+        // a slow breath plus a quick ragged flutter
+        const f = 0.7 + 0.2 * Math.sin(t * 1.3 + c.phase) + 0.1 * Math.sin(t * c.speed + c.phase * 3);
+        c.mat.opacity = c.base * f;
+        sum += f;
+      }
+      light.intensity = 0.9 * (sum / cracks.length);
+      for (const w of wisps) {
+        w.age += dt;
+        if (w.age >= w.life) respawn(w);
+        const k = w.age / w.life; // 0..1 through its life
+        const out = 0.16 + w.drift * k; // seeps out of the face, then drifts off it
+        const a = w.a + Math.sin(t * 1.7 + w.sway) * 0.06 * k;
+        const y = w.y0 + k * 0.7;
+        w.mesh.position.set(alongX ? a : w.side * out, y, alongX ? w.side * out : a);
+        w.mesh.scale.setScalar(0.5 + k * 1.3);
+        w.mat.opacity = 0.55 * Math.sin(Math.PI * Math.min(1, k * 1.4)) * (1 - k * 0.5);
+      }
+    },
+  };
+}
+
 export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   floor: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
 
@@ -129,11 +215,14 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       if (!spanX) ring.rotation.y = Math.PI / 2;
       panel.add(ring);
     }
+    const haunt = cell.dim === 1 ? hauntDoor(cell, doorH, spanX, part) : null;
+    if (haunt) panel.add(haunt.object);
     const g = onFloor(cell, ctx, panel);
     let y = 0;
     return {
       object: g,
-      update: (sim, dt) => {
+      update: (sim, dt, t) => {
+        haunt?.update(dt, t);
         const target = sim.doorOpen(cell) ? -WALL_H : 0;
         y += (target - y) * Math.min(1, dt * 8);
         panel.position.y = y;

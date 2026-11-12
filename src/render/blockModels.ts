@@ -162,6 +162,9 @@ function hauntDoor(cell: Cell, doorH: number, alongX: boolean, part: DoorPart): 
 export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   floor: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
 
+  // dug out of the level: nothing is drawn, the backdrop shows through
+  void: () => ({ object: new Group() }),
+
   wall: (cell, ctx) => {
     const g = wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop);
     const group = new Group();

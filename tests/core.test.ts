@@ -2,7 +2,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BLOCKS } from '../src/core/blocks';
-import { castRay } from '../src/core/grid';
+import { LevelGrid, castRay } from '../src/core/grid';
+import { isOuterRock } from '../src/render/terrain';
 import { createEmptyLevel, parseLevel, serializeLevel, setCell, setProp, type Level } from '../src/core/level';
 import { NO_INPUT, Sim, TUNING, type SimInput } from '../src/core/sim';
 import { validateLevel } from '../src/core/validate';
@@ -47,6 +48,46 @@ describe('level files', () => {
       expect(report.solve?.status).toBe('solved');
     });
   }
+});
+
+describe('dug-out (void) cells', () => {
+  /** An L-shaped level: the top-right corner is dug out. */
+  const lShape = (): Level => {
+    const l = createEmptyLevel('t', 7, 6);
+    for (const dim of [0, 1] as const) {
+      l.dimensions[dim].rows = ['####   ', '#..#   ', '#..####', '#.....#', '#.....#', '#######'];
+    }
+    setCell(l, 0, 1, 1, 'S');
+    setCell(l, 0, 5, 4, 'E');
+    return l;
+  };
+
+  it('are solid, and the outside carries on as void beyond a dug-out border', () => {
+    const g = new LevelGrid(lShape());
+    expect(g.solid(0, 5, 0, () => false)).toBe(true);
+    expect(g.cell(0, 7, 0).def.id).toBe('void');
+    expect(g.cell(0, 5, -1).def.id).toBe('void');
+    expect(g.cell(0, -1, 3).def.id).toBe('wall');
+  });
+
+  it('raise the rock round them to the outer cliff', () => {
+    const g = new LevelGrid(lShape());
+    expect(isOuterRock(g, 0, 3, 1)).toBe(true); // beside the void
+    expect(isOuterRock(g, 0, 3, 2)).toBe(true); // only a corner touches it
+    expect(isOuterRock(g, 0, 5, 0)).toBe(false); // the void itself
+  });
+
+  it('is valid with a wall between the floor and the void, not without', () => {
+    const l = lShape();
+    expect(validateLevel(l).issues.filter((i) => i.severity === 'error')).toEqual([]);
+    setCell(l, 1, 3, 1, '.');
+    expect(validateLevel(l).issues.some((i) => i.severity === 'error' && i.message.includes('挖空'))).toBe(true);
+  });
+
+  it('survive a save round trip', () => {
+    const l = lShape();
+    expect(parseLevel(JSON.parse(serializeLevel(l))).level!.dimensions[0].rows[0]).toBe('####   ');
+  });
 });
 
 describe('validator', () => {

@@ -344,15 +344,24 @@ export function caveGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
   return b.build();
 }
 
-/** Cells drawn as part of the rock mass: walls, and the exit, which is a small cave cut into the rock. */
+/** Cells drawn as part of the rock mass: walls, and the exit, which is a small cave cut into the rock. A dug-out
+ *  (void) cell is nothing at all. */
 function isRock(grid: LevelGrid, dim: DimIndex, x: number, z: number): boolean {
   const def = grid.cell(dim, x, z).def;
-  return def.solid === 'always' || def.behavior === 'exit';
+  return def.behavior === 'exit' || (def.solid === 'always' && def.behavior !== 'void');
 }
 
-/** The outermost rock, raised to OUTER_H: rock on the grid border, and everything outside the grid. */
+const isVoid = (grid: LevelGrid, dim: DimIndex, x: number, z: number) => grid.cell(dim, x, z).def.behavior === 'void';
+
+/**
+ * The outermost rock, raised to OUTER_H: rock on the grid border, everything outside the grid, and rock bordering
+ * a dug-out (void) cell, side or corner, so a level of any outline is ringed by the cliff.
+ */
 export function isOuterRock(grid: LevelGrid, dim: DimIndex, x: number, z: number): boolean {
-  return isRock(grid, dim, x, z) && (x <= 0 || z <= 0 || x >= grid.w - 1 || z >= grid.h - 1);
+  if (!isRock(grid, dim, x, z)) return false;
+  if (x <= 0 || z <= 0 || x >= grid.w - 1 || z >= grid.h - 1) return true;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (isVoid(grid, dim, x + dx, z + dz)) return true;
+  return false;
 }
 
 /** Rounded inner-corner tops at height y: where this wall's two neighbours are walls but the diagonal cell is

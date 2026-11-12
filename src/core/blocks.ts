@@ -20,7 +20,8 @@ export type ParamSchema =
 /** `whenClosed` only makes sense together with the `door` behavior. */
 export type Condition = 'never' | 'always' | 'whenClosed';
 
-export type Behavior = 'none' | 'spawn' | 'lever' | 'door' | 'exit';
+/** `void` is no block at all: a cell dug out of the level (DESIGN §3.1). */
+export type Behavior = 'none' | 'spawn' | 'lever' | 'door' | 'exit' | 'void';
 
 export interface BlockDef {
   id: string;
@@ -74,6 +75,10 @@ export const BLOCKS: readonly BlockDef[] = [
     color: '#c46bff', params: [{ key: 'dir', label: '開口方向（0 上 1 右 2 下 3 左）', type: 'int', default: 0, min: 0, max: 3 }],
     solid: 'never', opaque: 'never', behavior: 'exit', count: { min: 1 },
   },
+  {
+    id: 'void', char: ' ', label: '挖空', description: '不屬於關卡的格子：沒有地板也沒有牆，什麼都不畫。挖掉用不到的地板，讓邊界牆不必是矩形；緊鄰可走格的地方要有牆擋著。',
+    color: '#0d0b10', params: [], solid: 'always', opaque: 'always', behavior: 'void',
+  },
 ];
 
 export const BLOCK_BY_ID: ReadonlyMap<string, BlockDef> = new Map(BLOCKS.map((b) => [b.id, b]));
@@ -81,6 +86,7 @@ export const BLOCK_BY_CHAR: ReadonlyMap<string, BlockDef> = new Map(BLOCKS.map((
 
 export const FLOOR = BLOCK_BY_ID.get('floor')!;
 export const WALL = BLOCK_BY_ID.get('wall')!;
+export const VOID = BLOCK_BY_ID.get('void')!;
 
 /** Props of a cell with schema defaults filled in and unknown keys dropped. */
 export function resolveProps(def: BlockDef, stored: Props | undefined): Props {

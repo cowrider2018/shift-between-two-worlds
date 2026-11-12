@@ -2,7 +2,7 @@
  * Read-only query layer over a Level: block lookup, solidity, line of sight, collision.
  * Shared by the simulation, solver, validator, renderer and editor.
  */
-import { BLOCK_BY_CHAR, WALL, evalCondition, resolveProps, type BlockDef, type ChannelFn, type Props } from './blocks';
+import { BLOCK_BY_CHAR, VOID, WALL, evalCondition, resolveProps, type BlockDef, type ChannelFn, type Props } from './blocks';
 import { cellKey, type DimIndex, type Level } from './level';
 
 /** Exit `dir` values: 0 up (-y), 1 right (+x), 2 down (+y), 3 left (-x). */
@@ -40,9 +40,15 @@ export class LevelGrid {
     return x >= 0 && y >= 0 && x < this.w && y < this.h;
   }
 
-  /** Out-of-bounds reads behave as wall. */
+  /**
+   * Out-of-bounds reads behave as wall, except beyond a dug-out (void) border cell, where the void carries on: the
+   * outside continues whatever the nearest border cell is, rock or nothing.
+   */
   cell(dim: DimIndex, x: number, y: number): Cell {
-    if (!this.inBounds(x, y)) return { dim, x, y, def: WALL, props: {} };
+    if (!this.inBounds(x, y)) {
+      const edge = this.cells[dim][Math.min(this.h - 1, Math.max(0, y)) * this.w + Math.min(this.w - 1, Math.max(0, x))];
+      return { dim, x, y, def: edge.def === VOID ? VOID : WALL, props: {} };
+    }
     return this.cells[dim][y * this.w + x];
   }
 

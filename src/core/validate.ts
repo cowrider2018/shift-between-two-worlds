@@ -127,6 +127,16 @@ export function validateLevel(level: Level): ValidationReport {
     }
   });
 
+  // --- dug-out cells: the level's edge must be rock, so nothing walkable may open straight onto the void
+  for (const c of cells) {
+    if (c.def.solid === 'always' || c.def.behavior === 'exit') continue;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (grid.cell(c.dim, c.x + dx, c.y + dy).def.behavior !== 'void') continue;
+      err(`${where(c.dim, c.x, c.y)} ${c.def.label}緊鄰挖空的格子，邊界要有牆擋著`, { dim: c.dim, x: c.x, y: c.y });
+      break;
+    }
+  }
+
   // --- exit shape
   for (const e of cells.filter((c) => c.def.behavior === 'exit')) {
     const [dx, dy] = grid.exitMouth(e);

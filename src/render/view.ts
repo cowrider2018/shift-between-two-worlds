@@ -3,10 +3,17 @@
  */
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, Color, DirectionalLight, Fog, Group, HemisphereLight, Mesh, MeshBasicMaterial,
-  Matrix4, type Object3D, Quaternion, Scene, Vector3,
+  Matrix4, type Object3D, Plane, Quaternion, Scene, Vector3,
 } from 'three';
 
 const UP = new Vector3(0, 1, 0);
+/** The floor as a clipping plane, a hair below it so the floor itself never flickers out. Each dimension is cut off
+ *  where it crosses to the other side: the shown one keeps only what is above the floor (`ABOVE_FLOOR`), the
+ *  reflection, hung upside down beneath it, only what is below (`BELOW_FLOOR`). So a door sinking into the floor or a
+ *  body falling through it vanishes there instead of poking out into the other dimension. Global planes skip
+ *  ShaderMaterials (the backdrop and the post pass), which have clipping off. */
+const ABOVE_FLOOR = [new Plane(new Vector3(0, 1, 0), 0.001)];
+const BELOW_FLOOR = [new Plane(new Vector3(0, -1, 0), 0.001)];
 import { angleDiff } from '../core/grid';
 import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
@@ -187,6 +194,7 @@ export class GameView {
 
   constructor(canvas: HTMLCanvasElement) {
     this.pipeline = new PixelPipeline(canvas);
+    this.pipeline.renderer.clippingPlanes = ABOVE_FLOOR;
     this.hemi.intensity = 1.5;
     this.sun.intensity = 1.8;
     this.sun.castShadow = true;
@@ -359,7 +367,9 @@ export class GameView {
     r.setRenderTarget(this.backdrop.mirror);
     r.setClearColor(0x000000, 0);
     r.clear();
+    r.clippingPlanes = BELOW_FLOOR;
     r.render(this.scene, this.follow.camera);
+    r.clippingPlanes = ABOVE_FLOOR;
     r.setRenderTarget(null);
     r.setClearColor(this.clearColor, clearAlpha);
     this.scene.background = background;

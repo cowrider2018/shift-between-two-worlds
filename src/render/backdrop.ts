@@ -1,30 +1,21 @@
 /**
  * The backdrop: what shows wherever no geometry covers the frame (e.g. down past the near wall when the camera
- * hole cuts it away), in layers:
- *  1. a hand-drawn cross-section of the ground (backdropPaint.ts) laid on the floor plane round the level, fixed in
- *     the world: each pixel's view ray is cast onto the plane and the painting read where it lands, fading into
- *     the theme background with distance like the level's fog;
- *  2. the other dimension's reflection: the other level mirrored about the floor plane, hanging upside down
- *     directly beneath this one in world space (the view renders it from its own camera into `mirror`, see
- *     GameView.renderMirror), laid faintly over the painting with a gentle ripple;
- *  3. a dithered darkening into the corners.
- * The deeper below the floor, the fainter the reflection, until it is gone: the outer rock hanging down
+ * hole cuts it away). It is the other dimension's reflection: the other level mirrored about the floor plane,
+ * hanging upside down directly beneath this one in world space (the view renders it from its own camera into
+ * `mirror`, see GameView.renderMirror), laid faintly over the theme background with a gentle ripple, and darkened
+ * into the corners. The deeper below the floor, the fainter it is, until it is gone: the outer rock hanging down
  * thins away before it leaves the view. Drawn first each frame on a full-screen quad.
  */
 import {
   Color, DepthTexture, Matrix4, Mesh, NearestFilter, PlaneGeometry, ShaderMaterial, UnsignedIntType, Vector2,
-  WebGLRenderTarget, type PerspectiveCamera, type Texture,
+  WebGLRenderTarget, type PerspectiveCamera,
 } from 'three';
-import { backdropPaint, PAINT_H, PAINT_W } from './backdropPaint';
-import { TEXEL_DENSITY } from './texgen';
 import { THEMES } from './palette';
 
 /** How strongly the reflection shows over the background. */
 const MIRROR_OPACITY = 0.55;
 /** Depth below the floor (world units) over which the reflection fades out completely. */
 const FADE_DEPTH = 8;
-/** Distance from the camera over which the painting fades into the background (the level's fog is 9..20). */
-const PAINT_FOG: [number, number] = [9, 20];
 
 export class Backdrop {
   readonly mesh: Mesh;
@@ -41,10 +32,6 @@ export class Backdrop {
       depthTest: false,
       depthWrite: false,
       uniforms: {
-        tPaint: { value: null as Texture | null },
-        // world units per repeat of the painting: one texel per art pixel, like the level's own textures
-        paintSpan: { value: new Vector2(PAINT_W / TEXEL_DENSITY, PAINT_H / TEXEL_DENSITY) },
-        paintFog: { value: new Vector2(...PAINT_FOG) },
         tMirror: { value: this.mirror.texture },
         tMirrorDepth: { value: this.mirror.depthTexture },
         projInv: { value: new Matrix4() },
@@ -59,9 +46,9 @@ export class Backdrop {
         void main() { gl_Position = vec4(position.xy, 0.9999, 1.0); }
       `,
       fragmentShader: /* glsl */ `
-        uniform sampler2D tPaint, tMirror, tMirrorDepth;
+        uniform sampler2D tMirror, tMirrorDepth;
         uniform mat4 projInv, camWorld;
-        uniform vec2 rtSize, paintSpan, paintFog;
+        uniform vec2 rtSize;
         uniform vec3 bg;
         uniform float mirrorOpacity, time, fadeDepth;
         // 4x4 Bayer threshold in (0, 1)
@@ -82,18 +69,7 @@ export class Backdrop {
           vec4 p = projInv * vec4(muv * 2.0 - 1.0, texture2D(tMirrorDepth, muv).r * 2.0 - 1.0, 1.0);
           float y = (camWorld * vec4(p.xyz / p.w, 1.0)).y;
           float fade = 1.0 - smoothstep(0.0, fadeDepth, -y);
-          // the painting on the floor plane: cast this pixel's view ray onto y = 0
-          vec4 a = projInv * vec4(uv * 2.0 - 1.0, -1.0, 1.0);
-          vec4 b = projInv * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
-          vec3 o = (camWorld * vec4(a.xyz / a.w, 1.0)).xyz;
-          vec3 d = normalize((camWorld * vec4(b.xyz / b.w, 1.0)).xyz - o);
-          vec3 col = bg;
-          if (d.y < -1e-4) {
-            float t = -o.y / d.y;
-            vec3 hit = o + d * t;
-            col = mix(texture2D(tPaint, hit.xz / paintSpan).rgb, bg, smoothstep(paintFog.x, paintFog.y, t));
-          }
-          col = mix(col, m.rgb, m.a * mirrorOpacity * fade);
+          vec3 col = mix(bg, m.rgb, m.a * mirrorOpacity * fade);
           // darken into the corners. The post pass quantises luminance, which would snap a smooth falloff into
           // one hard ring in the dark range; instead each pixel is either darkened or not, by a 4x4 ordered
           // dither whose density grows outwards
@@ -111,7 +87,6 @@ export class Backdrop {
 
   setDim(dim: 0 | 1): void {
     this.bg.set(THEMES[dim].background);
-    this.mat.uniforms.tPaint.value = backdropPaint(dim);
   }
 
   /** Match the low-res frame (art pixels) and the camera the reflection is rendered from. */

@@ -15,7 +15,7 @@ import { THEMES } from './palette';
 /** How strongly the reflection shows over the background. */
 const MIRROR_OPACITY = 0.55;
 /** Depth below the floor (world units) over which the reflection fades out completely. */
-const FADE_DEPTH = 5;
+const FADE_DEPTH = 8;
 
 export class Backdrop {
   readonly mesh: Mesh;

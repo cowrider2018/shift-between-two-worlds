@@ -10,6 +10,7 @@ const UP = new Vector3(0, 1, 0);
 import { angleDiff } from '../core/grid';
 import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
+import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE } from './cutaway';
 import { CharacterInstance } from './models';
@@ -176,6 +177,9 @@ export class GameView {
   private readonly perchScale = new Vector3();
   private readonly yawQuat = new Quaternion();
   private shownDim: DimIndex | -1 = -1;
+  private readonly backdrop = new Backdrop();
+  private readonly clearColor = new Color();
+  private readonly fogs = THEMES.map((th) => new Fog(th.background, 9, 20)) as [Fog, Fog];
   private t = 0;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -185,7 +189,7 @@ export class GameView {
     this.sun.castShadow = true;
     this.sun.shadow.bias = -0.0015;
     this.sun.shadow.normalBias = 0.04;
-    this.scene.add(this.hemi, this.sun, this.sun.target, this.world);
+    this.scene.add(this.hemi, this.sun, this.sun.target, this.world, this.backdrop.mesh);
   }
 
   setSim(sim: Sim): void {
@@ -316,7 +320,33 @@ export class GameView {
     this.pipeline.subpixel.y = this.follow.subpixel.y;
     this.updateHole();
     this.updateSunOnScreen();
+    this.backdrop.update(this.pipeline.width, this.pipeline.height, this.follow.camera, this.hero.root.position, this.t);
+    this.renderMirror();
     this.pipeline.render(this.scene, this.follow.camera);
+  }
+
+  /** Render the other dimension from this camera into the backdrop's reflection: level only, in its own light. */
+  private renderMirror(): void {
+    const shown = this.shownDim as DimIndex;
+    const other = (1 - shown) as DimIndex;
+    const hidden = [this.hero.root, this.backdrop.mesh, ...this.monsters.flatMap((mv) => [mv.body.root, mv.cone.mesh, ...(mv.ghost ? [mv.ghost.root] : [])])];
+    const was = hidden.map((o) => o.visible);
+    for (const o of hidden) o.visible = false;
+    this.light(other);
+    const background = this.scene.background;
+    this.scene.background = null;
+    const r = this.pipeline.renderer;
+    const clearAlpha = r.getClearAlpha();
+    r.getClearColor(this.clearColor);
+    r.setRenderTarget(this.backdrop.mirror);
+    r.setClearColor(0x000000, 0);
+    r.clear();
+    r.render(this.scene, this.follow.camera);
+    r.setRenderTarget(null);
+    r.setClearColor(this.clearColor, clearAlpha);
+    this.scene.background = background;
+    this.light(shown);
+    hidden.forEach((o, i) => (o.visible = was[i]));
   }
 
   /** True once a caught sequence has played out (the game restarts the level then). */
@@ -487,9 +517,15 @@ export class GameView {
 
   private applyTheme(dim: DimIndex): void {
     this.shownDim = dim;
+    this.scene.background = new Color(THEMES[dim].background);
+    this.backdrop.setDim(dim);
+    this.light(dim);
+  }
+
+  /** Light, fog and show one dimension's level (the mirror pass borrows this for the other one). */
+  private light(dim: DimIndex): void {
     const th = THEMES[dim];
-    this.scene.background = new Color(th.background);
-    this.scene.fog = new Fog(th.background, 9, 20);
+    this.scene.fog = this.fogs[dim];
     this.hemi.color.set(th.hemiSky);
     this.hemi.groundColor.set(th.hemiGround);
     this.sun.color.set(th.sun);

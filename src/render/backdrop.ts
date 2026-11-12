@@ -1,8 +1,9 @@
 /**
  * The backdrop: what shows wherever no geometry covers the frame (e.g. down past the near wall when the camera
  * hole cuts it away), in layers:
- *  1. a flat hand-drawn cross-section of the ground (backdropPaint.ts), scrolled slowly with the camera's yaw and
- *     pitch so it sits far behind the level, darkening upwards into the theme background;
+ *  1. a hand-drawn cross-section of the ground (backdropPaint.ts) laid on the floor plane round the level, fixed in
+ *     the world: each pixel's view ray is cast onto the plane and the painting read where it lands, fading into
+ *     the theme background with distance like the level's fog;
  *  2. the other dimension's reflection: the other level mirrored about the floor plane, hanging upside down
  *     directly beneath this one in world space (the view renders it from its own camera into `mirror`, see
  *     GameView.renderMirror), laid faintly over the painting with a gentle ripple;
@@ -12,21 +13,18 @@
  */
 import {
   Color, DepthTexture, Matrix4, Mesh, NearestFilter, PlaneGeometry, ShaderMaterial, UnsignedIntType, Vector2,
-  Vector3, WebGLRenderTarget, type PerspectiveCamera, type Texture,
+  WebGLRenderTarget, type PerspectiveCamera, type Texture,
 } from 'three';
 import { backdropPaint, PAINT_H, PAINT_W } from './backdropPaint';
+import { TEXEL_DENSITY } from './texgen';
 import { THEMES } from './palette';
 
 /** How strongly the reflection shows over the background. */
 const MIRROR_OPACITY = 0.55;
 /** Depth below the floor (world units) over which the reflection fades out completely. */
 const FADE_DEPTH = 8;
-/** Art pixels the painting scrolls per radian of yaw / pitch: well under the world's own sweep, so it reads far.
- *  A full turn scrolls exactly two tiles, so it joins up where the yaw wraps round. */
-const PARALLAX_YAW = (PAINT_W * 2) / (Math.PI * 2);
-const PARALLAX_PITCH = 70;
-
-const _dir = new Vector3();
+/** Distance from the camera over which the painting fades into the background (the level's fog is 9..20). */
+const PAINT_FOG: [number, number] = [9, 20];
 
 export class Backdrop {
   readonly mesh: Mesh;
@@ -44,8 +42,9 @@ export class Backdrop {
       depthWrite: false,
       uniforms: {
         tPaint: { value: null as Texture | null },
-        paintSize: { value: new Vector2(PAINT_W, PAINT_H) },
-        scroll: { value: new Vector2() },
+        // world units per repeat of the painting: one texel per art pixel, like the level's own textures
+        paintSpan: { value: new Vector2(PAINT_W / TEXEL_DENSITY, PAINT_H / TEXEL_DENSITY) },
+        paintFog: { value: new Vector2(...PAINT_FOG) },
         tMirror: { value: this.mirror.texture },
         tMirrorDepth: { value: this.mirror.depthTexture },
         projInv: { value: new Matrix4() },
@@ -62,7 +61,7 @@ export class Backdrop {
       fragmentShader: /* glsl */ `
         uniform sampler2D tPaint, tMirror, tMirrorDepth;
         uniform mat4 projInv, camWorld;
-        uniform vec2 rtSize, paintSize, scroll;
+        uniform vec2 rtSize, paintSpan, paintFog;
         uniform vec3 bg;
         uniform float mirrorOpacity, time, fadeDepth;
         // 4x4 Bayer threshold in (0, 1)
@@ -83,9 +82,17 @@ export class Backdrop {
           vec4 p = projInv * vec4(muv * 2.0 - 1.0, texture2D(tMirrorDepth, muv).r * 2.0 - 1.0, 1.0);
           float y = (camWorld * vec4(p.xyz / p.w, 1.0)).y;
           float fade = 1.0 - smoothstep(0.0, fadeDepth, -y);
-          // the painting, one texel per art pixel, scrolled by the camera, darkening upwards into the background
-          vec3 col = texture2D(tPaint, (px + scroll) / paintSize).rgb;
-          col = mix(col, bg, smoothstep(0.3, 0.9, uv.y));
+          // the painting on the floor plane: cast this pixel's view ray onto y = 0
+          vec4 a = projInv * vec4(uv * 2.0 - 1.0, -1.0, 1.0);
+          vec4 b = projInv * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+          vec3 o = (camWorld * vec4(a.xyz / a.w, 1.0)).xyz;
+          vec3 d = normalize((camWorld * vec4(b.xyz / b.w, 1.0)).xyz - o);
+          vec3 col = bg;
+          if (d.y < -1e-4) {
+            float t = -o.y / d.y;
+            vec3 hit = o + d * t;
+            col = mix(texture2D(tPaint, hit.xz / paintSpan).rgb, bg, smoothstep(paintFog.x, paintFog.y, t));
+          }
           col = mix(col, m.rgb, m.a * mirrorOpacity * fade);
           // darken into the corners. The post pass quantises luminance, which would snap a smooth falloff into
           // one hard ring in the dark range; instead each pixel is either darkened or not, by a 4x4 ordered
@@ -115,11 +122,6 @@ export class Backdrop {
     camera.updateMatrixWorld(); // it was just moved this frame; the render that would refresh it comes later
     (u.projInv.value as Matrix4).copy(camera.projectionMatrixInverse);
     (u.camWorld.value as Matrix4).copy(camera.matrixWorld);
-    camera.getWorldDirection(_dir);
-    const yaw = Math.atan2(_dir.z, _dir.x);
-    const pitch = Math.asin(Math.max(-1, Math.min(1, _dir.y)));
-    // whole art pixels, so the painting never swims between texels
-    (u.scroll.value as Vector2).set(Math.round(yaw * PARALLAX_YAW), Math.round(pitch * PARALLAX_PITCH));
     this.mat.uniforms.time.value = time;
   }
 }

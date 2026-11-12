@@ -2,12 +2,12 @@
  * The hand-drawn layer of the backdrop: a flat pixel-art cross-section of the ground the level is cut from,
  * one per dimension. The surface (A) is warm earth strata threaded with roots and pebbles; the underside (B) is
  * cold slate strata full of bones, skulls and rubble. Bands get a dark ink line on top and a lit edge under it,
- * so it reads drawn rather than rendered. Tiles seamlessly both ways (the backdrop scrolls it with the camera).
+ * so it reads drawn rather than rendered. Tiles seamlessly both ways (the backdrop lays it on the floor plane).
  */
 import { DataTexture, NearestFilter, RGBAFormat, RepeatWrapping, SRGBColorSpace } from 'three';
 import { mulberry32 } from './texgen';
 
-/** Size in art pixels (the backdrop draws it 1:1, one texel per art pixel). */
+/** Size in texels (one per art pixel at TEXEL_DENSITY on the ground, like the level's own textures). */
 export const PAINT_W = 320;
 export const PAINT_H = 160;
 const BANDS = 7;

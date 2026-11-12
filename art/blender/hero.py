@@ -141,7 +141,7 @@ def build_tunic():
 
 
 # Automatic skinning spreads the body and clothes over bones that should not move them:
-#   - the cape bones lying just behind the back: every cape swing (it streams back while walking) lifted the backside
+#   - the cape bones lying just behind the back: every cape swing (it streams back while walking or running) lifted the backside
 #     and the back of the tunic with it. Only the cloak itself (weight_chain) follows the cape.
 #   - the thighs, up to belt height: a thigh swung forward pushes everything above its hip joint backward, so the
 #     tunic bulged out at the back around the belt with every stride. Thigh weights fade out over THIGH_FADE_Z
@@ -841,20 +841,24 @@ def merge(*poses):
 def build_actions(rig):
     tau = 2 * math.pi
 
-    def walk(ph):
+    # run (12 frames = 0.5 s a cycle, two strides): torso pitched into the run, long reaching thigh swings with the
+    # recovering knee folded high, elbows bent near a right angle and pumping against the legs, a bounce that peaks
+    # in the flight phase between footfalls.
+    def run(ph):
         c, s = math.cos(ph * tau), math.sin(ph * tau)
         return merge(
-            legs(-32 * c, 32 * c, 38 * max(0, s), 38 * max(0, -s), 10 * c, -10 * c),
+            legs(-26 - 38 * c, -26 + 38 * c, 20 + 80 * max(0, s), 20 + 80 * max(0, -s), 15 * c, -15 * c),
             {
-                "upper_arm.L": [(Y, 30 * c)], "upper_arm.R": [(Y, -30 * c)],
-                "forearm.L": [(Y, -20 + 10 * c)], "forearm.R": [(Y, -20 - 10 * c)],
-                "hips": [(Z, 8 * c)], "chest": [(Z, -10 * c), (Y, 5)], "head": [(Z, 4 * c), (Y, -4)],
-                "cape.1": [(Y, 18 + 6 * abs(s))], "cape.2": [(Y, 12 + 8 * s)],
-                "_lift": 0.022 * abs(s),
+                "upper_arm.L": [(Y, -5 + 50 * c), (X, 10)], "upper_arm.R": [(Y, -5 - 50 * c), (X, -10)],
+                "forearm.L": [(Y, -85 + 15 * c)], "forearm.R": [(Y, -85 - 15 * c)],
+                "hips": [(Y, 8), (Z, 10 * c)], "spine": [(Y, 10)], "chest": [(Z, -14 * c), (Y, 8)],
+                "head": [(Z, 5 * c), (Y, -20)],
+                "cape.1": [(Y, 34 + 8 * abs(s))], "cape.2": [(Y, 22 + 10 * s)],
+                "_lift": 0.034 * abs(s) - 0.012,
             },
         )
 
-    lib.action(rig, "walk", {f: walk((f - 1) / 16) for f in range(1, 18, 2)})
+    lib.action(rig, "run", {f: run((f - 1) / 12) for f in range(1, 14, 2)})
 
     def idle(ph):
         b = math.sin(ph * tau)
@@ -1016,7 +1020,7 @@ def build(out_glb, out_preview):
     rig["variants"] = json.dumps(VARIANTS)  # the game reads this to show / hide outfit parts
     lib.export_glb(out_glb, [rig, body] + clothes + head_parts + list(parts.values()) + [o for o, _ in props.values()])
 
-    poses = [("idle", 1), ("walk", 1), ("walk", 5), ("walk", 9), ("walk", 13), ("attack", 3),
+    poses = [("idle", 1), ("run", 1), ("run", 4), ("run", 7), ("run", 10), ("attack", 3),
              ("attack", 5), ("attack", 7), ("crouch", 1), ("crouch_walk", 1), ("crouch_walk", 7), ("crouch_walk", 13),
              ("takedown", 10), ("takedown", 15), ("takedown", 19), ("takedown", 29), ("takedown", 30), ("takedown", 34),
              ("takedown", 35), ("takedown", 38)]
@@ -1028,4 +1032,7 @@ def build(out_glb, out_preview):
         lib.pose_sheet(rig, out_preview.replace(".png", f"{suffix}_poses.png"), HEIGHT, poses)
         if variant == "plain":
             lib.head_sheet(out_preview.replace(".png", "_head.png"), H, HEIGHT * 0.65)
+            # the run from its right side
+            lib.pose_sheet(rig, out_preview.replace(".png", "_run.png"), HEIGHT,
+                           [("run", f) for f in range(1, 13, 2)], view=(0, -1, 0.1))
     print(f"hero: body {lib.tri_count(body)}, head {sum(lib.tri_count(o) for o in head_parts)}, " + ", ".join(f"{n} {lib.tri_count(o)}" for n, o in parts.items()) + " tris")

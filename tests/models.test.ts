@@ -28,7 +28,7 @@ const SPEC: Record<string, { animations: string[]; bones: string[]; maxTris: num
     maxTris: 8000,
   },
   hero: {
-    animations: ['idle', 'walk', 'attack', 'crouch', 'crouch_walk', 'takedown'],
+    animations: ['idle', 'run', 'attack', 'crouch', 'crouch_walk', 'takedown'],
     bones: ['root', 'hips', 'head', 'cape.1', 'hand.R', 'foot.L', 'foot.R', 'hair_full', 'hair_hood', 'hood', 'cape'],
     maxTris: 8000,
   },

@@ -312,7 +312,7 @@ export class GameView {
     // always cloaked in the underside; on the surface the cloak goes up only while sneaking
     this.hero.setOutfit(sim.dim === 1 || sim.sneaking ? 'hooded' : 'plain');
     const moving = sim.moving && !this.catching; // the sim froze mid-stride when caught
-    this.hero.play(sim.sneaking ? (moving ? 'crouch_walk' : 'crouch') : moving ? 'walk' : 'idle', 0.15);
+    this.hero.play(sim.sneaking ? (moving ? 'crouch_walk' : 'crouch') : moving ? 'run' : 'idle', 0.15);
     this.hero.update(dt);
 
     for (const mv of this.monsters) this.updateMonster(mv, dt);

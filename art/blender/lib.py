@@ -613,11 +613,11 @@ def head_sheet(out_png, head, size):
     os.remove(tmp)
 
 
-def pose_sheet(arm_obj, out_png, height, poses, cols=6):
-    """Render key frames of actions (3/4 view) into one sheet, labelled by order in `poses`."""
+def pose_sheet(arm_obj, out_png, height, poses, cols=6, view=(0.75, 0.6, 0.2)):
+    """Render key frames of actions (3/4 front view by default) into one sheet, labelled by order in `poses`."""
     sc = bpy.context.scene
     c = Vector((0, 0, height * 0.5))
-    cam = _camera("pose", c + (X * 0.75 + Y * 0.6 + Z * 0.2).normalized() * height * 4, c, height * 1.3)
+    cam = _camera("pose", c + Vector(view).normalized() * height * 4, c, height * 1.3)
     tmp = os.path.join(os.path.dirname(out_png), "_tmp.png")
     tiles = []
     for name, frame in poses:

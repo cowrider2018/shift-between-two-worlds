@@ -11,7 +11,7 @@ import { angleDiff } from '../core/grid';
 import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
 import { Backdrop } from './backdrop';
-import { BLOCK_MODELS, type BlockView } from './blockModels';
+import { BLOCK_MODELS, OUTER_TOP, type BlockView } from './blockModels';
 import { HOLE } from './cutaway';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
@@ -179,6 +179,8 @@ export class GameView {
   private shownDim: DimIndex | -1 = -1;
   private readonly backdrop = new Backdrop();
   private readonly clearColor = new Color();
+  /** Fog for the reflection: it sinks into the shown dimension's background with distance. */
+  private readonly mirrorFog = new Fog('#000000', 4, 16);
   private readonly fogs = THEMES.map((th) => new Fog(th.background, 9, 20)) as [Fog, Fog];
   private t = 0;
 
@@ -320,19 +322,30 @@ export class GameView {
     this.pipeline.subpixel.y = this.follow.subpixel.y;
     this.updateHole();
     this.updateSunOnScreen();
-    this.backdrop.update(this.pipeline.width, this.pipeline.height, this.follow.camera, this.hero.root.position, this.t);
+    this.backdrop.update(this.pipeline.width, this.pipeline.height, this.t);
     this.renderMirror();
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Render the other dimension from this camera into the backdrop's reflection: level only, in its own light. */
+  /**
+   * Render the other dimension's level mirrored about the floor plane (y -> -y), from this camera, into the
+   * backdrop's reflection: upside down directly beneath this level, in its own light. The lights are mirrored
+   * with it so its tops stay lit; fog fades it with depth into this dimension's background.
+   */
   private renderMirror(): void {
     const shown = this.shownDim as DimIndex;
     const other = (1 - shown) as DimIndex;
-    const hidden = [this.hero.root, this.backdrop.mesh, ...this.monsters.flatMap((mv) => [mv.body.root, mv.cone.mesh, ...(mv.ghost ? [mv.ghost.root] : [])])];
+    // level only: no characters, and not the raised outer rock, which would just hang down as a wall
+    const tops: Object3D[] = [];
+    this.dims[other].traverse((o) => { if (o.name === OUTER_TOP) tops.push(o); });
+    const hidden = [this.hero.root, this.backdrop.mesh, ...tops, ...this.monsters.flatMap((mv) => [mv.body.root, mv.cone.mesh, ...(mv.ghost ? [mv.ghost.root] : [])])];
     const was = hidden.map((o) => o.visible);
     for (const o of hidden) o.visible = false;
     this.light(other);
+    this.mirrorFog.color.copy(this.backdrop.bg);
+    this.scene.fog = this.mirrorFog;
+    const flip = [this.world.scale, this.sun.position, this.sun.target.position, this.hemi.position];
+    for (const v of flip) v.y = -v.y;
     const background = this.scene.background;
     this.scene.background = null;
     const r = this.pipeline.renderer;
@@ -345,6 +358,7 @@ export class GameView {
     r.setRenderTarget(null);
     r.setClearColor(this.clearColor, clearAlpha);
     this.scene.background = background;
+    for (const v of flip) v.y = -v.y;
     this.light(shown);
     hidden.forEach((o, i) => (o.visible = was[i]));
   }

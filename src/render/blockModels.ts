@@ -66,11 +66,16 @@ function archShape(grow = 0): Shape {
 /** Haze in the cave: [depth, opacity] of each thin veil of white light, thickening towards the back. */
 const CAVE_HAZE: [number, number][] = [[0.42, 0.3], [0.5, 0.4], [0.58, 0.5], [0.66, 0.6], [0.74, 0.75]];
 
+/** Name of the raised part of an outermost wall (the reflection leaves it out). */
+export const OUTER_TOP = 'outer-top';
+
 /** Raise an outermost wall (see isOuterRock) on up to OUTER_H; the upper part casts no shadow. */
 function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx): void {
   if (!isOuterRock(ctx.grid, cell.dim, cell.x, cell.y)) return;
   const geo = outerWallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop);
-  g.add(m(geo, withHole(cobble('#ffffff', true)), 0, 0, 0, false));
+  const top = m(geo, withHole(cobble('#ffffff', true)), 0, 0, 0, false);
+  top.name = OUTER_TOP;
+  g.add(top);
 }
 
 /** Underside door: light leaking through the seams between its boards (woodTexture BOARDS = 4). */

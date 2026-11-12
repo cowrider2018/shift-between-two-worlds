@@ -75,7 +75,7 @@ export class Backdrop {
           // dither whose density grows outwards
           vec2 c = (uv - 0.5) * vec2(rtSize.x / rtSize.y, 1.0);
           float vig = smoothstep(0.45, 1.1, length(c));
-          col = mix(col, bg * 0.6, step(bayer4(px), vig));
+          col = mix(col, bg * 0.8, step(bayer4(px), vig));
           gl_FragColor = vec4(col, 1.0);
         }
       `,

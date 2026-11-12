@@ -179,8 +179,9 @@ export class GameView {
   private shownDim: DimIndex | -1 = -1;
   private readonly backdrop = new Backdrop();
   private readonly clearColor = new Color();
-  /** Fog for the reflection: it sinks into the shown dimension's background with distance. */
-  private readonly mirrorFog = new Fog('#000000', 4, 16);
+  /** Fog for the reflection: it sinks into the shown dimension's background with distance. It thickens at half
+   *  the rate of a 4..16 fog (both ends doubled), so the reflection stays visible twice as far. */
+  private readonly mirrorFog = new Fog('#000000', 8, 32);
   private readonly fogs = THEMES.map((th) => new Fog(th.background, 9, 20)) as [Fog, Fog];
   private t = 0;
 

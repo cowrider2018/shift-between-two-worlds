@@ -140,6 +140,49 @@ def build_tunic():
     return a.build(target_tris=TUNIC_TRIS, voxel=0.006)
 
 
+# Automatic skinning spreads the body and clothes over bones that should not move them:
+#   - the cape bones lying just behind the back: every cape swing (it streams back while walking) lifted the backside
+#     and the back of the tunic with it. Only the cloak itself (weight_chain) follows the cape.
+#   - the thighs, up to belt height: a thigh swung forward pushes everything above its hip joint backward, so the
+#     tunic bulged out at the back around the belt with every stride. Thigh weights fade out over THIGH_FADE_Z
+#     (from just under the hip joints to below the belt).
+#   - the upper arms, down at the waist: every arm swing tugged the sides and back of the tunic around the belt.
+#     Upper arm weights fade out below ARM_FADE_Z (from the waist up to under the armpits); the tunic, which covers
+#     no forearm, drops its forearm and hand weights altogether (the hanging hands sit right beside its hips).
+# Those weights go to the trunk bone beside them.
+CAPE_TO_TRUNK = {"cape.1": "spine", "cape.2": "hips"}
+THIGH_FADE_Z = (0.18, 0.23)
+ARM_FADE_Z = (0.27, 0.31)
+
+
+def _clean_weights(obj):
+    def move(src, dst, share):
+        src, dst = obj.vertex_groups[src], obj.vertex_groups[dst]
+        moved = [(v.index, g.weight, share(v)) for v in obj.data.vertices for g in v.groups if g.group == src.index]
+        for i, w, k in moved:
+            if k > 0:
+                dst.add([i], w * k, "ADD")
+                if k < 1:
+                    src.add([i], w * (1 - k), "REPLACE")
+                else:
+                    src.remove([i])
+
+    for cape, trunk in CAPE_TO_TRUNK.items():
+        if cape in obj.vertex_groups:
+            move(cape, trunk, lambda v: 1.0)
+            obj.vertex_groups.remove(obj.vertex_groups[cape])
+    for thigh in ("thigh.L", "thigh.R"):
+        if thigh in obj.vertex_groups and "hips" in obj.vertex_groups:
+            move(thigh, "hips", lambda v: _smoothstep(*THIGH_FADE_Z, v.co.z))
+    for arm in ("upper_arm.L", "upper_arm.R"):
+        if arm in obj.vertex_groups and "spine" in obj.vertex_groups:
+            move(arm, "spine", lambda v: 1 - _smoothstep(*ARM_FADE_Z, v.co.z))
+    if obj.name.startswith("hero_tunic"):
+        for part in ("forearm.L", "forearm.R", "hand.L", "hand.R"):
+            if part in obj.vertex_groups:
+                move(part, "spine", lambda v: 1.0)
+
+
 def build_sleeves():
     a = lib.Anatomy("hero_sleeves", resolution=0.0045)
     for s in (1, -1):
@@ -957,8 +1000,10 @@ def build(out_glb, out_preview):
     head_parts = build_head()
     rig = build_rig()
     lib.skin(body, rig)
-    for obj in clothes:
-        lib.skin(obj, rig)
+    for obj in [body] + clothes:
+        if obj is not body:
+            lib.skin(obj, rig)
+        _clean_weights(obj)
     for obj in head_parts:
         lib.attach(obj, rig, "head")
     lib.weight_chain(parts["cape"], rig, [("chest", 0.4), ("cape.1", 0.26), ("cape.2", 0.065)])

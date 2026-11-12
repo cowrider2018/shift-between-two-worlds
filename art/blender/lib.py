@@ -482,24 +482,42 @@ def _pose_rotation(arm_obj, bone, rotations):
     return rest.inverted() @ q @ rest
 
 
+HIDDEN_SCALE = 1e-3  # a hidden bone's scale: tiny rather than zero, which would not decompose into a rotation
+
+
+def set_pose(arm_obj, pose, lift_bone="root"):
+    """Pose every bone from {bone: [(axis, deg), ...], "_lift": metres, "_hide": [bone, ...]} (rest where unlisted)."""
+    hidden = pose.get("_hide", ())
+    for pb in arm_obj.pose.bones:
+        pb.rotation_mode = "QUATERNION"
+        pb.rotation_quaternion = _pose_rotation(arm_obj, pb.name, pose.get(pb.name, []))
+        pb.location = (0, 0, 0)
+        if pb.name == lift_bone:
+            pb.location = (0, pose.get("_lift", 0.0), 0)  # root bone points +Z, so local Y is up
+        pb.scale = (HIDDEN_SCALE,) * 3 if pb.name in hidden else (1, 1, 1)
+
+
 def action(arm_obj, name, keys, lift_bone="root"):
     """
-    keys: {frame: {bone: [(axis, deg), ...], "_lift": metres}}
+    keys: {frame: pose} (see set_pose). "_hide" shrinks the listed bones, and everything parented to them, to nothing:
+    a prop swapping from one bone to another (a sword drawn from the back) is two copies, one hidden at a time. The
+    scale steps (constant interpolation) on the key where it changes.
     Every bone is keyed on every key frame so actions never leak into each other.
     """
     arm_obj.animation_data_create()
     act = bpy.data.actions.new(name)
     act.use_fake_user = True
     arm_obj.animation_data.action = act
+    prefs = bpy.context.preferences.edit
+    interp = prefs.keyframe_new_interpolation_type
     for frame, pose in sorted(keys.items()):
+        set_pose(arm_obj, pose, lift_bone)
         for pb in arm_obj.pose.bones:
-            pb.rotation_mode = "QUATERNION"
-            pb.rotation_quaternion = _pose_rotation(arm_obj, pb.name, pose.get(pb.name, []))
-            pb.location = (0, 0, 0)
-            if pb.name == lift_bone:
-                pb.location = (0, pose.get("_lift", 0.0), 0)  # root bone points +Z, so local Y is up
             pb.keyframe_insert("rotation_quaternion", frame=frame)
             pb.keyframe_insert("location", frame=frame)
+            prefs.keyframe_new_interpolation_type = "CONSTANT"
+            pb.keyframe_insert("scale", frame=frame)
+            prefs.keyframe_new_interpolation_type = interp
     arm_obj.animation_data.action = None
     return act
 
@@ -632,6 +650,7 @@ def pose_sheet(arm_obj, out_png, height, poses, cols=6, view=(0.75, 0.6, 0.2)):
     for pb in arm_obj.pose.bones:  # back to rest so later renders are not left in the last pose
         pb.rotation_quaternion = (1, 0, 0, 0)
         pb.location = (0, 0, 0)
+        pb.scale = (1, 1, 1)
     sc.frame_set(1)
     while len(tiles) % cols:
         tiles.append(np.zeros_like(tiles[0]))

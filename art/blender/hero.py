@@ -1,7 +1,7 @@
 """
 Hero (DESIGN §4.2): small chibi adventurer — a primitive head (sphere, box eyes, small human ears) with
 hair made of five thick turning cones, one continued into a tail over the crown (see HAIR), on an anatomical body: green tunic with belt, cream leggings, boots,
-short sword. Stocky pear-shaped trunk; short legs of straight trouser tubes with wider boots worn over them.
+short sword carried on the back. Stocky pear-shaped trunk; short legs of straight trouser tubes with wider boots worn over them.
 
 Outfits are modular parts on one skeleton (see VARIANTS):
   plain  — the five-lock hair, no cape, no hood
@@ -15,7 +15,7 @@ import json
 import math
 
 import bpy
-from mathutils import Quaternion, Vector
+from mathutils import Matrix, Quaternion, Vector
 
 import lib
 from lib import X, Y, Z
@@ -774,26 +774,76 @@ def build_cape():
     return cloak, clasp
 
 
-def build_props():
-    """The sword (rigid, always shown)."""
-    out = {}
+# The sword rides on the back in a scabbard and is drawn only to fight. It is two copies on two bones that never deform
+# anything: "sword.R" in the right hand and "sword.back" on the chest, one shrunk to nothing at a time (lib.action
+# "_hide"). They swap on GRAB, the right hand reached back over the shoulder onto the hilt: GRAB's hand rotation is
+# solved (solve_grab) so the held sword lies exactly where the sheathed one is, along SWORD_BACK_DIR, flat to the back.
+SWORD_GRIP = L("hand", -1) + Vector((0.005, -0.004, -0.02))
+SWORD_DIR = Vector((0.75, 0, -0.66)).normalized()   # blade direction in the hand at rest
+SWORD_UP = SWORD_DIR.cross(Y).normalized()          # normal of the blade's flat
+SWORD_BACK_DIR = Vector((-0.15, 0.45, -0.88)).normalized()  # sheathed: hilt over the right shoulder, tip at the left hip
+GRAB_ARM = {"upper_arm.R": [(Y, -160), (X, -25)], "forearm.R": [(Y, -100)]}
+SHEATHED = ["sword.R"]      # "_hide" while the sword is on the back
+DRAWN = ["sword.back"]      # "_hide" while it is in the hand
 
-    grip = L("hand", -1) + Vector((0.005, -0.004, -0.02))
-    blade_dir = Vector((0.75, 0, -0.66)).normalized()
-    up = blade_dir.cross(Y).normalized()
+
+def build_sword(suffix):
+    """The sword in the right hand at rest (blade, guard, grip, pommel), its parts named with `suffix`."""
+    rot = lib.align(SWORD_DIR)
 
     def pt(along, across, depth=0.0):
-        return grip + blade_dir * along + Y * across + up * depth
+        return SWORD_GRIP + SWORD_DIR * along + Y * across + SWORD_UP * depth
 
     blade_v = [pt(0.04, -0.012), pt(0.04, 0.012), pt(0.27, 0.012), pt(0.27, -0.012), pt(0.31, 0),
                pt(0.04, 0, 0.005), pt(0.27, 0, 0.005), pt(0.04, 0, -0.005), pt(0.27, 0, -0.005)]
     blade_f = [(0, 5, 6, 3), (5, 1, 2, 6), (3, 6, 4), (6, 2, 4), (0, 3, 8, 7), (7, 8, 2, 1), (3, 4, 8), (8, 4, 2)]
-    out["blade"] = (lib.mesh_from("blade", blade_v, blade_f, "hero_blade"), "hand.R")
-    rot = lib.align(blade_dir)
-    out["guard"] = (lib.box("guard", pt(0.035, 0), (0.008, 0.04, 0.01), "hero_buckle", rot), "hand.R")
-    out["grip"] = (lib.box("grip", pt(0.0, 0), (0.032, 0.009, 0.009), "hero_grip", rot), "hand.R")
-    out["pommel"] = (lib.ico("pommel", pt(-0.036, 0), 0.012, "hero_buckle", 0), "hand.R")
-    return out
+    return [
+        lib.mesh_from(f"blade{suffix}", blade_v, blade_f, "hero_blade"),
+        lib.box(f"guard{suffix}", pt(0.035, 0), (0.008, 0.04, 0.01), "hero_buckle", rot),
+        lib.box(f"grip{suffix}", pt(0.0, 0), (0.032, 0.009, 0.009), "hero_grip", rot),
+        lib.ico(f"pommel{suffix}", pt(-0.036, 0), 0.012, "hero_buckle", 0),
+    ]
+
+
+def build_scabbard():
+    """A leather sheath round the blade, in the hand frame like build_sword (moved onto the back with it)."""
+    c = SWORD_GRIP + SWORD_DIR * 0.165
+    return lib.box("scabbard", c, (0.13, 0.017, 0.009), "hero_grip", lib.align(SWORD_DIR))
+
+
+def _delta(rig, bone):
+    """A posed bone's rotation relative to its rest, in armature space."""
+    return rig.pose.bones[bone].matrix.to_quaternion() @ rig.data.bones[bone].matrix_local.to_quaternion().inverted()
+
+
+def solve_grab(rig):
+    """
+    GRAB, the right hand on the hilt behind the shoulder (GRAB_ARM plus a solved hand rotation turning the held blade
+    onto SWORD_BACK_DIR, flat to the back), and the transform taking the sword from the hand at rest to the back.
+    """
+    lib.set_pose(rig, GRAB_ARM)
+    bpy.context.view_layer.update()
+    held = _delta(rig, "sword.R")
+    b1, n1 = held @ SWORD_DIR, held @ SWORD_UP
+    b2 = SWORD_BACK_DIR
+    n2 = (X - b2 * X.dot(b2)).normalized()
+    if n2.dot(n1) < 0:
+        n2 = -n2
+    frame = lambda b, n: Matrix((b, n, b.cross(n))).transposed()
+    turn = (frame(b2, n2) @ frame(b1, n1).transposed()).to_quaternion()      # world turn of the hand about the wrist
+    arm = _delta(rig, "forearm.R")
+    q = arm.inverted() @ turn @ arm                                            # the same turn in the hand's rest frame
+    axis, angle = q.to_axis_angle()
+    grab = dict(GRAB_ARM, **{"hand.R": [(tuple(axis), math.degrees(angle))]})
+    lib.set_pose(rig, grab)
+    bpy.context.view_layer.update()
+    # sheathed copy: where the held one is in the GRAB pose, carried by the chest instead of the hand
+    pb, bone = rig.pose.bones, rig.data.bones
+    to_back = (bone["chest"].matrix_local @ pb["chest"].matrix.inverted() @ pb["sword.R"].matrix
+               @ bone["sword.R"].matrix_local.inverted())
+    lib.set_pose(rig, {})
+    bpy.context.view_layer.update()
+    return grab, to_back
 
 
 def build_rig():
@@ -806,6 +856,7 @@ def build_rig():
         ("head", tuple(h(0, 0, -0.1)), tuple(h(0, 0, 0.2)), "neck"),
         ("cape.1", (-0.08, 0, 0.4), (-0.12, 0, 0.24), "chest"),
         ("cape.2", (-0.12, 0, 0.24), (-0.145, 0, 0.065), "cape.1"),
+        ("sword.back", (-0.1, -0.08, 0.42), (-0.12, -0.03, 0.33), "chest"),
     ]
     for s, side in ((1, "L"), (-1, "R")):
         P = lambda n: tuple(L(n, s))
@@ -817,7 +868,11 @@ def build_rig():
             (f"shin.{side}", P("knee"), P("ankle"), f"thigh.{side}"),
             (f"foot.{side}", P("ankle"), P("toe"), f"shin.{side}"),
         ]
-    return lib.armature("hero_rig", b)
+    b.append(("sword.R", tuple(SWORD_GRIP), tuple(SWORD_GRIP + SWORD_DIR * 0.1), "hand.R"))
+    rig = lib.armature("hero_rig", b)
+    for n in ("sword.R", "sword.back"):
+        rig.data.bones[n].use_deform = False  # prop holders only: automatic skinning must not use them
+    return rig
 
 
 # ---------------------------------------------------------------------------
@@ -838,8 +893,16 @@ def merge(*poses):
     return out
 
 
-def build_actions(rig):
+def build_actions(rig, grab):
     tau = 2 * math.pi
+
+    def sword(keys, drawn=(0, 0)):
+        """Key which sword shows: the one in hand on frames in [drawn), the one on the back otherwise."""
+        return {f: dict(p, _hide=DRAWN if drawn[0] <= f < drawn[1] else SHEATHED) for f, p in keys.items()}
+
+    def gripping(pose):
+        """`pose` with the right hand back over the shoulder on the hilt, where the sword swaps hands."""
+        return dict(pose, **grab)
 
     # run (12 frames = 0.5 s a cycle, two strides): torso pitched into the run, long reaching thigh swings with the
     # recovering knee folded high, elbows bent near a right angle and pumping against the legs, a bounce that peaks
@@ -858,7 +921,7 @@ def build_actions(rig):
             },
         )
 
-    lib.action(rig, "run", {f: run((f - 1) / 12) for f in range(1, 14, 2)})
+    lib.action(rig, "run", sword({f: run((f - 1) / 12) for f in range(1, 14, 2)}))
 
     def idle(ph):
         b = math.sin(ph * tau)
@@ -870,10 +933,10 @@ def build_actions(rig):
             "_lift": -0.003 * b,
         }
 
-    lib.action(rig, "idle", {f: idle((f - 1) / 48) for f in range(1, 50, 6)})
+    lib.action(rig, "idle", sword({f: idle((f - 1) / 48) for f in range(1, 50, 6)}))
 
-    # attack: a right-handed forehand slash.
-    # anticipation (torso twists right, sword drawn back out to the side) -> strike (sweeps across, step in)
+    # attack: a right-handed forehand slash, the sword drawn from the back first and put back after.
+    # draw -> anticipation (torso twists right, sword drawn back out to the side) -> strike (sweeps across, step in)
     # -> follow-through -> recover
     wind = merge(legs(-8, 14, 18, 10, 0, 0), {
         "hips": [(Z, -14)], "spine": [(Z, -10)], "chest": [(Z, -16), (Y, -4)], "head": [(Z, 22)],
@@ -894,7 +957,8 @@ def build_actions(rig):
         "cape.1": [(Y, 36), (X, -25)], "cape.2": [(Y, 26)], "_lift": -0.032,
     })
     rest = idle(0)
-    lib.action(rig, "attack", {1: rest, 3: wind, 5: strike, 7: follow, 11: rest})
+    lib.action(rig, "attack", sword({1: rest, 3: gripping(rest), 5: wind, 7: strike, 9: follow, 13: rest,
+                                     15: gripping(rest), 17: rest}, drawn=(3, 15)))
 
     # crouch: hips dropped, knees forward, torso leaning in, arms ready
     def crouch_base(extra=None):
@@ -910,7 +974,7 @@ def build_actions(rig):
         b = math.sin(ph * tau)
         return crouch_base({"spine": [(Y, 1.5 * b)], "head": [(Z, 6 * math.sin(ph * tau * 0.5))], "_lift": -0.068 - 0.003 * b})
 
-    lib.action(rig, "crouch", {f: crouch((f - 1) / 48) for f in range(1, 50, 6)})
+    lib.action(rig, "crouch", sword({f: crouch((f - 1) / 48) for f in range(1, 50, 6)}))
 
     def crouch_walk(ph):
         c, s = math.cos(ph * tau), math.sin(ph * tau)
@@ -926,13 +990,13 @@ def build_actions(rig):
             },
         )
 
-    lib.action(rig, "crouch_walk", {f: crouch_walk((f - 1) / 24) for f in range(1, 26, 3)})
+    lib.action(rig, "crouch_walk", sword({f: crouch_walk((f - 1) / 24) for f in range(1, 26, 3)}))
 
     # takedown (1.75 s): the game moves the root along the leap onto the troll's back and off again
-    # (view.ts TAKEDOWN); the clip poses the body. coil -> tuck in the air -> land lying on the troll's back, left
+    # (view.ts TAKEDOWN); the clip poses the body. coil -> tuck in the air, the sword drawn off the back -> land lying on the troll's back, left
     # hand clamps its brow, blade goes straight round to its throat -> ride out its thrashing with the blade held
     # under the jaw (the standoff, 0.4-1.2 s) -> release: a quick thrust in and back out (frame 30), then
-    # the blade lowered -> push off backwards -> tuck -> land.
+    # the blade lowered -> push off backwards -> flip, the sword put back on the back -> land.
     coil = merge(legs(-60, -60, 100, 100, -35, -35), {
         "spine": [(Y, 30)], "chest": [(Y, 16)], "head": [(Y, -30)],
         "upper_arm.L": [(Y, 40), (X, 20)], "upper_arm.R": [(Y, 45), (X, -20)],
@@ -982,10 +1046,11 @@ def build_actions(rig):
         """Holding on through the troll's thrashing with the blade at its throat, leaning `lean` degrees (+ left)."""
         return merge(draw, {"spine": [(X, lean)], "chest": [(X, lean * 0.6)], "head": [(X, -lean * 0.5)], "_lift": bob})
 
-    sheathe = prone({"upper_arm.R": [(X, -30), (Y, -80)], "forearm.R": [(Y, -15)], "hand.R": [(Y, 25)]})  # blade lowered
-    lib.action(rig, "takedown", {1: idle(0), 4: coil, 7: tuck, 10: land, 12: ride(0),
-                                 15: ride(-14, -0.01), 19: ride(16), 23: ride(-12, -0.01), 27: ride(10), 29: ride(0),
-                                 30: thrust, 31: ride(0), 34: sheathe, 35: push, 38: flip, 41: crouch_base(), 43: idle(0)})
+    lower = prone({"upper_arm.R": [(X, -30), (Y, -80)], "forearm.R": [(Y, -15)], "hand.R": [(Y, 25)]})  # blade lowered
+    lib.action(rig, "takedown", sword({1: idle(0), 4: coil, 7: gripping(tuck), 10: land, 12: ride(0),
+                                       15: ride(-14, -0.01), 19: ride(16), 23: ride(-12, -0.01), 27: ride(10),
+                                       29: ride(0), 30: thrust, 31: ride(0), 34: lower, 35: push,
+                                       38: gripping(flip), 41: crouch_base(), 43: idle(0)}, drawn=(7, 38)))
 
 
 # ---------------------------------------------------------------------------
@@ -1000,7 +1065,8 @@ def build(out_glb, out_preview):
         "hood": build_hood(),
     }
     parts["cape"], parts["clasp"] = build_cape()
-    props = build_props()
+    held, sheathed = build_sword(""), build_sword("_back")
+    scabbard = build_scabbard()
     head_parts = build_head()
     rig = build_rig()
     lib.skin(body, rig)
@@ -1014,20 +1080,28 @@ def build(out_glb, out_preview):
     for name in ("hair_full", "hair_hood", "hood"):
         lib.attach(parts[name], rig, "head")
     lib.attach(parts["clasp"], rig, "chest")
-    for obj, bone in props.values():
-        lib.attach(obj, rig, bone)
-    build_actions(rig)
+    grab, to_back = solve_grab(rig)
+    for obj in sheathed + [scabbard]:
+        obj.matrix_world = to_back @ obj.matrix_world
+    for obj in held:
+        lib.attach(obj, rig, "sword.R")
+    for obj in sheathed:
+        lib.attach(obj, rig, "sword.back")
+    lib.attach(scabbard, rig, "chest")
+    props = held + sheathed + [scabbard]
+    build_actions(rig, grab)
     rig["variants"] = json.dumps(VARIANTS)  # the game reads this to show / hide outfit parts
-    lib.export_glb(out_glb, [rig, body] + clothes + head_parts + list(parts.values()) + [o for o, _ in props.values()])
+    lib.export_glb(out_glb, [rig, body] + clothes + head_parts + list(parts.values()) + props)
 
     poses = [("idle", 1), ("run", 1), ("run", 4), ("run", 7), ("run", 10), ("attack", 3),
-             ("attack", 5), ("attack", 7), ("crouch", 1), ("crouch_walk", 1), ("crouch_walk", 7), ("crouch_walk", 13),
-             ("takedown", 10), ("takedown", 15), ("takedown", 19), ("takedown", 29), ("takedown", 30), ("takedown", 34),
-             ("takedown", 35), ("takedown", 38)]
+             ("attack", 5), ("attack", 9), ("attack", 15), ("crouch", 1), ("crouch_walk", 1), ("crouch_walk", 7), ("crouch_walk", 13),
+             ("takedown", 6), ("takedown", 7), ("takedown", 10), ("takedown", 15), ("takedown", 19), ("takedown", 29), ("takedown", 30), ("takedown", 34),
+             ("takedown", 35), ("takedown", 37), ("takedown", 38), ("takedown", 41)]
     for variant, shown in VARIANTS.items():
         for name, obj in parts.items():
             obj.hide_render = name not in shown
         suffix = "" if variant == "plain" else f"_{variant}"
+        lib.set_pose(rig, {"_hide": SHEATHED})  # the previews show the rest pose: sword on the back
         lib.previews(out_preview.replace(".png", f"{suffix}.png"), HEIGHT, head=H)
         lib.pose_sheet(rig, out_preview.replace(".png", f"{suffix}_poses.png"), HEIGHT, poses)
         if variant == "plain":
@@ -1035,4 +1109,6 @@ def build(out_glb, out_preview):
             # the run from its right side
             lib.pose_sheet(rig, out_preview.replace(".png", "_run.png"), HEIGHT,
                            [("run", f) for f in range(1, 13, 2)], view=(0, -1, 0.1))
+            # from behind: the sword on the back, drawn in the leap, put back in the flip
+            lib.pose_sheet(rig, out_preview.replace(".png", "_back.png"), HEIGHT, poses, view=(-0.8, -0.5, 0.3))
     print(f"hero: body {lib.tri_count(body)}, head {sum(lib.tri_count(o) for o in head_parts)}, " + ", ".join(f"{n} {lib.tri_count(o)}" for n, o in parts.items()) + " tris")

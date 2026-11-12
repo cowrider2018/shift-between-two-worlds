@@ -10,6 +10,7 @@ const UP = new Vector3(0, 1, 0);
 import { angleDiff } from '../core/grid';
 import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
+import { Abyss } from './abyss';
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE } from './cutaway';
@@ -178,6 +179,7 @@ export class GameView {
   private readonly yawQuat = new Quaternion();
   private shownDim: DimIndex | -1 = -1;
   private readonly backdrop = new Backdrop();
+  private readonly abyss = new Abyss();
   private readonly clearColor = new Color();
   /** Fog for the reflection: it sinks into the shown dimension's background with distance. It thickens at half
    *  the rate of a 4..16 fog (both ends doubled), so the reflection stays visible twice as far. */
@@ -192,7 +194,7 @@ export class GameView {
     this.sun.castShadow = true;
     this.sun.shadow.bias = -0.0015;
     this.sun.shadow.normalBias = 0.04;
-    this.scene.add(this.hemi, this.sun, this.sun.target, this.world, this.backdrop.mesh);
+    this.scene.add(this.hemi, this.sun, this.sun.target, this.world, this.backdrop.mesh, ...this.abyss.points);
   }
 
   setSim(sim: Sim): void {
@@ -205,6 +207,7 @@ export class GameView {
       this.hero = new CharacterInstance('hero', 'normal', 'plain');
       this.scene.add(this.hero.root);
     }
+    this.abyss.setLevel(sim.level.size.w, sim.level.size.h);
     for (const dim of [0, 1] as DimIndex[]) {
       const ctx = { theme: THEMES[dim], grid: sim.grid };
       // the ring of rock just outside the grid: the outermost wall wherever the level's border is open
@@ -324,6 +327,7 @@ export class GameView {
     this.updateHole();
     this.updateSunOnScreen();
     this.backdrop.update(this.pipeline.width, this.pipeline.height, this.follow.camera, this.t);
+    this.abyss.update(this.t);
     this.renderMirror();
     this.pipeline.render(this.scene, this.follow.camera);
   }
@@ -338,7 +342,7 @@ export class GameView {
     const other = (1 - shown) as DimIndex;
     // the other side's level and monsters as they stand there (not the hero, who is on this side, nor the
     // vision cones, which lie flat on the floor)
-    const shows: [Object3D, boolean][] = [[this.hero.root, false], [this.backdrop.mesh, false]];
+    const shows: [Object3D, boolean][] = [[this.hero.root, false], [this.backdrop.mesh, false], ...this.abyss.points.map((p) => [p, false] as [Object3D, boolean])];
     for (const mv of this.monsters) {
       // the same rules as updateMonster, for the other dimension
       shows.push([mv.body.root, mv.state.home === other], [mv.cone.mesh, false]);
@@ -538,6 +542,7 @@ export class GameView {
     this.shownDim = dim;
     this.scene.background = new Color(THEMES[dim].background);
     this.backdrop.setDim(dim);
+    this.abyss.setDim(dim);
     this.light(dim);
   }
 

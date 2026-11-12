@@ -10,6 +10,7 @@ const UP = new Vector3(0, 1, 0);
 import { angleDiff } from '../core/grid';
 import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
+import { backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE } from './cutaway';
 import { CharacterInstance } from './models';
@@ -200,6 +201,7 @@ export class GameView {
     }
     for (const dim of [0, 1] as DimIndex[]) {
       const ctx = { theme: THEMES[dim], grid: sim.grid };
+      this.dims[dim].add(backdrop(sim.level.size.w, sim.level.size.h, THEMES[dim]));
       // the ring of rock just outside the grid: the outermost wall wherever the level's border is open
       const { w, h } = sim.level.size;
       const ring = [];

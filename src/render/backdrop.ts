@@ -51,6 +51,13 @@ export class Backdrop {
         uniform vec2 rtSize;
         uniform vec3 bg;
         uniform float mirrorOpacity, time, fadeDepth;
+        // 4x4 Bayer threshold in (0, 1)
+        float bayer4(vec2 p) {
+          vec2 q = mod(p, 4.0);
+          int i = int(q.x) + int(q.y) * 4;
+          float m[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+          return (m[i] + 0.5) / 16.0;
+        }
         void main() {
           vec2 px = floor(gl_FragCoord.xy);
           vec2 uv = (px + 0.5) / rtSize;
@@ -63,9 +70,12 @@ export class Backdrop {
           float y = (camWorld * vec4(p.xyz / p.w, 1.0)).y;
           float fade = 1.0 - smoothstep(0.0, fadeDepth, -y);
           vec3 col = mix(bg, m.rgb, m.a * mirrorOpacity * fade);
-          // darken into the corners
+          // darken into the corners. The post pass quantises luminance, which would snap a smooth falloff into
+          // one hard ring in the dark range; instead each pixel is either darkened or not, by a 4x4 ordered
+          // dither whose density grows outwards
           vec2 c = (uv - 0.5) * vec2(rtSize.x / rtSize.y, 1.0);
-          col = mix(col, bg * 0.6, smoothstep(0.45, 1.05, length(c)));
+          float vig = smoothstep(0.45, 1.1, length(c));
+          col = mix(col, bg * 0.6, step(bayer4(px), vig));
           gl_FragColor = vec4(col, 1.0);
         }
       `,

@@ -358,7 +358,7 @@ TIP_STEP = 3.0  # degrees per ring
 TIP_OVERRIDE = {"sweep_l": 0.65, "sweep_r": 0.5}  # name: span
 # The crown lock and the back lock curl in less: barely turned (TIP_STEP degrees per ring) and drawn out a touch
 # (TIP_SHORTEN above 1 lengthens) instead of shortened.  name: (shorten, step)
-TIP_SHAPE = {"sweep_r": (1.01, 1.0), "back": (1.01, 1.0)}
+TIP_SHAPE = {"sweep_r": (1.005, 1.0), "back": (1.005, 1.0)}
 
 
 def _pull_tips(objs):

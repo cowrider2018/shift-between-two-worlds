@@ -116,9 +116,13 @@ export function validateLevel(level: Level): ValidationReport {
       });
       const segs = m.path.map((p, i) => [p, m.path[i + 1]] as const).slice(0, -1);
       if (m.mode === 'loop' && m.path.length > 2) segs.push([m.path[m.path.length - 1], m.path[0]]);
+      // a door or wall across the path turns the monster back (DESIGN §3.3); only the exit's rock cannot be patrolled
       for (const [a, b] of segs) {
-        const blocked = segmentCells(a, b).find(([x, y]) => !neverSolid(grid.cell(dim, x, y).def) || grid.cell(dim, x, y).def.behavior === 'exit');
-        if (blocked) err(`怪物 ${m.id} 的路徑 (${a}) → (${b}) 穿過 ${where(dim, blocked[0], blocked[1])}`, { ...at, x: blocked[0], y: blocked[1] });
+        const cs = segmentCells(a, b);
+        const exit = cs.find(([x, y]) => grid.cell(dim, x, y).def.behavior === 'exit');
+        if (exit) err(`怪物 ${m.id} 的路徑 (${a}) → (${b}) 穿過出口 ${where(dim, exit[0], exit[1])}`, { ...at, x: exit[0], y: exit[1] });
+        const wall = cs.find(([x, y]) => grid.cell(dim, x, y).def.solid === 'always');
+        if (wall) warn(`怪物 ${m.id} 的路徑 (${a}) → (${b}) 被 ${where(dim, wall[0], wall[1])} 的牆截斷，永遠在那裡折返`, { ...at, x: wall[0], y: wall[1] });
       }
     }
   });

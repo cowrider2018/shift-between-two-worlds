@@ -76,12 +76,68 @@ describe('validator', () => {
     expect(bad(validateLevel(l))).toBe(false);
   });
 
-  it('rejects monster paths through walls', () => {
+  it('lets monster paths run into walls and doors, warning only about walls; never through the exit', () => {
     const l = createEmptyLevel('t');
     setCell(l, 0, 5, 5, 'E');
     setCell(l, 0, 4, 2, '#');
-    l.dimensions[0].monsters.push({ id: 'm', path: [[2, 2], [6, 2]], mode: 'pingpong', speed: 1, pause: 0, viewRadius: 3, viewAngle: 60, facing: 0 });
-    expect(validateLevel(l).issues.some((i) => i.message.includes('穿過'))).toBe(true);
+    setCell(l, 0, 4, 3, 'D');
+    setCell(l, 1, 4, 3, 'L');
+    const m = (path: [number, number][]) => ({ id: 'm', path, mode: 'pingpong' as const, speed: 1, pause: 0, viewRadius: 3, viewAngle: 60, facing: 0 });
+    l.dimensions[0].monsters = [m([[2, 2], [6, 2]])];
+    let issues = validateLevel(l).issues.filter((i) => i.message.includes('怪物 m'));
+    expect(issues.map((i) => i.severity)).toEqual(['warning']);
+    l.dimensions[0].monsters = [m([[2, 3], [6, 3]])];
+    expect(validateLevel(l).issues.filter((i) => i.message.includes('怪物 m'))).toEqual([]);
+    l.dimensions[0].monsters = [m([[2, 5], [6, 5]])];
+    issues = validateLevel(l).issues.filter((i) => i.message.includes('怪物 m'));
+    expect(issues.some((i) => i.severity === 'error' && i.message.includes('出口'))).toBe(true);
+  });
+});
+
+describe('patrol blocked by a closed door', () => {
+  /** Corridor y=2 from x=1..9, door at (5, 2) on channel 1; lever in the underside. Monster patrols 2 ↔ 8. */
+  const corridor = (mode: 'pingpong' | 'loop', path: [number, number][]) => {
+    const l = createEmptyLevel('t', 11, 5);
+    setCell(l, 0, 5, 2, 'D');
+    setProp(l, 0, 5, 2, 'vertical', true);
+    setCell(l, 1, 5, 2, 'L');
+    setCell(l, 0, 9, 3, 'E');
+    l.dimensions[0].monsters.push({ id: 'm', path, mode, speed: 2, pause: 0, viewRadius: 1, viewAngle: 10, facing: 0 });
+    return l;
+  };
+  const run = (sim: Sim, seconds: number, track: (x: number) => void) => {
+    for (let i = 0; i < seconds * 60; i++) {
+      sim.update(NO_INPUT, 1 / 60);
+      track(sim.monsters[0].x);
+    }
+  };
+
+  it('turns back at the closed door and walks only the reachable part, to and fro', () => {
+    const sim = new Sim(corridor('pingpong', [[2, 2], [8, 2]]));
+    sim.x = 1.5; sim.y = 4.5; // out of the way
+    let max = 0, min = 99, turns = 0, last = sim.monsters[0].x, dir = 1;
+    run(sim, 12, (x) => {
+      max = Math.max(max, x); min = Math.min(min, x);
+      const d = Math.sign(x - last);
+      if (d && d !== dir) { turns++; dir = d; }
+      last = x;
+    });
+    expect(max).toBeLessThan(5);
+    expect(max).toBeGreaterThan(4.6);
+    expect(min).toBeCloseTo(2.5, 5);
+    expect(turns).toBeGreaterThanOrEqual(4);
+  });
+
+  it('walks straight through once the door opens', () => {
+    for (const mode of ['pingpong', 'loop'] as const) {
+      const sim = new Sim(corridor(mode, [[2, 2], [8, 2]]));
+      sim.x = 1.5; sim.y = 4.5;
+      run(sim, 3, () => {});
+      (sim as unknown as { channels: Map<number, boolean> }).channels.set(1, true);
+      let max = 0;
+      run(sim, 12, (x) => (max = Math.max(max, x)));
+      expect(max).toBeCloseTo(8.5, 5);
+    }
   });
 });
 

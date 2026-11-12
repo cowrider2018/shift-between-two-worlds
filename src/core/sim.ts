@@ -27,6 +27,8 @@ export const TUNING = {
   catchReach: 0.75,
   /** Collision half-size of a hunting monster sliding along walls. */
   monsterHalfSize: 0.2,
+  /** A patrolling monster turns back once the cell this far ahead of its centre is a wall or closed door. */
+  monsterBumpReach: 0.3,
   /** Depth of the exit cave behind its mouth (the renderer digs it this deep). The player reaches the exit once
    *  their centre is past half of it, i.e. has walked all the way in. */
   caveDepth: 0.8,
@@ -93,7 +95,12 @@ export class MonsterState {
     return ((this.def.viewAngle / 2) * Math.PI) / 180;
   }
 
-  update(dt: number): void {
+  /**
+   * Patrol one step. `blocked` reports cells it cannot walk into right now (walls, closed doors): on reaching one the
+   * monster stops at its edge, waits its pause and turns back, walking whatever part of the path it can reach to and
+   * fro. It checks afresh every time it comes back, so once the door is open it walks straight through.
+   */
+  update(dt: number, blocked: (cx: number, cy: number) => boolean = () => false): void {
     const path = this.def.path;
     if (!this.alive || this.risen || path.length < 2) return;
     const [tx, ty] = path[this.target];
@@ -109,6 +116,16 @@ export class MonsterState {
     }
     const step = this.def.speed * dt;
     if (dist > 1e-6) this.turnTowards(Math.atan2(dy, dx), dt);
+    if (dist > 1e-6) {
+      // probe just ahead of the body: stepping into a blocked cell turns the monster round instead
+      const reach = Math.min(step, dist) + TUNING.monsterBumpReach;
+      const ax = Math.floor(this.x + (dx / dist) * reach);
+      const ay = Math.floor(this.y + (dy / dist) * reach);
+      if ((ax !== Math.floor(this.x) || ay !== Math.floor(this.y)) && blocked(ax, ay)) {
+        this.bounce();
+        return;
+      }
+    }
     if (step >= dist) {
       this.x = gx;
       this.y = gy;
@@ -120,10 +137,19 @@ export class MonsterState {
     }
   }
 
+  /** Bumped into a wall or closed door: wait, then head back to the waypoint it came from. */
+  private bounce(): void {
+    const n = this.def.path.length;
+    const from = this.target - this.dir;
+    this.target = this.def.mode === 'loop' ? (from + n) % n : from;
+    this.dir = -this.dir;
+    this.pauseT = this.def.pause;
+  }
+
   private advance(): void {
     const n = this.def.path.length;
     if (this.def.mode === 'loop') {
-      this.target = (this.target + 1) % n;
+      this.target = (this.target + this.dir + n) % n;
       return;
     }
     if (this.target + this.dir < 0 || this.target + this.dir >= n) this.dir = -this.dir;
@@ -273,7 +299,8 @@ export class Sim {
       else if (input.attack) this.tryAttack();
       this.enterCave();
     }
-    for (const m of this.monsters) if (m !== this.hunter) m.update(dt);
+    for (const m of this.monsters)
+      if (m !== this.hunter) m.update(dt, (cx, cy) => this.grid.solid(m.dim, cx, cy, this.channelOn));
     if (this.hunter) this.hunt(this.hunter, dt);
     else this.updateDetection(dt);
   }

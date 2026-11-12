@@ -75,6 +75,13 @@ export class Pane {
         ctx.fillRect(px, py + c * 0.7, c, c * 0.3);
       }
       const b = cell.def.behavior;
+      if (b === 'door') {
+        // the panel: a dark bar through the middle, the way the door is set
+        ctx.fillStyle = '#1a162088';
+        const t = Math.max(3, c * 0.12);
+        if (cell.props.vertical) ctx.fillRect(px + (c - t) / 2, py + 2, t, c - 4);
+        else ctx.fillRect(px + 2, py + (c - t) / 2, c - 4, t);
+      }
       if (b !== 'none') {
         ctx.fillStyle = '#1a1620';
         ctx.font = `bold ${Math.round(c * 0.5)}px ui-monospace, monospace`;

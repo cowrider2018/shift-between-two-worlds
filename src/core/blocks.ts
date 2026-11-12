@@ -59,9 +59,13 @@ export const BLOCKS: readonly BlockDef[] = [
     color: '#e07b39', params: [CHANNEL], solid: 'never', opaque: 'never', behavior: 'lever',
   },
   {
-    id: 'door', char: 'D', label: '門', description: '頻道訊號開啟時打開（inverted 則相反）。',
+    id: 'door', char: 'D', label: '門', description: '頻道訊號開啟時打開（inverted 則相反）。門板預設橫放（擋上下），勾選豎向則豎放（擋左右）。',
     color: '#8a5a3c',
-    params: [CHANNEL, { key: 'inverted', label: '反相', type: 'bool', default: false }],
+    params: [
+      CHANNEL,
+      { key: 'inverted', label: '反相', type: 'bool', default: false },
+      { key: 'vertical', label: '豎向（擋左右）', type: 'bool', default: false },
+    ],
     solid: 'whenClosed', opaque: 'whenClosed', behavior: 'door',
   },
   {

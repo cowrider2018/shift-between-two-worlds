@@ -192,9 +192,8 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   },
 
   door: (cell, ctx) => {
-    // span across the corridor: if walls are left/right, the door panel spans x
-    const solidAt = (dx: number, dy: number) => ctx.grid.cell(cell.dim, cell.x + dx, cell.y + dy).def.solid === 'always';
-    const spanX = solidAt(-1, 0) || solidAt(1, 0) || !(solidAt(0, -1) || solidAt(0, 1));
+    // set per door: horizontal (the panel spans x, blocking up/down) or vertical (spans z, blocking left/right)
+    const spanX = !cell.props.vertical;
     const panel = new Group();
     const doorH = WALL_H - 0.1;
     // a box measured along the door (`along`), up, and through it (`across`), centred `off` through the door

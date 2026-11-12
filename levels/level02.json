@@ -11,7 +11,7 @@
         "###########"
       ],
       "props": {
-        "9,1": {"channel":1,"inverted":false},
+        "9,1": {"channel":1,"inverted":false,"vertical":true},
         "10,1": {"dir":3}
       },
       "monsters": [

@@ -32,7 +32,7 @@ export const MONSTER_DEFAULTS: Omit<MonsterDef, 'id' | 'path'> = {
   mode: 'pingpong',
   speed: 1.6,
   pause: 0.6,
-  viewRadius: 4.5,
+  viewRadius: 5,
   viewAngle: 70,
   facing: 0,
 };

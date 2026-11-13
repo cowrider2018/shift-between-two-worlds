@@ -134,7 +134,7 @@
       "props": { "6,3": { "channel": 1 } },               // 有參數的格子
       "monsters": [
         { "id": "m1", "path": [[8,4],[13,4]], "mode": "pingpong",
-          "speed": 1.6, "pause": 0.6, "viewRadius": 4.5, "viewAngle": 70 }
+          "speed": 1.6, "pause": 0.6, "viewRadius": 5, "viewAngle": 70 }
       ]
     },
     { "rows": [...], "props": {...}, "monsters": [...] }   // 次元 B

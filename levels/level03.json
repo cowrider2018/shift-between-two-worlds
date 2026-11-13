@@ -23,8 +23,8 @@
         "5,4": {"channel":1}
       },
       "monsters": [
-        {"id":"m1","path":[[3,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":90},
-        {"id":"m2","path":[[3,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":270}
+        {"id":"m1","path":[[3,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":90},
+        {"id":"m2","path":[[3,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270}
       ]
     },
     {
@@ -46,8 +46,8 @@
         "3,6": {"channel":1,"inverted":true}
       },
       "monsters": [
-        {"id":"m3","path":[[3,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":270},
-        {"id":"m4","path":[[3,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":90}
+        {"id":"m3","path":[[3,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270},
+        {"id":"m4","path":[[3,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":90}
       ]
     }
   ]

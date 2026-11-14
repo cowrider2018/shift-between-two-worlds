@@ -29,6 +29,12 @@ import { TEXEL_DENSITY } from './texgen';
 
 const CONE_SEGMENTS = 32;
 
+/** Seconds to put the cloak on as the hero crouches on the surface, and to take it off on standing up. */
+const CLOAK_ON = 0.33;
+const CLOAK_OFF = 0.18;
+/** Cloak progress past which the hood is over the head, and the hair is the cut one that fits inside it. */
+const HOOD_OVER = 0.7;
+
 class VisionCone {
   readonly mesh: Mesh;
   private readonly pos: Float32Array;
@@ -184,6 +190,8 @@ export class GameView {
   private readonly perchScale = new Vector3();
   private readonly yawQuat = new Quaternion();
   private shownDim: DimIndex | -1 = -1;
+  /** How far the cloak is on, 0..1: the "cloak" clip's progress. */
+  private cloak = 0;
   private readonly backdrop = new Backdrop();
   private readonly clearColor = new Color();
   /** Fog for the reflection: it sinks into the shown dimension's background with distance. It thickens at half
@@ -311,17 +319,32 @@ export class GameView {
     fx.ripple = Math.max(0, fx.ripple - dt * 2.5);
     fx.danger = Math.max(0, ...sim.monsters.map((m) => (m.dim === sim.dim ? m.detect : 0)));
 
-    if (this.shownDim !== sim.dim) this.applyTheme(sim.dim);
+    // always cloaked in the underside; on the surface the cloak goes on as the hero crouches and comes off as they
+    // stand. A shift (or a fresh level) swaps the outfit at once.
+    const cloakTo = sim.dim === 1 || sim.sneaking ? 1 : 0;
+    if (this.shownDim !== sim.dim) {
+      this.cloak = cloakTo;
+      this.applyTheme(sim.dim);
+    } else {
+      const step = dt / (cloakTo > this.cloak ? CLOAK_ON : CLOAK_OFF);
+      this.cloak = cloakTo > this.cloak ? Math.min(cloakTo, this.cloak + step) : Math.max(cloakTo, this.cloak - step);
+    }
     for (const b of this.blocks) b.update?.(sim, dt, this.t);
 
     this.hero.root.position.set(sim.x, 0, sim.y);
     this.hero.root.rotation.set(0, -sim.facing, 0);
     if (this.catching) this.updateCatch(this.catching, dt);
-    // always cloaked in the underside; on the surface the cloak goes up only while sneaking
-    this.hero.setOutfit(sim.dim === 1 || sim.sneaking ? 'hooded' : 'plain');
+    this.hero.setOutfit(this.cloak === 0 ? 'plain' : this.cloak < HOOD_OVER ? 'cloaking' : 'hooded');
     const moving = sim.moving && !this.catching; // the sim froze mid-stride when caught
     this.hero.play(sim.sneaking ? (moving ? 'crouch_walk' : 'crouch') : moving ? 'run' : 'idle', 0.15);
     this.hero.update(dt);
+    // over the crouch: the cloak unrolling and the hood folding over, and the right hand reaching for the hood only
+    // while it is on the way (leaving the crouch's arms alone either side)
+    const reach = this.cloak > 0 && this.cloak < 1 ? Math.min(1, 2 * Math.sin(Math.PI * this.cloak)) : 0;
+    this.hero.pose('cloak', this.cloak, {
+      'cape.1.scale': 1, 'hood.scale': 1, 'hood.quaternion': 1,
+      'upper_arm.R.quaternion': reach, 'forearm.R.quaternion': reach, 'hand.R.quaternion': reach,
+    });
 
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     if (this.takedown) this.updateTakedown(this.takedown, dt);

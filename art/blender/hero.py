@@ -347,7 +347,7 @@ def old_cone(name, centre3, dir3, radius, height, mat):
 # - The brow: above it the face runs on into the skull; below it the upper face is set back, deepest just under the
 #   brow and tilting forward again down to FACE_SET_TO, so the depth spreads evenly over the eyes and cheeks. The
 #   nose (bridge up to the brow, and tip) stays where it was, standing out of the set-back face.
-# - A straight nose bridge, soft cheekbones.
+# - A straight nose bridge standing further out toward its tip, soft cheekbones.
 # The front keeps the full shapes; past FACE_SIDE_FROM the sides take softer ones (FACE_SIDE) so the cheeks and
 # temples stay smooth. The back of the skull and the nape keep their round.
 FACE_SEGS, FACE_RINGS = 32, 22
@@ -359,7 +359,8 @@ FACE_SET_BACK = 0.02     # how far the upper face is set back just under the bro
 FACE_SET_EDGE = 0.016    # the brow's edge: the set-back is full this far under it
 FACE_SET_TO = -0.05      # the set-back has tilted out to nothing by here (the nose tip, the cheeks' lower edge)
 FACE_SET_WIDE = 1.1      # its reach round the face (radians from straight ahead)
-FACE_NOSE = (0.8, 0.027)       # bridge height as a share of the tip's; the tip's height
+FACE_NOSE = (0.18, 0.195)      # the ridge's distance in front of the head centre at the root and at the tip
+FACE_NOSE_LONG = 0.3 * math.pi * HEAD_R / FACE_RINGS   # the tip (and the cut under it) 0.3 of a ring further down
 FACE_TRAP_FROM = 0.03           # the trapezoid starts here (above the eyes) and is full 0.1 lower
 FACE_JAW_BACK = -0.07           # where the underside starts closing at the back of the jaw (the arc)
 
@@ -370,6 +371,35 @@ def _ring_z(k):
 
 FACE_BROW_Z = _ring_z(FACE_RINGS / 2 - 2.5)   # 2.5 rings above the eyes' ring
 FACE_CHEEK_Z, FACE_MOUTH_Z, FACE_JAW_Z = (_ring_z(FACE_RINGS // 2 + k) for k in (2, 4, 6))
+FACE_JAW_FRONT = FACE_JAW_Z   # where the underside starts closing under the chin (a square corner)
+# Below the cheekbones the sculpted surface is relaxed by FACE_SMOOTH rounds of Taubin smoothing (each round pulls
+# every vertex toward its neighbours' average, then pushes back a little so the volume holds), fading in from
+# FACE_SMOOTH_FROM down to FACE_SMOOTH_FULL: the corners of the trapezoid, chin and jaw round off, the outline stays.
+# The nose is left out, so its tip keeps its edge.
+FACE_SMOOTH = 16
+FACE_SMOOTH_FROM, FACE_SMOOTH_FULL = -0.015, -0.05
+
+
+def _smooth_lower_face(head):
+    vs = head.data.vertices
+    nbr = [[] for _ in vs]
+    for e in head.data.edges:
+        a, b = e.vertices
+        nbr[a].append(b)
+        nbr[b].append(a)
+    def weight(co):
+        d = co - H
+        nose = math.exp(-(d.y / 0.03) ** 2) * _smoothstep(-0.075 - FACE_NOSE_LONG, -0.06 - FACE_NOSE_LONG, d.z) if d.x > 0 else 0.0  # the nose keeps
+        return _smoothstep(FACE_SMOOTH_FROM, FACE_SMOOTH_FULL, d.z) * (1 - nose)
+    w = [weight(v.co) for v in vs]
+    for _ in range(FACE_SMOOTH):
+        for f in (0.5, -0.53):
+            cos = [v.co.copy() for v in vs]
+            for i, v in enumerate(vs):
+                if w[i] > 0 and nbr[i]:
+                    avg = sum((cos[j] for j in nbr[i]), Vector()) / len(nbr[i])
+                    v.co = cos[i] + (avg - cos[i]) * (f * w[i])
+    head.data.update()
 
 
 def _trap_r(ap, f, F, pw):
@@ -406,7 +436,7 @@ def _sculpt_face(co):
         r_new = slice_r(z)
         if z < FACE_CHEEK_Z:
             ra = slice_r(FACE_CHEEK_Z)
-            close_from = FACE_JAW_Z + (FACE_JAW_BACK - FACE_JAW_Z) * ss(0.55, 1.35, ap)
+            close_from = FACE_JAW_FRONT + (FACE_JAW_BACK - FACE_JAW_FRONT) * ss(0.55, 1.35, ap)
             m = 1 - 0.5 * ss(FACE_CHEEK_Z, FACE_MOUTH_Z, z) * (1 - ss(close_from, -HEAD_R, z)) * (1 - ss(1.75, 2.6, ap))
             r_new = ra - (ra - r_new) * m
         out.x, out.y = x / rho * r_new, y / rho * r_new
@@ -417,11 +447,16 @@ def _sculpt_face(co):
     tilt = max(0.0, min(1.0, (z - FACE_SET_TO) / (edge - FACE_SET_TO)))
     nose = math.exp(-(y / 0.028) ** 2) * ss(FACE_SET_TO, FACE_SET_TO + 0.02, z) if x > 0 else 0.0
     out.x -= FACE_SET_BACK * ss(FACE_BROW_Z, edge, z) * tilt * math.exp(-(phi / FACE_SET_WIDE) ** 4) * (1 - nose)
-    # nose: a straight ridge on the midline from between the eyes, highest at the tip, cut off under it
+    # nose: a straight ridge on the midline from between the eyes down to the tip, standing further out the lower
+    # it gets (the face under it falls back, so the ridge is set as a line, not as a height over the face), then
+    # cut off under the tip
     if x > 0:
-        bridge, tip = FACE_NOSE
-        prof = ss(0.025, 0.005, z) * (bridge + (1 - bridge) * ss(0.0, -0.045, z)) * (1 - ss(-0.05, -0.07, z))
-        out.x += tip * math.exp(-(y / 0.028) ** 2) * prof
+        root_x, tip_x = FACE_NOSE
+        tip_z = -0.045 - FACE_NOSE_LONG
+        u = max(0.0, min(1.0, (0.025 - z) / (0.025 - tip_z)))
+        ridge = root_x + (tip_x - root_x) * u
+        reach = ss(0.03, 0.015, z) * (1 - ss(tip_z - 0.005, tip_z - 0.025, z))
+        out.x += max(0.0, ridge - out.x) * math.exp(-(y / 0.028) ** 2) * reach
     return H + out
 
 
@@ -483,6 +518,7 @@ def build_head():
     for v in head.data.vertices:
         v.co = _sculpt_face(v.co)
     head.data.update()
+    _smooth_lower_face(head)
     t = tree()
     for o in eyes:
         c = centre[o.name]

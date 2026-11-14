@@ -1,0 +1,54 @@
+{
+  "format": 1,
+  "id": "level03",
+  "name": "迴環",
+  "size": {"w":7,"h":9},
+  "dimensions": [
+    {
+      "rows": [
+        "#######",
+        "#.....#",
+        "#.#D#.#",
+        "#.#.#.#",
+        "#SDE#L#",
+        "#.#.#.#",
+        "#.#.#.#",
+        "#.....#",
+        "#######"
+      ],
+      "props": {
+        "3,2": {"channel":1,"inverted":false},
+        "2,4": {"channel":1,"inverted":false,"vertical":true},
+        "3,4": {"dir":3},
+        "5,4": {"channel":1}
+      },
+      "monsters": [
+        {"id":"m1","path":[[3,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":90},
+        {"id":"m2","path":[[3,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270}
+      ]
+    },
+    {
+      "rows": [
+        "#######",
+        "#.....#",
+        "#.#.#.#",
+        "#.#.#.#",
+        "#.DE#L#",
+        "#.#.#.#",
+        "#.#D#.#",
+        "#.....#",
+        "#######"
+      ],
+      "props": {
+        "2,4": {"channel":1,"inverted":false,"vertical":true},
+        "3,4": {"dir":3},
+        "5,4": {"channel":1},
+        "3,6": {"channel":1,"inverted":true}
+      },
+      "monsters": [
+        {"id":"m3","path":[[3,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270},
+        {"id":"m4","path":[[3,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":90}
+      ]
+    }
+  ]
+}

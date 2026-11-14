@@ -12,10 +12,12 @@ import { validateLevel } from '../src/core/validate';
 const levelsDir = resolve(import.meta.dirname, '..', 'levels');
 const levelFiles = readdirSync(levelsDir).filter((f) => f.endsWith('.json') && f !== ORDER_FILE);
 const load = (f: string) => readFileSync(join(levelsDir, f), 'utf8').replace(/\r\n/g, '\n');
-/** File names follow level names, so tests find a level by the id inside the JSON. */
+/** The scripted walkthroughs below play frozen copies of early levels (tests/fixtures), so redesigning or renumbering
+ *  the shipped levels does not break them. */
+const fixturesDir = resolve(import.meta.dirname, 'fixtures');
 const loadById = (id: string): Level => {
-  const level = levelFiles.map((f) => parseLevel(JSON.parse(load(f))).level).find((l) => l?.id === id);
-  if (!level) throw new Error(`no level with id ${id}`);
+  const level = parseLevel(JSON.parse(readFileSync(join(fixturesDir, `${id}.json`), 'utf8'))).level;
+  if (!level) throw new Error(`no fixture level with id ${id}`);
   return level;
 };
 const level01 = () => loadById('level01');
@@ -526,7 +528,7 @@ describe('simulation on level01', () => {
     }
     expect(sim.status).toBe('playing');
     // run up behind it and cut its throat before it turns round
-    for (let i = 0; i < 600 && Math.hypot(m2.x - sim.x, m2.y - sim.y) > 1.1; i++) {
+    for (let i = 0; i < 600 && Math.hypot(m2.x - sim.x, m2.y - sim.y) > TUNING.attackRange - 0.1; i++) {
       const dx = m2.x - sim.x, dy = m2.y - sim.y, d = Math.hypot(dx, dy);
       step({ moveX: dx / d, moveY: dy / d });
     }
@@ -556,10 +558,10 @@ describe('level02: the troll guards the lever with its ghost', () => {
 
   it('wins by pulling the lever in B first and only then cutting the troll down', () => {
     const sim = new Sim(level02());
-    walkX(sim, 5.4);                        // right behind the troll's back
+    walkX(sim, 5.8);                        // right behind the troll's back
     waitForGhostWest(sim);
-    tap(sim, 'shift'); walkX(sim, 7.6); tap(sim, 'interact');
-    walkX(sim, 5.4); tap(sim, 'shift');     // back behind the troll before the ghost turns round
+    tap(sim, 'shift'); walkX(sim, 8.2); tap(sim, 'interact');
+    walkX(sim, 5.8); tap(sim, 'shift');     // back behind the troll before the ghost turns round
     tap(sim, 'attack');
     expect(sim.monsters[0].alive).toBe(false);
     for (let i = 0; i < Math.ceil(TUNING.takedownTime * 60); i++) sim.update(NO_INPUT, 1 / 60);
@@ -569,7 +571,7 @@ describe('level02: the troll guards the lever with its ghost', () => {
 
   it('a kill before the lever leaves the troll\'s ghost staring at the lever', () => {
     const sim = new Sim(level02());
-    walkX(sim, 5.4);
+    walkX(sim, 5.8);
     tap(sim, 'attack');
     for (let i = 0; i < Math.ceil(TUNING.takedownTime * 60); i++) sim.update(NO_INPUT, 1 / 60);
     waitForGhostWest(sim);
@@ -581,9 +583,9 @@ describe('level02: the troll guards the lever with its ghost', () => {
 
   it('the living troll lights the exit even for a sneaking hero', () => {
     const sim = new Sim(level02());
-    walkX(sim, 5.4);
+    walkX(sim, 5.8);
     waitForGhostWest(sim);
-    tap(sim, 'shift'); walkX(sim, 7.6); tap(sim, 'interact');
+    tap(sim, 'shift'); walkX(sim, 8.2); tap(sim, 'interact');
     walkX(sim, 8.6); tap(sim, 'shift');
     walkX(sim, 10.8, { sneak: true });
     expect(sim.status).toBe('caught');

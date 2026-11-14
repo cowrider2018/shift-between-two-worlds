@@ -1,0 +1,46 @@
+{
+  "format": 1,
+  "id": "level01",
+  "name": "第一次轉移",
+  "size": {"w":9,"h":9},
+  "dimensions": [
+    {
+      "rows": [
+        "#########",
+        "#SD.....#",
+        "#.#####.#",
+        "#.....#E#",
+        "#.....###",
+        "#.....###",
+        "#.#######",
+        "#L#######",
+        "#########"
+      ],
+      "props": {
+        "2,1": {"channel":1,"inverted":false,"vertical":true},
+        "1,7": {"channel":1}
+      },
+      "monsters": [
+        {"id":"m1","path":[[5,4]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":180},
+        {"id":"m2","path":[[7,1],[4,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":0}
+      ]
+    },
+    {
+      "rows": [
+        "#########",
+        "#.......#",
+        "#.#####.#",
+        "#.....#E#",
+        "#.....###",
+        "#.....###",
+        "#.#######",
+        "#.#######",
+        "#########"
+      ],
+      "props": {},
+      "monsters": [
+        {"id":"m3","path":[[5,4]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":4.5,"viewAngle":70,"facing":180}
+      ]
+    }
+  ]
+}

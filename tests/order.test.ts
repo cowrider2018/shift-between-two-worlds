@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fileStemFor, isSafeStem } from '../src/core/levelFile';
-import { applyOrder, parseOrder } from '../src/core/order';
+import { applyOrder, parseOrder, renameInOrder } from '../src/core/order';
 
 const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
 
@@ -12,6 +12,11 @@ describe('level play order', () => {
   it('falls back to id order and ignores ids that no longer exist', () => {
     expect(ids(applyOrder(levels, []))).toEqual(['a', 'b', 'c', 'd']);
     expect(ids(applyOrder(levels, ['gone', 'd']))).toEqual(['d', 'a', 'b', 'c']);
+  });
+  it('keeps a renamed id at its place', () => {
+    expect(renameInOrder(['a', 'b', 'c'], 'b', 'x')).toEqual(['a', 'x', 'c']);
+    expect(renameInOrder(['a', 'b'], 'b', 'b')).toBeNull();
+    expect(renameInOrder(['a', 'b'], 'z', 'x')).toBeNull();
   });
   it('treats a malformed order file as no order', () => {
     expect(parseOrder({ x: 1 })).toEqual([]);

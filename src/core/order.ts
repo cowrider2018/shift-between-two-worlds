@@ -18,3 +18,8 @@ export function applyOrder<T extends { id: string }>(items: T[], order: readonly
 export function parseOrder(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
 }
+
+/** The order after a level's id changed from `from` to `to`: same position, new id. Returns null when nothing changes. */
+export function renameInOrder(order: readonly string[], from: string, to: string): string[] | null {
+  return from !== to && order.includes(from) ? order.map((id) => (id === from ? to : id)) : null;
+}

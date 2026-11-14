@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFil
 import { resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import { LEVEL_ID_RE, isSafeStem, sameStem } from './src/core/levelFile';
-import { ORDER_FILE, applyOrder, parseOrder } from './src/core/order';
+import { ORDER_FILE, applyOrder, parseOrder, renameInOrder } from './src/core/order';
 
 const LEVELS_DIR = resolve(import.meta.dirname, 'levels');
 
@@ -17,6 +17,20 @@ function readOrder(): string[] {
     return parseOrder(JSON.parse(readFileSync(resolve(LEVELS_DIR, ORDER_FILE), 'utf8')));
   } catch {
     return [];
+  }
+}
+
+function writeOrder(ids: string[]): void {
+  writeFileSync(resolve(LEVELS_DIR, ORDER_FILE), JSON.stringify(ids, null, 2) + '\n', 'utf8');
+}
+
+/** The id stored in a level file, or null when it is missing or unreadable. */
+function idOf(text: string): string | null {
+  try {
+    const id = (JSON.parse(text) as { id?: unknown }).id;
+    return typeof id === 'string' ? id : null;
+  } catch {
+    return null;
   }
 }
 
@@ -57,7 +71,7 @@ function levelStore(): Plugin {
           try {
             const ids = JSON.parse(body) as unknown;
             if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string' && LEVEL_ID_RE.test(id))) throw new Error('expected an array of ids');
-            writeFileSync(resolve(LEVELS_DIR, ORDER_FILE), JSON.stringify(ids, null, 2) + '\n', 'utf8');
+            writeOrder(ids);
             res.end('ok');
           } catch (e) {
             res.statusCode = 400;
@@ -79,12 +93,18 @@ function levelStore(): Plugin {
         req.on('end', () => {
           try {
             JSON.parse(body);
+            const newId = idOf(body);
+            const source = resolve(LEVELS_DIR, `${from || file}.json`);
+            const oldId = existsSync(source) ? idOf(readFileSync(source, 'utf8')) : null;
             const target = resolve(LEVELS_DIR, `${file}.json`);
             const old = from && from !== file ? resolve(LEVELS_DIR, `${from}.json`) : null;
             // a case-only rename must move the file first: on Windows, writing Fan.json would overwrite fan.json in place
             if (old && sameStem(from, file) && existsSync(old)) renameSync(old, target);
             writeFileSync(target, body, 'utf8');
             if (old && !sameStem(from, file) && existsSync(old)) unlinkSync(old);
+            // an id change keeps the level's place in the play order
+            const order = oldId && newId ? renameInOrder(readOrder(), oldId, newId) : null;
+            if (order) writeOrder(order);
             res.end('ok');
           } catch (e) {
             res.statusCode = 400;

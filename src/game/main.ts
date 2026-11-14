@@ -154,10 +154,10 @@ function showBriefing(): void {
   addEventListener('mousedown', turn);
 }
 
-/** Swap to the ending (at full black); the words fade in from the right once it has faded back in. */
+/** Swap to the ending (at full black); the words fade in one under the other once it has faded back in. */
 function showEnding(): void {
-  ending = new Ending(view.pipeline);
   const el = $('ending');
+  ending = new Ending(view.pipeline, el);
   el.hidden = false;
   const reveal = (cls: string, at: number) => setTimeout(() => el.querySelector(cls)?.classList.add('in'), at * 1000);
   reveal('.escaped', FADE_IN + ESCAPED_AT);

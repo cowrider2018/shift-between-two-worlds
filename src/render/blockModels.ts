@@ -3,7 +3,7 @@
  * A factory returns an Object3D positioned at the cell origin plus an optional per-frame update.
  */
 import {
-  AdditiveBlending, BoxGeometry, CanvasTexture, CircleGeometry, CylinderGeometry, DoubleSide, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PointLight, Shape, Vector3, ShapeGeometry, TorusGeometry,
+  AdditiveBlending, BoxGeometry, CanvasTexture, Color, CircleGeometry, CylinderGeometry, DoubleSide, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PointLight, Shape, Vector3, ShapeGeometry, TorusGeometry,
   type Material, type Object3D,
 } from 'three';
 import type { Cell, LevelGrid } from '../core/grid';
@@ -161,7 +161,9 @@ function hauntDoor(cell: Cell, doorH: number, alongX: boolean, part: DoorPart): 
 
 /** The red light of a lever: it glows in the slot in the top of its base and rises out of it in a short fading shaft,
  *  and pools on the floor round it exactly as far as the hero's reach (TUNING.interactRange). */
+/** Red while the lever is off; once pulled it glows an orange-leaning yellow, and pulling it back turns it red again. */
 const LEVER_GLOW = '#ff3020';
+const LEVER_GLOW_ON = '#ffa818';
 const LEVER_ARM = 0.45;
 /** The shaft out of the slot rises a quarter of the arm's length. */
 const SHAFT_H = LEVER_ARM / 4;
@@ -206,7 +208,8 @@ function leverPoolTexture(): CanvasTexture {
 
 interface LeverGlow {
   parts: Object3D[];
-  update(t: number): void;
+  /** `on`: whether the lever is pulled; the colour follows it at the arm's pace. */
+  update(t: number, dt: number, on: boolean): void;
 }
 
 function leverGlow(cell: Cell): LeverGlow {
@@ -235,9 +238,16 @@ function leverGlow(cell: Cell): LeverGlow {
   core.scale.set(SLOT_LEN / 0.32, 1, 0.2);
   for (const o of [shaft, core]) o.renderOrder = 3;
   const phase = (cell.x * 1.7 + cell.y * 2.3) % 6.28;
+  const off = new Color(LEVER_GLOW);
+  const lit = new Color(LEVER_GLOW_ON);
+  const color = new Color();
+  let k = 0; // 0 red (off) .. 1 yellow (pulled)
   return {
     parts: [pool, slot, shaft, core],
-    update: (t) => {
+    update: (t, dt, on) => {
+      k += ((on ? 1 : 0) - k) * Math.min(1, dt * 12);
+      color.lerpColors(off, lit, k);
+      for (const mat of [poolMat, slotMat, shaftMat, coreMat]) mat.color.copy(color);
       // a slow breath plus a faint flutter, the same whichever way the arm leans
       const f = 0.85 + 0.1 * Math.sin(t * 2 + phase) + 0.05 * Math.sin(t * 7.3 + phase * 3);
       poolMat.opacity = f;
@@ -276,8 +286,8 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     return {
       object: g,
       update: (sim, dt, t) => {
-        glow.update(t);
         const on = sim.leverOn(cell);
+        glow.update(t, dt, on);
         const target = on ? 0.6 : -0.6;
         angle += (target - angle) * Math.min(1, dt * 12);
         arm.rotation.z = angle;

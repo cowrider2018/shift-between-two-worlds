@@ -1,5 +1,5 @@
 """
-Hero (DESIGN §4.2): small chibi adventurer — a primitive head (sphere, box eyes, small human ears) with
+Hero (DESIGN §4.2): small chibi adventurer — a sculpted head (sphere shaped into a face, box eyes, small human ears) with
 hair made of five thick turning cones, one continued into a tail over the crown (see HAIR), on an anatomical body: green tunic with belt, cream leggings, boots,
 short sword carried on the back. Stocky pear-shaped trunk; short legs of straight trouser tubes with wider boots worn over them.
 
@@ -289,13 +289,14 @@ def build_boots():
 
 
 # ---------------------------------------------------------------------------
-# head: the original primitive head from the pre-Blender build (three.js HeroModel), rebuilt with the
-# same primitives, sizes and angles and placed on this body:
-#   10x8 sphere head, box eyes. Ears are small human ears; hair: see HAIR below.
+# head: the original primitive head from the pre-Blender build (three.js HeroModel), placed on this body with
+# the same sizes: box eyes, small human ears; hair: see HAIR below. The sphere itself is now finer (FACE_SEGS x
+# FACE_RINGS) and sculpted into a face: brow, nose, cheekbones and jaw (see FACE below).
 # Old coordinates are three.js space (x forward, y up, z side) around the old head centre.
 
 OLD_HEAD = Vector((0.01, 0.5, 0.0))
 HEAD_K = 1.15  # the old model was shown at 1.3x; 1.15x fits this neck and these shoulders
+HEAD_R = 0.15 * HEAD_K
 
 
 def old(x, y, z):
@@ -337,14 +338,128 @@ def old_cone(name, centre3, dir3, radius, height, mat):
     return lib.cone(name, c - half, c + half, radius * HEAD_K, mat, sides=4)
 
 
+# FACE: the head sphere is reshaped vertex by vertex; everything is relative to the head centre H (x forward).
+# - Horizontal slices: below the brow the front half of every slice turns from a half circle into a rounded
+#   trapezoid (narrower at the chin, sides opening back to the jaw angles), fully from about mouth height down.
+# - Below the cheek slice the slices are pushed out so their gaps to it halve (a full lower face); under the jaw
+#   the underside closes back in to the neck: a square corner at the chin, a wide arc at the back of the jaw.
+# - The lower face narrows by scaling its width, none at eye level, FACE_NARROW from the jaw down.
+# - A brow shelf across the face, a straight nose bridge, soft cheekbones.
+# The front keeps the full shapes; past FACE_SIDE_FROM the sides take softer ones (FACE_SIDE) so the cheeks and
+# temples stay smooth. The back of the skull and the nape keep their round.
+FACE_SEGS, FACE_RINGS = 32, 22
+FACE_NARROW = 0.10
+FACE_SIDE_FROM = math.radians(45)
+FACE_FRONT = dict(f=0.56, F=0.96, pw=8, cheek=0.006, cz=0.022, ca=0.3, bw=1.2, ba=0.024, bs=0.005, bz=0.013)
+FACE_SIDE = dict(pw=5, cheek=0.002, cz=0.038, ca=0.52, ba=0.017, bs=0.002, bz=0.022)
+FACE_NOSE = (0.8, 0.027)       # bridge height as a share of the tip's; the tip's height
+FACE_TRAP_FROM = 0.03           # the trapezoid starts here (above the eyes) and is full 0.1 lower
+FACE_JAW_BACK = -0.07           # where the underside starts closing at the back of the jaw (the arc)
+
+
+def _ring_z(k):
+    return HEAD_R * math.cos(math.pi * k / FACE_RINGS)
+
+
+FACE_BROW_Z = _ring_z(FACE_RINGS / 2 - 2.5)   # 2.5 rings above the eyes' ring
+FACE_CHEEK_Z, FACE_MOUTH_Z, FACE_JAW_Z = (_ring_z(FACE_RINGS // 2 + k) for k in (2, 4, 6))
+
+
+def _trap_r(ap, f, F, pw):
+    """Front half of a horizontal slice of radius 1 as a rounded trapezoid: front edge at x=F with half-width f,
+    sides opening back to the full width at x=0. A smooth minimum (p-norm) of the front and side lines."""
+    nl = math.hypot(1 - f, F)
+    nx, ny = (1 - f) / nl, F / nl
+    terms = []
+    for alpha, dist in ((0.0, F), (math.atan2(ny, nx), nx * F + ny * f)):
+        c = math.cos(ap - alpha)
+        if c > 1e-4:
+            terms.append((dist / c) ** -pw)
+    return sum(terms) ** (-1 / pw)
+
+
+def _sculpt_face(co):
+    ss = _smoothstep
+    x, y, z = co - H
+    rho = math.hypot(x, y)
+    phi = math.atan2(y, x)
+    ap = abs(phi)
+    radial = Vector((math.cos(phi), math.sin(phi), 0))
+    wf = 1.0 - ss(FACE_SIDE_FROM - 0.15, FACE_SIDE_FROM + 0.15, ap)   # 1 on the front, 0 on the sides
+    o = {k: v + (FACE_SIDE[k] - v) * (1 - wf) if k in FACE_SIDE else v for k, v in FACE_FRONT.items()}
+    out = Vector((x, y, z))
+
+    def slice_r(zz):
+        r = math.sqrt(max(HEAD_R ** 2 - zz * zz, 0.0))
+        if ap < math.pi / 2:
+            r *= 1 + (_trap_r(ap, o["f"], o["F"], o["pw"]) - 1) * ss(FACE_TRAP_FROM, FACE_TRAP_FROM - 0.1, zz)
+        return r
+
+    if rho > 1e-6:
+        r_new = slice_r(z)
+        if z < FACE_CHEEK_Z:
+            ra = slice_r(FACE_CHEEK_Z)
+            close_from = FACE_JAW_Z + (FACE_JAW_BACK - FACE_JAW_Z) * ss(0.55, 1.35, ap)
+            m = 1 - 0.5 * ss(FACE_CHEEK_Z, FACE_MOUTH_Z, z) * (1 - ss(close_from, -HEAD_R, z)) * (1 - ss(1.75, 2.6, ap))
+            r_new = ra - (ra - r_new) * m
+        out.x, out.y = x / rho * r_new, y / rho * r_new
+    # cheekbones: a soft swell on the front corners of the trapezoid, just under the eyes
+    out += radial * (o["cheek"] * math.exp(-((ap - 0.75) / o["ca"]) ** 2) * math.exp(-((z + 0.025) / o["cz"]) ** 2))
+    # brow: a shelf across the face, pushed out along the slice so it wraps round toward the temples
+    band = math.exp(-((z - FACE_BROW_Z) / o["bz"]) ** 2) * math.exp(-(phi / o["bw"]) ** 4)
+    out += radial * (o["ba"] * band)
+    out.z -= o["bs"] * band
+    # nose: a straight ridge on the midline from between the eyes, highest at the tip, cut off under it
+    if x > 0:
+        bridge, tip = FACE_NOSE
+        prof = ss(0.025, 0.005, z) * (bridge + (1 - bridge) * ss(0.0, -0.045, z)) * (1 - ss(-0.05, -0.07, z))
+        out.x += tip * math.exp(-(y / 0.028) ** 2) * prof
+    return H + out
+
+
+def _narrow_face(co):
+    d = co - H
+    w = _smoothstep(0.01, -0.10, d.z) * (1 - _smoothstep(1.75, 2.6, abs(math.atan2(d.y, d.x))))
+    return H + Vector((d.x, d.y * (1 - FACE_NARROW * w), d.z))
+
+
 def build_head():
+    from mathutils.bvhtree import BVHTree
     k = HEAD_K
-    parts = [uv_sphere("head_mesh", old(0.01, 0.5, 0), 0.15 * k, "hero_skin", 10, 8)]
+    head = uv_sphere("head_mesh", H, HEAD_R, "hero_skin", FACE_SEGS, FACE_RINGS)
+    parts = [head]
     for s, side in ((1, "L"), (-1, "R")):
         # small rounded human ear, flat against the side of the head, tilted slightly back
         parts.append(lib.ico(f"ear.{side}", H + Vector((-0.012, s * (HEAD_R - 0.006), -0.012)), 1.0, "hero_skin", 1,
                              scale=(0.026, 0.011, 0.038), rot=Quaternion(Y, math.radians(-12)).to_matrix()))
         parts.append(lib.box(f"eye.{side}", old(0.145, 0.5, s * 0.055), (0.01 * k, 0.0125 * k, 0.02 * k), "hero_eye"))
+
+    def tree():
+        return BVHTree.FromPolygons([v.co.copy() for v in head.data.vertices],
+                                    [list(p.vertices) for p in head.data.polygons])
+
+    def surface_x(t, c):
+        return t.ray_cast(Vector((H.x, c.y, c.z)), X)[0].x
+
+    # the eyes keep how far they stand out of the face: measure on the sphere, sculpt, set them back on the face
+    eyes = [o for o in parts if o.name.startswith("eye")]
+    centre = {o.name: sum((v.co for v in o.data.vertices), Vector()) / len(o.data.vertices) for o in eyes}
+    t = tree()
+    stand = {o.name: centre[o.name].x - surface_x(t, centre[o.name]) for o in eyes}
+    for v in head.data.vertices:
+        v.co = _sculpt_face(v.co)
+    head.data.update()
+    t = tree()
+    for o in eyes:
+        c = centre[o.name]
+        dx = surface_x(t, c) + stand[o.name] - c.x
+        for v in o.data.vertices:
+            v.co.x += dx
+        o.data.update()
+    for o in parts:  # the narrowing moves the eyes and ears with the face
+        for v in o.data.vertices:
+            v.co = _narrow_face(v.co)
+        o.data.update()
     return parts
 
 
@@ -355,7 +470,6 @@ def build_head():
 #   (name, exit (azimuth, elevation), end (azimuth, elevation), width, taper exponent,
 #    centre depth relative to the scalp in thicknesses (negative = sunk in), tip flick outward)
 #   azimuth 0 = forward, +90 = the hero's left; elevation 90 = straight up.
-HEAD_R = 0.15 * HEAD_K
 EAR_TOP = 0.028  # top of the ears above the head centre: locks that would hide an ear are cut level here
 LOCK_RATIO = 2.0  # width : thickness, never flatter than this
 TAIL_TAPER = 2.5  # how a tail closes toward its back point (1 = straight sides, larger = fuller)

@@ -38,22 +38,19 @@ DEPTH = 0.7  # the trunk's front-to-back depth relative to THICK (a flatter, les
 H = Vector((0.0, 0.0, 0.555))  # head centre
 # The backpack: cloak cloth, low on the back below the head (so it shows from the camera behind), on a leather strap
 # from the left shoulder across the chest to the right hip (the scabbard crosses the back the other way). The cloak and
-# hood are folded away in it. In the "cloak" clip its flap (bone "bag_flap", hinged at the top) flips open, and the bag
-# (bone "bag") shrinks away, flap and all, as the hood swells out of it about the bag's centre (HOOD_PIVOT).
+# hood are folded away in it. In the "cloak" clip the bag (bone "bag") shrinks away as the hood swells out of it about
+# the bag's centre (HOOD_PIVOT).
 # The bag is built in its own frame: `a` up its flat back, `d` out from it, `y` across. The back lies on the tunic,
 # which slopes in toward the shoulders (pear-shaped trunk), so the frame leans in by BAG_LEAN.
 BAG_LEAN = 24
 BAG_UP = Vector((math.sin(math.radians(BAG_LEAN)), 0, math.cos(math.radians(BAG_LEAN))))
 BAG_OUT = Vector((-math.cos(math.radians(BAG_LEAN)), 0, math.sin(math.radians(BAG_LEAN))))
 BAG_BASE = Vector((-0.124, 0.0, 0.232))  # bottom of the flat back, just clear of the tunic
-# The body, bottom to top: (a, half-width, depth). Thin at the top, thick and round at the bottom.
-BAG_RINGS = [(0.0, 0.062, 0.054), (0.012, 0.072, 0.068), (0.035, 0.075, 0.072), (0.07, 0.074, 0.06),
-             (0.11, 0.07, 0.042), (0.14, 0.066, 0.026), (0.15, 0.06, 0.02)]
+# The body, bottom to top: (a, half-width, depth). Thick and round at the bottom; above the middle it narrows both ways
+# toward a gathered top, like a drawstring pouch (without the opening).
+BAG_RINGS = [(0.0, 0.062, 0.054), (0.012, 0.072, 0.068), (0.035, 0.075, 0.072), (0.07, 0.068, 0.06),
+             (0.11, 0.054, 0.042), (0.14, 0.041, 0.026), (0.15, 0.036, 0.02)]
 BAG_TOP = 0.153
-# The flap: over the top and down the outside to its free edge, which slants from FLAP_EDGE[0] high on the left to
-# FLAP_EDGE[1] low on the right (heights `a`), a round button at its middle.
-FLAP_EDGE = (0.098, 0.074)
-FLAP_OFF = 0.004  # how far the flap stands off the body
 
 
 def bag_point(d, y, a):
@@ -62,7 +59,6 @@ def bag_point(d, y, a):
 
 
 BAG_C = bag_point(0.032, 0, 0.06)  # the middle of the bag's bulk
-FLAP_HINGE = bag_point(FLAP_OFF, 0, BAG_TOP)  # top of the bag, back edge
 STRAP_TILT = 45   # the strap's slant from the vertical (degrees), up toward the left shoulder
 STRAP_C = Vector((0.0, 0.0, 0.31))    # the strap rings the trunk in the plane through here holding X and the slant
 STRAP_W = 0.018
@@ -71,9 +67,9 @@ PRONE = 60  # forward pitch (degrees) of the whole body lying on the troll's bac
 
 # Outfit variants: the game shows the listed parts and hides every other part named here.
 VARIANTS = {
-    "plain": ["hair_full", "bag", "bag_flap", "strap"],
+    "plain": ["hair_full", "bag", "strap"],
     "hooded": ["hair_hood", "hood", "cape", "clasp"],
-    "cloaking": ["hair_full", "hood", "cape", "clasp", "bag", "bag_flap", "strap"],
+    "cloaking": ["hair_full", "hood", "cape", "clasp", "bag", "strap"],
 }
 
 
@@ -859,17 +855,6 @@ def build_cape():
     return cloak, clasp
 
 
-def _bag_size(a):
-    """(half-width, depth) of the bag's body at height `a`, linear between BAG_RINGS."""
-    rings = BAG_RINGS
-    a = min(max(a, rings[0][0]), rings[-1][0])
-    for (a0, w0, d0), (a1, w1, d1) in zip(rings, rings[1:]):
-        if a <= a1:
-            t = (a - a0) / (a1 - a0)
-            return w0 + (w1 - w0) * t, d0 + (d1 - d0) * t
-    return rings[-1][1:]
-
-
 def build_bag():
     """The backpack's body: rounded-rectangle rings (a superellipse) on the flat back, from the bottom up to the top."""
     sides, e = 12, 0.4  # e < 1 squares the rings off
@@ -886,28 +871,6 @@ def build_bag():
     rings = [ring(*r) for r in BAG_RINGS]
     return lib.loft("bag", rings, "hero_cape", tip=bag_point(BAG_RINGS[-1][2] / 2, 0, BAG_TOP),
                     start=bag_point(BAG_RINGS[0][2] / 2, 0, 0))
-
-
-def build_bag_flap(cols=7):
-    """The flap: a sheet over the top and down the outside to a slanting edge, and its round button."""
-    top_w, top_d = _bag_size(BAG_RINGS[-1][0])
-    over = [(FLAP_OFF, BAG_TOP + FLAP_OFF), (top_d / 2, BAG_TOP + FLAP_OFF + 0.002), (top_d + FLAP_OFF, BAG_TOP)]
-    side = [0.13, 0.115]  # down the outside, before the slanting part
-    rows = len(over) + len(side) + 2
-    verts = []
-    for c in range(cols):
-        t = -1 + 2 * c / (cols - 1)  # -1 right side .. 1 left side
-        edge = FLAP_EDGE[1] + (FLAP_EDGE[0] - FLAP_EDGE[1]) * (t + 1) / 2
-        path = over + [(_bag_size(a)[1] + FLAP_OFF, a) for a in side + [side[-1] + (edge - side[-1]) * k / 2 for k in (1, 2)]]
-        for d, a in path:
-            verts.append(bag_point(d, t * (_bag_size(a)[0] + FLAP_OFF), a))
-    faces = [(c * rows + r, c * rows + r + 1, (c + 1) * rows + r + 1, (c + 1) * rows + r)
-             for c in range(cols - 1) for r in range(rows - 1)]
-    flap = lib.mesh_from("bag_flap", verts, faces, "hero_cape")
-    a = sum(FLAP_EDGE) / 2 + 0.01
-    button = lib.ico("bag_button", bag_point(_bag_size(a)[1] + FLAP_OFF + 0.002, 0, a), 0.009, "hero_buckle", 1,
-                     scale=(0.5, 1, 1))
-    return lib.join("bag_flap", [flap, button])
 
 
 def build_strap(surfaces, steps=36):
@@ -1022,7 +985,6 @@ def build_rig():
         ("sword.back", (-0.1, -0.08, 0.42), (-0.12, -0.03, 0.33), "chest"),
         ("hood", tuple(HOOD_PIVOT), tuple(HOOD_PIVOT + Vector((0, 0, 0.15))), "head"),
         ("bag", tuple(BAG_C), tuple(BAG_C + Vector((0, 0, 0.08))), "chest"),
-        ("bag_flap", tuple(FLAP_HINGE), tuple(FLAP_HINGE + Vector((0, 0, 0.05))), "bag"),
     ]
     for s, side in ((1, "L"), (-1, "R")):
         P = lambda n: tuple(L(n, s))
@@ -1036,7 +998,7 @@ def build_rig():
         ]
     b.append(("sword.R", tuple(SWORD_GRIP), tuple(SWORD_GRIP + SWORD_DIR * 0.1), "hand.R"))
     rig = lib.armature("hero_rig", b)
-    for n in ("sword.R", "sword.back", "hood", "bag", "bag_flap"):
+    for n in ("sword.R", "sword.back", "hood", "bag"):
         rig.data.bones[n].use_deform = False  # prop holders only: automatic skinning must not use them
     return rig
 
@@ -1158,28 +1120,28 @@ def build_actions(rig, grab):
 
     lib.action(rig, "crouch_walk", sword({f: crouch_walk((f - 1) / 24) for f in range(1, 26, 3)}))
 
-    # cloak (9 frames, 0.375 s): the backpack turning into the cloak as the hero crouches on the surface. The game does
+    # cloak (8 frames, 0.33 s): the backpack turning into the cloak as the hero crouches on the surface. The game does
     # not play it: it scrubs it by a 0-1 progress and takes only some bones from it (view.ts), over whatever the hero
     # is doing. Off, the cloak (cape.1 shrunk about its root) and the hood (shrunk, turned so it lies straight out
     # behind the bag's centre) are inside the bag. The right hand reaches over the shoulder to the bag (the sword's
-    # grab pose) and flips the flap open; the bag shrinks away, flap and all, as the hood swells out of it and the
-    # cloak unrolls down the back; the hand pulls the hood over the head, and lets go.
+    # grab pose); the bag shrinks away as the hood swells out of it and the cloak unrolls down the back; the hand pulls
+    # the hood over the head, and lets go.
     hidden = lib.HIDDEN_SCALE
     out = -120  # the hood's turn that puts it straight out behind the bag
     lift = {"upper_arm.R": [(Y, -175), (X, -20)], "forearm.R": [(Y, -70)]}
     pull = {"upper_arm.R": [(Y, -135), (X, -15)], "forearm.R": [(Y, -95)]}
 
-    def cloak(cape, hood, fold, bag, flap, arm=None):
-        return dict(idle(0), **{"cape.1": [(Y, -6)], "hood": [(Y, hood)], "bag_flap": [(Y, flap)],
+    def cloak(cape, hood, fold, bag, arm=None):
+        return dict(idle(0), **{"cape.1": [(Y, -6)], "hood": [(Y, hood)],
                                  "_scale": {"cape.1": cape, "hood": fold, "bag": bag}}, **(arm or {}))
 
     lib.action(rig, "cloak", sword({
-        1: cloak(hidden, out, hidden, 1.0, 0),
-        3: cloak(hidden, out, hidden, 1.0, 95, grab),
-        5: cloak(0.15, out, 0.6, 0.35, 95, grab),
-        6: cloak(0.4, out + 5, 0.9, hidden, 95, lift),
-        8: cloak(1.05, -12, 1.0, hidden, 95, pull),
-        10: cloak(1.0, 0, 1.0, hidden, 95),
+        1: cloak(hidden, out, hidden, 1.0),
+        3: cloak(hidden, out, hidden, 1.0, grab),
+        4: cloak(0.15, out, 0.6, 0.35, grab),
+        5: cloak(0.4, out + 5, 0.9, hidden, lift),
+        7: cloak(1.05, -12, 1.0, hidden, pull),
+        9: cloak(1.0, 0, 1.0, hidden),
     }), stepped_scale=False)
 
     # takedown (1.75 s): the game moves the root along the leap onto the troll's back and off again
@@ -1256,7 +1218,7 @@ def build(out_glb, out_preview):
         "hood": build_hood(),
     }
     parts["cape"], parts["clasp"] = build_cape()
-    parts["bag"], parts["bag_flap"] = build_bag(), build_bag_flap()
+    parts["bag"] = build_bag()
     parts["strap"] = build_strap([body, clothes[0]])
     held, sheathed = build_sword(""), build_sword("_back")
     scabbard = build_scabbard()
@@ -1276,7 +1238,6 @@ def build(out_glb, out_preview):
         lib.attach(parts[name], rig, "head")
     lib.attach(parts["hood"], rig, "hood")
     lib.attach(parts["bag"], rig, "bag")
-    lib.attach(parts["bag_flap"], rig, "bag_flap")
     # rigid on the trunk: no arm or thigh swing may tug it
     lib.weight_chain(parts["strap"], rig, [("chest", 0.37), ("spine", 0.3), ("hips", 0.22)])
     lib.attach(parts["clasp"], rig, "chest")
@@ -1295,7 +1256,7 @@ def build(out_glb, out_preview):
 
     poses = [("idle", 1), ("run", 1), ("run", 4), ("run", 7), ("run", 10), ("attack", 3),
              ("attack", 5), ("attack", 9), ("attack", 15), ("crouch", 1), ("crouch_walk", 1), ("crouch_walk", 7), ("crouch_walk", 13),
-             ("cloak", 1), ("cloak", 3), ("cloak", 5), ("cloak", 8), ("cloak", 10),
+             ("cloak", 1), ("cloak", 3), ("cloak", 4), ("cloak", 7), ("cloak", 9),
              ("takedown", 6), ("takedown", 7), ("takedown", 10), ("takedown", 15), ("takedown", 19), ("takedown", 29), ("takedown", 30), ("takedown", 34),
              ("takedown", 35), ("takedown", 37), ("takedown", 38), ("takedown", 41)]
     for variant, shown in VARIANTS.items():
@@ -1305,7 +1266,7 @@ def build(out_glb, out_preview):
             # a passing state of the "cloak" clip: the cloak coming out of the bag, from its right side
             lib.set_pose(rig, {"_hide": SHEATHED})
             lib.pose_sheet(rig, out_preview.replace(".png", "_cloak.png"), HEIGHT,
-                           [("cloak", f) for f in range(1, 11)], cols=10, view=(0, -1, 0.15))
+                           [("cloak", f) for f in range(1, 10)], cols=9, view=(0, -1, 0.15))
             continue
         suffix = "" if variant == "plain" else f"_{variant}"
         lib.set_pose(rig, {"_hide": SHEATHED})  # the previews show the rest pose: sword on the back

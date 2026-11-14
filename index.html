@@ -23,6 +23,7 @@
       #briefing .station { position: absolute; transform: translateX(-50%); text-align: center; white-space: nowrap; }
       #briefing .station.side { transform: translateY(-50%); text-align: left; }
       #briefing .how { display: block; margin-top: 6px; opacity: .8; font-size: 20px; }
+      #briefing .pair { display: flex; gap: 40px; justify-content: center; }
       #briefing kbd { display: inline-block; min-width: 2.4em; padding: 3px 10px 5px; font: inherit; color: #22160a;
         background: var(--ink); border-radius: 3px; box-shadow: inset 0 -3px 0 #b8a88a, 2px 2px 0 #000; text-shadow: none; }
       #briefing .start { position: absolute; left: 0; right: 0; bottom: 8%; text-align: center; opacity: .75;
@@ -42,15 +43,15 @@
     <a class="editor" href="./editor.html">編輯器</a>
     <div id="briefing" hidden>
       <div class="page">
-        <div class="station"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd><span class="how">移動（以鏡頭方向為準）</span></div>
+        <div class="station"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd><span class="how">Move</span></div>
       </div>
       <div class="page" hidden>
-        <div class="station"><kbd>Space</kbd><span class="how">Ambush the Troll</span><span class="how">Toggle the Lever</span></div>
+        <div class="station"><kbd>Space</kbd><span class="pair"><span class="how">Ambush the Troll</span><span class="how">Toggle the Lever</span></span></div>
       </div>
       <div class="page" hidden>
-        <div class="station side"><kbd>Shift</kbd><span class="how">Hold to Sneak</span><span class="how">Press to SHIFT</span></div>
+        <div class="station side"><kbd>Shift</kbd><span class="how">Press to SHIFT</span><span class="how">Hold to Sneak</span></div>
       </div>
-      <div class="start">按任意鍵繼續</div>
+      <div class="start">Press to Continue</div>
     </div>
     <div id="ending" hidden><span class="escaped">ESCAPED</span><span class="thanks">thanks for playing</span></div>
     <div id="fade"></div>

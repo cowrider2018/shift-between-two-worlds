@@ -130,17 +130,13 @@ function showBriefing(): void {
   el.hidden = false;
   view.resize();
   const pages = [...el.querySelectorAll<HTMLElement>('.page')];
-  const hint = el.querySelector<HTMLElement>('.start')!;
   const b = new Briefing(view.pipeline, pages, pages.map((p) => [...p.querySelectorAll<HTMLElement>('.station')]));
   briefing = b;
   // the first page fades in from black too
   fade = { t: FADE_OUT, atBlack: null };
   const swap = () => {
     input.take();
-    if (b.next()) {
-      if (pages.at(-1)?.hidden === false) hint.textContent = '按任意鍵開始';
-      return;
-    }
+    if (b.next()) return;
     removeEventListener('keyup', turn);
     removeEventListener('mousedown', turn);
     el.hidden = true;

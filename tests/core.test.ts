@@ -6,10 +6,11 @@ import { LevelGrid, castRay } from '../src/core/grid';
 import { isOuterRock } from '../src/render/terrain';
 import { createEmptyLevel, parseLevel, serializeLevel, setCell, setProp, type Level } from '../src/core/level';
 import { NO_INPUT, Sim, TUNING, type SimInput } from '../src/core/sim';
+import { ORDER_FILE } from '../src/core/order';
 import { validateLevel } from '../src/core/validate';
 
 const levelsDir = resolve(import.meta.dirname, '..', 'levels');
-const levelFiles = readdirSync(levelsDir).filter((f) => f.endsWith('.json'));
+const levelFiles = readdirSync(levelsDir).filter((f) => f.endsWith('.json') && f !== ORDER_FILE);
 const load = (f: string) => readFileSync(join(levelsDir, f), 'utf8').replace(/\r\n/g, '\n');
 const level01 = () => parseLevel(JSON.parse(load('level01.json'))).level!;
 

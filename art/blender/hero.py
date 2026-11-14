@@ -344,14 +344,21 @@ def old_cone(name, centre3, dir3, radius, height, mat):
 # - Below the cheek slice the slices are pushed out so their gaps to it halve (a full lower face); under the jaw
 #   the underside closes back in to the neck: a square corner at the chin, a wide arc at the back of the jaw.
 # - The lower face narrows by scaling its width, none at eye level, FACE_NARROW from the jaw down.
-# - A brow shelf across the face, a straight nose bridge, soft cheekbones.
+# - The brow: above it the face runs on into the skull; below it the upper face is set back, deepest just under the
+#   brow and tilting forward again down to FACE_SET_TO, so the depth spreads evenly over the eyes and cheeks. The
+#   nose (bridge up to the brow, and tip) stays where it was, standing out of the set-back face.
+# - A straight nose bridge, soft cheekbones.
 # The front keeps the full shapes; past FACE_SIDE_FROM the sides take softer ones (FACE_SIDE) so the cheeks and
 # temples stay smooth. The back of the skull and the nape keep their round.
 FACE_SEGS, FACE_RINGS = 32, 22
 FACE_NARROW = 0.10
 FACE_SIDE_FROM = math.radians(45)
-FACE_FRONT = dict(f=0.56, F=0.96, pw=8, cheek=0.006, cz=0.022, ca=0.3, bw=1.2, ba=0.024, bs=0.005, bz=0.013)
-FACE_SIDE = dict(pw=5, cheek=0.002, cz=0.038, ca=0.52, ba=0.017, bs=0.002, bz=0.022)
+FACE_FRONT = dict(f=0.56, F=0.96, pw=8, cheek=0.006, cz=0.022, ca=0.3)
+FACE_SIDE = dict(pw=5, cheek=0.002, cz=0.038, ca=0.52)
+FACE_SET_BACK = 0.02     # how far the upper face is set back just under the brow
+FACE_SET_EDGE = 0.016    # the brow's edge: the set-back is full this far under it
+FACE_SET_TO = -0.05      # the set-back has tilted out to nothing by here (the nose tip, the cheeks' lower edge)
+FACE_SET_WIDE = 1.1      # its reach round the face (radians from straight ahead)
 FACE_NOSE = (0.8, 0.027)       # bridge height as a share of the tip's; the tip's height
 FACE_TRAP_FROM = 0.03           # the trapezoid starts here (above the eyes) and is full 0.1 lower
 FACE_JAW_BACK = -0.07           # where the underside starts closing at the back of the jaw (the arc)
@@ -405,10 +412,11 @@ def _sculpt_face(co):
         out.x, out.y = x / rho * r_new, y / rho * r_new
     # cheekbones: a soft swell on the front corners of the trapezoid, just under the eyes
     out += radial * (o["cheek"] * math.exp(-((ap - 0.75) / o["ca"]) ** 2) * math.exp(-((z + 0.025) / o["cz"]) ** 2))
-    # brow: a shelf across the face, pushed out along the slice so it wraps round toward the temples
-    band = math.exp(-((z - FACE_BROW_Z) / o["bz"]) ** 2) * math.exp(-(phi / o["bw"]) ** 4)
-    out += radial * (o["ba"] * band)
-    out.z -= o["bs"] * band
+    # brow: under it the upper face is set back and tilts out again toward FACE_SET_TO; the nose's midline stays
+    edge = FACE_BROW_Z - FACE_SET_EDGE
+    tilt = max(0.0, min(1.0, (z - FACE_SET_TO) / (edge - FACE_SET_TO)))
+    nose = math.exp(-(y / 0.028) ** 2) * ss(FACE_SET_TO, FACE_SET_TO + 0.02, z) if x > 0 else 0.0
+    out.x -= FACE_SET_BACK * ss(FACE_BROW_Z, edge, z) * tilt * math.exp(-(phi / FACE_SET_WIDE) ** 4) * (1 - nose)
     # nose: a straight ridge on the midline from between the eyes, highest at the tip, cut off under it
     if x > 0:
         bridge, tip = FACE_NOSE
@@ -463,9 +471,13 @@ def build_head():
     def surface_x(t, c):
         return t.ray_cast(Vector((H.x, c.y, c.z)), X)[0].x
 
-    # the eyes keep how far they stand out of the face: measure on the sphere, sculpt, set them back on the face
+    # the eyes keep how far their front stands out of the face: measured at the centre on the sphere; on the
+    # sculpted face (which tilts and curves under them) set against the furthest-forward point under the front face,
+    # so no corner sinks into it
     eyes = [o for o in parts if o.name.startswith("eye")]
-    centre = {o.name: sum((v.co for v in o.data.vertices), Vector()) / len(o.data.vertices) for o in eyes}
+    front = {o.name: [v.co.copy() for v in o.data.vertices if v.co.x > H.x + HEAD_R * 0.8 and
+                      v.co.x >= max(w.co.x for w in o.data.vertices) - 1e-6] for o in eyes}
+    centre = {o.name: sum(front[o.name], Vector()) / len(front[o.name]) for o in eyes}
     t = tree()
     stand = {o.name: centre[o.name].x - surface_x(t, centre[o.name]) for o in eyes}
     for v in head.data.vertices:
@@ -474,7 +486,8 @@ def build_head():
     t = tree()
     for o in eyes:
         c = centre[o.name]
-        dx = surface_x(t, c) + stand[o.name] - c.x
+        under = max(surface_x(t, p) for p in front[o.name] + [c])
+        dx = under + stand[o.name] - c.x
         for v in o.data.vertices:
             v.co.x += dx
         o.data.update()

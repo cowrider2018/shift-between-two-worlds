@@ -25,11 +25,10 @@ let last = performance.now();
 const CAUGHT_HOLD = 0.9;
 /** -1: not caught; 0: caught, bonk still playing; >0: counting down to restart. */
 let caughtT = -1;
-/** After a win: seconds to show 「通關」, then fade to black, swap in the next level, and fade back in. */
-const CLEAR_HOLD = 1.2;
+/** On a win the screen fades to black at once, the next level loads, and it fades back in. */
 const FADE_OUT = 0.6;
 const FADE_IN = 0.6;
-/** Time since the win (-1: none pending). Runs through hold → fade out → (next level) → fade in. */
+/** Time since the win (-1: none pending). Runs through fade out → (next level) → fade in. */
 let clearT = -1;
 
 function start(index: number): void {
@@ -39,12 +38,6 @@ function start(index: number): void {
   sim = new Sim(level);
   view.setSim(sim);
   caughtT = -1;
-  $('cleared').hidden = true;
-  $('cleared').textContent = '通關';
-}
-
-function hasNext(): boolean {
-  return levelIndex + 1 < levels.length;
 }
 
 /** Advance the win → next-level transition; returns the black overlay's opacity. */
@@ -52,33 +45,24 @@ function stepClear(dt: number): number {
   if (clearT < 0) return 0;
   const before = clearT;
   clearT += dt;
-  const swapAt = CLEAR_HOLD + FADE_OUT;
-  if (before < swapAt && clearT >= swapAt) start(levelIndex + 1);
-  if (clearT >= swapAt + FADE_IN) {
+  if (before < FADE_OUT && clearT >= FADE_OUT) start(levelIndex + 1);
+  if (clearT >= FADE_OUT + FADE_IN) {
     clearT = -1;
     return 0;
   }
-  if (clearT < CLEAR_HOLD) return 0;
-  return clearT < swapAt ? (clearT - CLEAR_HOLD) / FADE_OUT : 1 - (clearT - swapAt) / FADE_IN;
+  return clearT < FADE_OUT ? clearT / FADE_OUT : 1 - (clearT - FADE_OUT) / FADE_IN;
 }
 
 function handle(events: SimEvent[]): void {
   // the restart countdown waits until the monster has bonked the hero (view.catchFinished)
   if (events.some((e) => e.type === 'caught')) caughtT = 0;
-  if (events.some((e) => e.type === 'won')) {
-    $('cleared').hidden = false;
-    if (hasNext()) clearT = 0;
-    else $('cleared').textContent = levels.length > 1 ? '全部通關' : '通關';
-  }
+  // the last level has no transition: an ending sequence will go here
+  if (events.some((e) => e.type === 'won') && levelIndex + 1 < levels.length) clearT = 0;
   view.onEvents(events);
 }
 
 input.onKey.set('KeyR', () => {
   if (clearT < 0) start(levelIndex);
-});
-// Enter skips the 「通關」 hold and starts the fade right away
-input.onKey.set('Enter', () => {
-  if (clearT >= 0 && clearT < CLEAR_HOLD) clearT = CLEAR_HOLD;
 });
 
 function loop(now: number): void {

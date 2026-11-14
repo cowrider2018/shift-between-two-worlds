@@ -167,10 +167,60 @@ def build_tunic():
     for s in (1, -1):
         a.ell((-0.05 * _D / 1.5, 0.042 * s, 0.2), (0.062 * _D / 1.5 + m, 0.056 + m, 0.064), "hero_tunic")
         a.ell(L("shoulder", s) + Vector((0, -0.006 * s, -0.004)), (0.03, 0.03, 0.026), "hero_tunic")  # shoulder
-    a.ell((0.012, 0, 0.25), wide((0.1, 0.099, 0.017), 0.9) + Vector((m, m, 0)), "hero_belt")         # belt band
-    a.ell((0.012 + 0.1 * _D + m, 0, 0.25), (0.01, 0.022, 0.019), "hero_buckle")                       # buckle
     a.subtract((0, 0, HEM_Z - 1.0), (1.5, 1.5, 1.0))   # the hem: a level cut edge over the trousers
     return a.build(target_tris=TUNIC_TRIS, voxel=0.006)
+
+
+# The belt is its own band laid on the tunic (painted into the tunic's surface, its edges followed the triangles and
+# came out jagged): a rectangular section BELT_H tall and BELT_T thick, round the waist at BELT_Z, with a buckle.
+BELT_Z = 0.25
+BELT_H = 0.024
+BELT_T = 0.008
+
+
+def build_belt(tunic, steps=32):
+    """The belt band on `tunic` (cast onto it at its top and bottom edges, so it follows the waist) and its buckle."""
+    from mathutils.bvhtree import BVHTree
+    tree = BVHTree.FromObject(tunic, bpy.context.evaluated_depsgraph_get())
+    verts = []
+    for i in range(steps):
+        a = 2 * math.pi * i / steps
+        ray = Vector((math.cos(a), math.sin(a), 0))
+        for z in (BELT_Z + BELT_H / 2, BELT_Z - BELT_H / 2):
+            hit = tree.ray_cast(Vector((0, 0, z)), ray)[0]
+            verts += [hit - ray * 0.002, hit + ray * BELT_T]  # just inside the cloth, and out to the belt's face
+    # per station: 0 inner top, 1 outer top, 2 inner bottom, 3 outer bottom; walk the section round 0-1-3-2
+    loop = (0, 1, 3, 2)
+    faces = []
+    for i in range(steps):
+        j = (i + 1) % steps
+        for k in range(4):
+            a_, b_ = loop[k], loop[(k + 1) % 4]
+            faces.append((4 * i + a_, 4 * i + b_, 4 * j + b_, 4 * j + a_))
+    band = lib.mesh_from("belt", verts, faces, "hero_belt", recalc=True)
+    front = tree.ray_cast(Vector((0, 0, BELT_Z)), X)[0] + X * BELT_T
+    buckle = lib.box("belt_buckle", front + X * 0.003, (0.004, 0.02, BELT_H / 2 + 0.003), "hero_buckle")
+    return lib.join("belt", [band, buckle])
+
+
+def _copy_weights(src, dst):
+    """Skin `dst` like `src`: each vertex takes the weights of the nearest vertex of `src` (already skinned)."""
+    from mathutils.kdtree import KDTree
+    kd = KDTree(len(src.data.vertices))
+    for v in src.data.vertices:
+        kd.insert(src.matrix_world @ v.co, v.index)
+    kd.balance()
+    names = {g.index: g.name for g in src.vertex_groups}
+    groups = {}
+    for v in dst.data.vertices:
+        _, near, _ = kd.find(dst.matrix_world @ v.co)
+        for g in src.data.vertices[near].groups:
+            name = names[g.group]
+            if name not in groups:
+                groups[name] = dst.vertex_groups.new(name=name)
+            groups[name].add([v.index], g.weight, "REPLACE")
+    dst.parent = src.parent
+    dst.modifiers.new("armature", "ARMATURE").object = src.parent
 
 
 # Automatic skinning spreads the body and clothes over bones that should not move them:
@@ -1199,6 +1249,7 @@ def build(out_glb, out_preview):
     lib.reset()
     body = build_body()
     clothes = [build_tunic(), build_sleeves(), build_boots()]
+    belt = build_belt(clothes[0])
     parts = {
         "hair_full": build_hair("hair_full"),
         "hair_hood": build_hooded_hair("hair_hood"),
@@ -1216,6 +1267,8 @@ def build(out_glb, out_preview):
         if obj is not body:
             lib.skin(obj, rig)
         _clean_weights(obj)
+    _copy_weights(clothes[0], belt)
+    clothes.append(belt)
     for obj in head_parts:
         lib.attach(obj, rig, "head")
     lib.weight_chain(parts["cape"], rig, [("chest", 0.4), ("cape.1", 0.26), ("cape.2", 0.065)])

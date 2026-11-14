@@ -7,6 +7,7 @@ Outfits are modular parts on one skeleton (see VARIANTS):
   plain  — the five-lock hair, no cape, no hood
   hooded — close hood with a small peak above the back of the head, full-body cloak, clasp, and the hair cut
            to what fits inside the hood (it still shows in the face opening)
+  cloaking — the cloak going on (the "cloak" clip): hood and cloak with the full hair, before the hood is over it
 The bulky locks cannot sit under a hood whole, so the hair itself is a swappable part.
 
 Faces +X, feet on z = 0, ~0.84 tiles tall. Right hand = -Y.
@@ -41,6 +42,7 @@ PRONE = 60  # forward pitch (degrees) of the whole body lying on the troll's bac
 VARIANTS = {
     "plain": ["hair_full"],
     "hooded": ["hair_hood", "hood", "cape", "clasp"],
+    "cloaking": ["hair_full", "hood", "cape", "clasp"],
 }
 
 
@@ -610,6 +612,8 @@ HOOD_UNDER = [(0.16, -0.2), (0.0, -0.22), (-0.1, -0.2), (-0.19, -0.155), (-0.215
               (-0.275, 0.04), HOOD_PEAK]
 HOOD_WIDTH = [(0.16, 0.175), (0.02, 0.21), (-0.1, 0.2), (-0.17, 0.17), (-0.22, 0.12), (-0.27, 0.06), (HOOD_PEAK[0], 0.0)]
 HOOD_SIDES = 12
+# The hood folds back about the nape (bone "hood") when it is down on the shoulders, during the "cloak" clip.
+HOOD_PIVOT = h(-0.12, 0, -0.135)
 # Ring positions (x): dense where the underside turns.
 HOOD_SLICES = [0.16, 0.1, 0.03, -0.04, -0.1, -0.15, -0.185, -0.205, -0.225, -0.245, -0.265, -0.285]
 # Behind the face opening and in front of the turn, the lower sides of the hood are drawn down to the collar, so the
@@ -857,6 +861,7 @@ def build_rig():
         ("cape.1", (-0.08, 0, 0.4), (-0.12, 0, 0.24), "chest"),
         ("cape.2", (-0.12, 0, 0.24), (-0.145, 0, 0.065), "cape.1"),
         ("sword.back", (-0.1, -0.08, 0.42), (-0.12, -0.03, 0.33), "chest"),
+        ("hood", tuple(HOOD_PIVOT), tuple(HOOD_PIVOT + Vector((0, 0, 0.15))), "head"),
     ]
     for s, side in ((1, "L"), (-1, "R")):
         P = lambda n: tuple(L(n, s))
@@ -870,7 +875,7 @@ def build_rig():
         ]
     b.append(("sword.R", tuple(SWORD_GRIP), tuple(SWORD_GRIP + SWORD_DIR * 0.1), "hand.R"))
     rig = lib.armature("hero_rig", b)
-    for n in ("sword.R", "sword.back"):
+    for n in ("sword.R", "sword.back", "hood"):
         rig.data.bones[n].use_deform = False  # prop holders only: automatic skinning must not use them
     return rig
 
@@ -992,6 +997,23 @@ def build_actions(rig, grab):
 
     lib.action(rig, "crouch_walk", sword({f: crouch_walk((f - 1) / 24) for f in range(1, 26, 3)}))
 
+    # cloak (8 frames, 0.33 s): the cloak and hood going on as the hero crouches on the surface. The game does not play
+    # it: it scrubs it by a 0-1 progress and takes only CLOAK_BONES from it (view.ts), over whatever the hero is doing.
+    # Off, the cloak is a roll at the back of the collar (cape.1 shrunk about its root) and the hood lies folded back on
+    # the shoulders. The right hand reaches over the shoulder onto the hood's rim (the sword's grab pose), the cloak
+    # unrolls down the back, the hand pulls the hood forward over the head, and lets go as the hem settles.
+    def cloak(cape, hood, fold, arm=None):
+        return dict(idle(0), **{"cape.1": [(Y, -6)], "hood": [(Y, hood)], "_scale": {"cape.1": cape, "hood": fold}},
+                    **(arm or {}))
+
+    lib.action(rig, "cloak", sword({
+        1: cloak(0.25, -150, 0.55),
+        3: cloak(0.35, -145, 0.6, grab),
+        5: cloak(0.75, -95, 0.85, {"upper_arm.R": [(Y, -175), (X, -20)], "forearm.R": [(Y, -70)]}),
+        7: cloak(1.05, -12, 1.0, {"upper_arm.R": [(Y, -135), (X, -15)], "forearm.R": [(Y, -95)]}),
+        9: cloak(1.0, 0, 1.0),
+    }), stepped_scale=False)
+
     # takedown (1.75 s): the game moves the root along the leap onto the troll's back and off again
     # (view.ts TAKEDOWN); the clip poses the body. coil -> tuck in the air, the sword drawn off the back -> land lying on the troll's back, left
     # hand clamps its brow, blade goes straight round to its throat -> ride out its thrashing with the blade held
@@ -1077,8 +1099,9 @@ def build(out_glb, out_preview):
     for obj in head_parts:
         lib.attach(obj, rig, "head")
     lib.weight_chain(parts["cape"], rig, [("chest", 0.4), ("cape.1", 0.26), ("cape.2", 0.065)])
-    for name in ("hair_full", "hair_hood", "hood"):
+    for name in ("hair_full", "hair_hood"):
         lib.attach(parts[name], rig, "head")
+    lib.attach(parts["hood"], rig, "hood")
     lib.attach(parts["clasp"], rig, "chest")
     grab, to_back = solve_grab(rig)
     for obj in sheathed + [scabbard]:
@@ -1095,9 +1118,12 @@ def build(out_glb, out_preview):
 
     poses = [("idle", 1), ("run", 1), ("run", 4), ("run", 7), ("run", 10), ("attack", 3),
              ("attack", 5), ("attack", 9), ("attack", 15), ("crouch", 1), ("crouch_walk", 1), ("crouch_walk", 7), ("crouch_walk", 13),
+             ("cloak", 1), ("cloak", 3), ("cloak", 5), ("cloak", 7), ("cloak", 9),
              ("takedown", 6), ("takedown", 7), ("takedown", 10), ("takedown", 15), ("takedown", 19), ("takedown", 29), ("takedown", 30), ("takedown", 34),
              ("takedown", 35), ("takedown", 37), ("takedown", 38), ("takedown", 41)]
     for variant, shown in VARIANTS.items():
+        if variant == "cloaking":
+            continue  # a passing state of the "cloak" clip, shown in the hooded pose sheet
         for name, obj in parts.items():
             obj.hide_render = name not in shown
         suffix = "" if variant == "plain" else f"_{variant}"
@@ -1111,4 +1137,8 @@ def build(out_glb, out_preview):
                            [("run", f) for f in range(1, 13, 2)], view=(0, -1, 0.1))
             # from behind: the sword on the back, drawn in the leap, put back in the flip
             lib.pose_sheet(rig, out_preview.replace(".png", "_back.png"), HEIGHT, poses, view=(-0.8, -0.5, 0.3))
+        else:
+            # the cloak going on, from its right side
+            lib.pose_sheet(rig, out_preview.replace(".png", "_cloak.png"), HEIGHT,
+                           [("cloak", f) for f in range(1, 10)], cols=9, view=(0, -1, 0.15))
     print(f"hero: body {lib.tri_count(body)}, head {sum(lib.tri_count(o) for o in head_parts)}, " + ", ".join(f"{n} {lib.tri_count(o)}" for n, o in parts.items()) + " tris")

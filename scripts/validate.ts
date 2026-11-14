@@ -2,12 +2,13 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseLevel } from '../src/core/level';
+import { ORDER_FILE } from '../src/core/order';
 import { validateLevel } from '../src/core/validate';
 
 const dir = resolve(import.meta.dirname, '..', 'levels');
 const files = process.argv.slice(2).length
   ? process.argv.slice(2)
-  : readdirSync(dir).filter((f) => f.endsWith('.json')).sort().map((f) => join(dir, f));
+  : readdirSync(dir).filter((f) => f.endsWith('.json') && f !== ORDER_FILE).sort().map((f) => join(dir, f));
 
 let failed = 0;
 for (const file of files) {

@@ -10,7 +10,7 @@
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
         font: 13px/1.45 system-ui, "Microsoft JhengHei", sans-serif; }
-      body { display: grid; grid-template-columns: 190px 1fr 300px; grid-template-rows: 44px 1fr 26px; height: 100vh; }
+      body { display: grid; grid-template-columns: 230px 1fr 300px; grid-template-rows: 44px 1fr 26px; height: 100vh; }
       header { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
       header .brand { font-weight: 800; letter-spacing: 3px; margin-right: 8px; }
       header .grow { flex: 1; }
@@ -53,6 +53,18 @@
       #issues li.error { border-color: var(--err); } #issues li.warning { border-color: var(--warn); } #issues li.info { border-color: var(--ok); }
       #issues li.link { cursor: pointer; } #issues li.link:hover { background: #ffffff14; }
       footer { grid-column: 1 / -1; display: flex; gap: 16px; align-items: center; padding: 0 12px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+      #level-list { list-style: none; padding: 0; margin: 0 0 4px; }
+      #level-list li { display: grid; grid-template-columns: 22px 62px 1fr; gap: 4px; padding: 3px 6px; border: 1px solid transparent;
+        border-radius: 3px; cursor: grab; user-select: none; white-space: nowrap; }
+      #level-list li span { overflow: hidden; text-overflow: ellipsis; }
+      #level-list li.head { cursor: default; color: var(--muted); font-size: 11px; }
+      #level-list li:not(.head):hover { background: #ffffff0c; }
+      #level-list li.current { border-color: var(--accent); background: #3a315088; }
+      #level-list li.dragging { opacity: .4; }
+      #level-list li.drop-before { box-shadow: 0 -2px 0 var(--accent); }
+      #level-list li.drop-after { box-shadow: 0 2px 0 var(--accent); }
+      #level-list .num { color: var(--muted); text-align: right; }
+      #level-list .id { font-family: ui-monospace, monospace; }
       #toast { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); background: #000d; padding: 6px 14px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; }
       #toast.show { opacity: 1; }
     </style>
@@ -62,7 +74,6 @@
       <span class="brand">SHIFT</span><span>關卡編輯器</span>
       <span id="file-name"></span>
       <span class="grow"></span>
-      <select id="level-list"></select>
       <button id="btn-new">新增</button>
       <button id="btn-open">開啟檔案…</button>
       <input id="file-input" type="file" accept=".json,application/json" hidden />
@@ -74,6 +85,8 @@
       <a href="./index.html" style="color: var(--muted)">遊戲</a>
     </header>
     <aside class="left">
+      <h3>關卡（拖曳排序）</h3>
+      <ol id="level-list"></ol>
       <h3>工具</h3>
       <div id="tools"></div>
       <h3>方塊</h3>

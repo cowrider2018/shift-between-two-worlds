@@ -43,6 +43,8 @@ let hover: { dim: DimIndex; x: number; y: number } | null = null;
 let stroke: { erase: boolean } | null = null;
 let serverLevels: { id: string; text: string }[] | null = null;
 let loadedFrom: string | null = null;
+/** Index of the level-list row being dragged, or -1. */
+let dragFrom = -1;
 const overlays: Overlays = { souls: true, cones: true, grid: true };
 
 const panes = [new Pane(0, $('panes')), new Pane(1, $('panes'))] as const;
@@ -377,6 +379,7 @@ function render(): void {
   renderIssues();
   document.title = `${doc.dirty ? '● ' : ''}${doc.level.id} — SHIFT 編輯器`;
   $('file-name').textContent = `${doc.level.id}.json${doc.dirty ? ' ●' : ''}`;
+  for (const [i, li] of [...$('level-list').querySelectorAll('li:not(.head)')].entries()) li.classList.toggle('current', serverLevels?.[i]?.id === loadedFrom);
 }
 
 doc.onChange(() => {
@@ -402,12 +405,76 @@ async function refreshServerLevels(): Promise<void> {
   } catch {
     serverLevels = null;
   }
-  const sel = $<HTMLSelectElement>('level-list');
-  sel.replaceChildren(
-    h('option', { value: '', textContent: serverLevels ? '— 開啟關卡 —' : '（無開發伺服器）' }),
-    ...(serverLevels ?? []).map((l) => h('option', { value: l.id, textContent: l.id })),
-  );
-  sel.disabled = !serverLevels;
+  renderLevelList();
+}
+
+function levelName(text: string): string {
+  try {
+    const name = (JSON.parse(text) as { name?: unknown }).name;
+    return typeof name === 'string' ? name : '';
+  } catch {
+    return '';
+  }
+}
+
+/** The level list: # (play position), id, name. Drag a row to reorder; click to open. */
+function renderLevelList(): void {
+  const list = $('level-list');
+  if (!serverLevels) {
+    list.replaceChildren(h('li', { className: 'head', textContent: '（無開發伺服器）' }));
+    return;
+  }
+  const head = h('li', { className: 'head' }, h('span', { className: 'num', textContent: '#' }), h('span', { textContent: 'ID' }), h('span', { textContent: '名稱' }));
+  const rows = serverLevels.map((l, i) => {
+    const name = levelName(l.text);
+    const li = h(
+      'li',
+      { draggable: true, title: `${l.id}　${name}`, className: l.id === loadedFrom ? 'current' : '' },
+      h('span', { className: 'num', textContent: String(i + 1) }),
+      h('span', { className: 'id', textContent: l.id }),
+      h('span', { textContent: name }),
+    );
+    li.onclick = () => {
+      if (l.id !== loadedFrom && confirmDiscard()) loadText(l.text, l.id);
+    };
+    li.ondragstart = (e) => {
+      dragFrom = i;
+      e.dataTransfer?.setData('text/plain', l.id);
+      li.classList.add('dragging');
+    };
+    li.ondragend = () => {
+      dragFrom = -1;
+      renderLevelList();
+    };
+    li.ondragover = (e) => {
+      if (dragFrom < 0) return;
+      e.preventDefault();
+      const after = e.offsetY > li.clientHeight / 2;
+      li.classList.toggle('drop-before', !after);
+      li.classList.toggle('drop-after', after);
+    };
+    li.ondragleave = () => li.classList.remove('drop-before', 'drop-after');
+    li.ondrop = (e) => {
+      e.preventDefault();
+      const from = dragFrom;
+      if (from < 0) return;
+      const to = i + (e.offsetY > li.clientHeight / 2 ? 1 : 0);
+      void moveLevel(from, from < to ? to - 1 : to);
+    };
+    return li;
+  });
+  list.replaceChildren(head, ...rows);
+}
+
+async function moveLevel(from: number, to: number): Promise<void> {
+  if (!serverLevels || from === to) return;
+  const next = [...serverLevels];
+  next.splice(to, 0, ...next.splice(from, 1));
+  serverLevels = next;
+  renderLevelList();
+  const res = await fetch('./__editor/order', { method: 'POST', body: JSON.stringify(next.map((l) => l.id)) });
+  if (!res.ok) toast(`排序存檔失敗：${await res.text()}`);
+  await refreshServerLevels();
 }
 
 function loadText(text: string, from: string | null): boolean {
@@ -483,12 +550,6 @@ $<HTMLInputElement>('file-input').onchange = async (e) => {
   const f = (e.target as HTMLInputElement).files?.[0];
   if (f && confirmDiscard()) loadText(await f.text(), null);
   (e.target as HTMLInputElement).value = '';
-};
-$<HTMLSelectElement>('level-list').onchange = (e) => {
-  const sel = e.target as HTMLSelectElement;
-  const entry = serverLevels?.find((l) => l.id === sel.value);
-  if (entry && confirmDiscard()) loadText(entry.text, entry.id);
-  sel.value = '';
 };
 
 // ---------------------------------------------------------------------------

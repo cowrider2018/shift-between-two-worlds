@@ -16,6 +16,7 @@
   "hero_eye": { "color": "#1d1a2a" },
   "hero_tunic": { "color": "#2e692b" },
   "hero_belt": { "color": "#5a3a22" },
+  "hero_bag": { "color": "#8b5e34" },
   "hero_buckle": { "color": "#e0b84a" },
   "hero_pants": { "color": "#e9dcc0" },
   "hero_boot": { "color": "#6b4428" },

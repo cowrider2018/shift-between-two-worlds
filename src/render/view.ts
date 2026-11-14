@@ -338,11 +338,11 @@ export class GameView {
     const moving = sim.moving && !this.catching; // the sim froze mid-stride when caught
     this.hero.play(sim.sneaking ? (moving ? 'crouch_walk' : 'crouch') : moving ? 'run' : 'idle', 0.15);
     this.hero.update(dt);
-    // over the crouch: the cloak unrolling and the hood folding over, and the right hand reaching for the hood only
-    // while it is on the way (leaving the crouch's arms alone either side)
+    // over the crouch: the bag on the back shrinking away as the cloak unrolls out of it and the hood folds over, and
+    // the right hand reaching for it only while it is on the way (leaving the crouch's arms alone either side)
     const reach = this.cloak > 0 && this.cloak < 1 ? Math.min(1, 2 * Math.sin(Math.PI * this.cloak)) : 0;
     this.hero.pose('cloak', this.cloak, {
-      'cape.1.scale': 1, 'hood.scale': 1, 'hood.quaternion': 1,
+      'bag.scale': 1, 'cape.1.scale': 1, 'hood.scale': 1, 'hood.quaternion': 1,
       'upper_arm.R.quaternion': reach, 'forearm.R.quaternion': reach, 'hand.R.quaternion': reach,
     });
 

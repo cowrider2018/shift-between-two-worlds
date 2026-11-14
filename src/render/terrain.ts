@@ -151,11 +151,17 @@ class MeshBuilder {
   readonly idx: number[] = [];
   private readonly tmp = new Color();
 
+  /**
+   * `buried`, when given, tells which (x, z) lie inside some taller rock (on its outline included): the cells of a
+   * top patch with all four corners buried are left out, so nothing is drawn inside the cliff for the camera hole
+   * to uncover.
+   */
   constructor(
     readonly shape: WallShape,
     private readonly origin: [number, number],
     private readonly side: Color,
     private readonly top: Color,
+    private readonly buried?: (x: number, z: number) => boolean,
   ) {}
 
   /** A flat nu×nv patch of pre-snap points, wound so its normal points along `out`. */
@@ -163,11 +169,13 @@ class MeshBuilder {
     out: [number, number, number]): void {
     const base = this.pos.length / 3;
     const pts: [number, number, number][] = [];
+    const hid: boolean[] = [];
     for (let j = 0; j < nv; j++) {
       for (let i = 0; i < nu; i++) {
         const q = pre(i, j);
         pts.push(q);
         const { p, n } = this.shape.shape(q[0], q[1], q[2], isSide);
+        hid.push(!isSide && !!this.buried?.(p[0], p[2]));
         this.pos.push(p[0] - this.origin[0], p[1], p[2] - this.origin[1]);
         this.nor.push(...n);
         this.uv.push(isSide ? (q[0] + q[2]) / COBBLE_SPAN : q[0] / COBBLE_SPAN, isSide ? q[1] / COBBLE_SPAN : q[2] / COBBLE_SPAN);
@@ -177,11 +185,13 @@ class MeshBuilder {
         this.white.push(0);
       }
     }
-    this.wind(base, nu, nv, pts, out);
+    this.wind(base, nu, nv, pts, out, hid);
   }
 
-  /** Index a grid of vertices, with the winding taken from its (never degenerate) first cell. */
-  private wind(base: number, nu: number, nv: number, pts: [number, number, number][], out: [number, number, number]): void {
+  /** Index a grid of vertices, with the winding taken from its (never degenerate) first cell; cells whose four
+   *  corners are all `hid` are skipped. */
+  private wind(base: number, nu: number, nv: number, pts: [number, number, number][], out: [number, number, number],
+    hid?: boolean[]): void {
     const a = pts[0];
     const b = pts[1];
     const d = pts[nu];
@@ -195,6 +205,7 @@ class MeshBuilder {
         const p1 = p0 + 1;
         const p2 = p0 + nu + 1;
         const p3 = p0 + nu;
+        if (hid && hid[p0 - base] && hid[p1 - base] && hid[p2 - base] && hid[p3 - base]) continue;
         if (flip) this.idx.push(p0, p2, p1, p0, p3, p2);
         else this.idx.push(p0, p1, p2, p0, p2, p3);
       }
@@ -415,7 +426,8 @@ export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
   }
   const cliff = new WallShape(isOuter);
   const shape = new WallShape(isWall, !outer ? WALL_H : !shelf ? OUTER_H : (x, z) => (cliff.sdf(x, z) < 1e-3 ? OUTER_H : WALL_H));
-  const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
+  const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor),
+    outer ? (x, z) => cliff.sdf(x, z) < 1e-3 : undefined);
   const B = exposed ? FINE : COARSE;
   const n = B.length;
   const topped = !outer || shelf;

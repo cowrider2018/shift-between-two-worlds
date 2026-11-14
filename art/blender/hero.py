@@ -351,7 +351,7 @@ def old_cone(name, centre3, dir3, radius, height, mat):
 # - A straight nose bridge standing further out toward its tip, soft cheekbones.
 # The front keeps the full shapes; past FACE_SIDE_FROM the sides take softer ones (FACE_SIDE) so the cheeks and
 # temples stay smooth. The back of the skull and the nape keep their round.
-FACE_SEGS, FACE_RINGS = 32, 22
+FACE_SEGS, FACE_RINGS = 24, 16
 FACE_NARROW = 0.10
 FACE_SIDE_FROM = math.radians(45)
 FACE_FRONT = dict(f=0.56, F=0.96, pw=8, cheek=0.006, cz=0.022, ca=0.3)
@@ -361,7 +361,7 @@ FACE_SET_EDGE = 0.016    # the brow's edge: the set-back is full this far under 
 FACE_SET_TO = -0.05      # the set-back has tilted out to nothing by here (the nose tip, the cheeks' lower edge)
 FACE_SET_WIDE = 1.1      # its reach round the face (radians from straight ahead)
 FACE_NOSE = (0.18, 0.195)      # the ridge's distance in front of the head centre at the root and at the tip
-FACE_NOSE_LONG = 0.3 * math.pi * HEAD_R / FACE_RINGS   # the tip (and the cut under it) 0.3 of a ring further down
+FACE_NOSE_LONG = 0.0074          # the tip (and the cut under it) this much further down
 FACE_TRAP_FROM = 0.03           # the trapezoid starts here (above the eyes) and is full 0.1 lower
 FACE_JAW_BACK = -0.07           # where the underside starts closing at the back of the jaw (the arc)
 
@@ -370,8 +370,9 @@ def _ring_z(k):
     return HEAD_R * math.cos(math.pi * k / FACE_RINGS)
 
 
-FACE_BROW_Z = _ring_z(FACE_RINGS / 2 - 2.5)   # 2.5 rings above the eyes' ring
-FACE_CHEEK_Z, FACE_MOUTH_Z, FACE_JAW_Z = (_ring_z(FACE_RINGS // 2 + k) for k in (2, 4, 6))
+# heights above the head centre (fixed, so the face keeps its shape whatever the mesh's density)
+FACE_BROW_Z = 0.0603
+FACE_CHEEK_Z, FACE_MOUTH_Z, FACE_JAW_Z = -0.0486, -0.0933, -0.1304
 FACE_JAW_FRONT = FACE_JAW_Z   # where the underside starts closing under the chin (a square corner)
 # Below the cheekbones the sculpted surface is relaxed by FACE_SMOOTH rounds of Taubin smoothing (each round pulls
 # every vertex toward its neighbours' average, then pushes back a little so the volume holds), fading in from
@@ -407,8 +408,9 @@ def _smooth_lower_face(head):
 # The head mesh's columns sit half a segment off the midline, a pair either side of it: that pair is the nose
 # bridge, raised together into one flat face; the next column out stays on the face, so the faces between are the
 # nose's sides. Each ring of the nose is three faces: side, bridge, side.
-NOSE_BRIDGE = 0.02   # half-width inside which the nose is raised in full (the bridge columns)
-NOSE_SIDE = 0.04     # half-width where it has fallen to nothing (the next columns out)
+NOSE_BRIDGE = 0.03   # half-width inside which the nose is raised in full (the bridge columns)
+NOSE_SIDE = 0.045    # half-width where it has fallen to nothing (the next columns out)
+NOSE_HALF = (0.0165, 0.049)  # half-widths of the bridge and of the side edges (before NOSE_WING)
 NOSE_WING = 0.8      # the side edges sit at this share of their distance from the midline (see _square_nose)
 NOSE_TIP_WING = 0.7  # the lower corners of the nose's underside (the ring under the tip) draw in to this share
 
@@ -430,19 +432,16 @@ def _nose_rings():
 
 
 def _square_nose(head):
-    """Every ring of the nose the same width: the bridge's edges and the side edges are set at the width they have on
-    the ring halfway down the nose (the side edges drawn in to NOSE_WING of it), so each crease of the nose runs
-    straight down from root to tip. Under the tip, the underside's lower corners come in to NOSE_TIP_WING."""
+    """Every ring of the nose the same width: the bridge's edges and the side edges are set at NOSE_HALF (the side
+    edges drawn in to NOSE_WING of it), so each crease of the nose runs straight down from root to tip. Under the tip, the underside's lower corners come in to NOSE_TIP_WING."""
     vs = head.data.vertices
     rings = _nose_rings()
     full = [i for i, w in rings if w >= 1.0]
-    mid = full[len(full) // 2]
 
     def at(i, side, c):
         return vs[1 + (i - 1) * FACE_SEGS + _column(side, c)]
 
-    bridge = abs(at(mid, 1, 0).co.y - H.y)
-    wing = abs(at(mid, 1, 1).co.y - H.y) * NOSE_WING
+    bridge, wing = NOSE_HALF[0], NOSE_HALF[1] * NOSE_WING
     last = full[-1]
     for i, w in rings:
         for side in (1, -1):
@@ -527,7 +526,7 @@ def _narrow_face(co):
 
 # Skull sides: the left and right of the skull are cut flat by a vertical plane SKULL_FLAT deep (half a face of the
 # head mesh at the equator), its rim rounded over SKULL_FLAT_SOFT. The ears move in with the scalp under them.
-SKULL_FLAT = 0.5 * 2 * math.pi * HEAD_R / FACE_SEGS
+SKULL_FLAT = 0.0169
 SKULL_FLAT_SOFT = 0.006
 
 
@@ -548,18 +547,20 @@ def _follow_flat(obj):
 
 
 # Beside the nose: from under the eyes to the mouth, every ring of the head mesh is drawn toward a flat front plane,
-# the x of its vertices FACE_FLAT_REF columns out from the bridge: the column at the nose's side falls back and
-# the columns further out come forward (by FACE_FLAT_COLS of the way, each times FACE_FLAT). The bridge columns
+# the x of the column nearest FACE_FLAT_REF_DEG from the midline: the column at the nose's side falls back and
+# the columns further out come forward (less and less out to FACE_FLAT_OUT_DEG, all times FACE_FLAT). The bridge columns
 # are left alone, so its sides stand steeper and the flat cheeks around it take the light evenly.
 FACE_FLAT = 0.35
-FACE_FLAT_REF = 2
-FACE_FLAT_COLS = {1: 1.0, 3: 0.6, 4: 0.2}
+FACE_FLAT_REF_DEG = 28.0   # the column nearest this angle from the midline sets the plane
+FACE_FLAT_OUT_DEG = 62.0   # columns beyond the plane are drawn to it less and less, not at all from here
 FACE_FLAT_TOP, FACE_FLAT_BOTTOM = 0.01, -0.08
 FACE_FLAT_FADE = 0.06  # over two to three rings, so the flat eases in and out instead of stepping
 
 
 def _flatten_beside_nose(head):
     vs = head.data.vertices
+    seg = 360 / FACE_SEGS
+    ref_col = round(FACE_FLAT_REF_DEG / seg - 0.5)
     for i in range(1, FACE_RINGS):
         ring = [1 + (i - 1) * FACE_SEGS + j for j in range(FACE_SEGS)]
         z = vs[ring[0]].co.z - H.z
@@ -568,8 +569,12 @@ def _flatten_beside_nose(head):
         if wz <= 0:
             continue
         for s in (1, -1):
-            ref = vs[ring[_column(s, FACE_FLAT_REF)]].co.x
-            for col, k in FACE_FLAT_COLS.items():
+            ref = vs[ring[_column(s, ref_col)]].co.x
+            for col in range(1, FACE_SEGS // 4):
+                a = (col + 0.5) * seg
+                if col == ref_col or a >= FACE_FLAT_OUT_DEG:
+                    continue
+                k = 1.0 if a < FACE_FLAT_REF_DEG else 1 - (a - FACE_FLAT_REF_DEG) / (FACE_FLAT_OUT_DEG - FACE_FLAT_REF_DEG)
                 v = vs[ring[_column(s, col)]]
                 v.co.x += (ref - v.co.x) * k * FACE_FLAT * wz
     head.data.update()
@@ -580,17 +585,18 @@ def _flatten_beside_nose(head):
 # its neighbours. Only x moves: the widths (the nose's straight creases, its sides) stay as set. The midline is
 # relaxed only under the nose.
 FACE_COLUMN_SMOOTH = 12
-FACE_COLUMN_COLS = 7
-FACE_COLUMN_RINGS = (FACE_RINGS // 2, FACE_RINGS - 3)   # the fixed rings at either end; those between move
+FACE_COLUMN_REACH = 80.0   # degrees round from the midline that the relaxed columns reach
+FACE_COLUMN_BOTTOM = -0.145  # the lowest ring relaxed (the ring at eye level and the one under this stay fixed)
 
 
 def _smooth_columns(head):
     vs = head.data.vertices
-    top, bottom = FACE_COLUMN_RINGS
+    top = FACE_RINGS // 2
+    bottom = max(i for i in range(1, FACE_RINGS) if _ring_z(i) >= FACE_COLUMN_BOTTOM) + 1
     under_nose = max(i for i, w in _nose_rings() if w >= 1.0) + 1
     columns = []
     for side in (1, -1):
-        for c in range(FACE_COLUMN_COLS):
+        for c in range(round(FACE_COLUMN_REACH / (360 / FACE_SEGS))):
             first = under_nose if c == 0 else top
             columns.append([vs[1 + (i - 1) * FACE_SEGS + _column(side, c)] for i in range(first, bottom + 1)])
     for _ in range(FACE_COLUMN_SMOOTH):
@@ -644,6 +650,17 @@ def build_head():
     _smooth_lower_face(head)
     _flatten_beside_nose(head)
     _smooth_columns(head)
+    for o in parts:  # the narrowing moves the eyes and ears with the face
+        for v in o.data.vertices:
+            v.co = _narrow_face(v.co)
+        o.data.update()
+    _square_nose(head)
+    # the face is final under the eyes now (the nose's columns can run under them on a coarse mesh): set them on it
+    for o in eyes:
+        c0 = centre[o.name]
+        c = _narrow_face(c0)
+        front[o.name] = [_narrow_face(p) for p in front[o.name]]
+        centre[o.name] = c
     t = tree()
     for o in eyes:
         c = centre[o.name]
@@ -652,11 +669,6 @@ def build_head():
         for v in o.data.vertices:
             v.co.x += dx
         o.data.update()
-    for o in parts:  # the narrowing moves the eyes and ears with the face
-        for v in o.data.vertices:
-            v.co = _narrow_face(v.co)
-        o.data.update()
-    _square_nose(head)
     for v in head.data.vertices:
         v.co.y = H.y + _flat_y(v.co.y - H.y)
     head.data.update()

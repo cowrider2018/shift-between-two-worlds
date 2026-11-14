@@ -1,0 +1,48 @@
+{
+  "format": 1,
+  "id": "level09",
+  "name": "easy",
+  "size": {"w":7,"h":7},
+  "dimensions": [
+    {
+      "rows": [
+        "#######",
+        "##.####",
+        "##.####",
+        "EDS..L#",
+        "####D##",
+        "####.##",
+        "#######"
+      ],
+      "props": {
+        "0,3": {"dir":1},
+        "1,3": {"channel":1,"inverted":false,"vertical":true},
+        "5,3": {"channel":1},
+        "4,4": {"channel":1,"inverted":true,"vertical":false}
+      },
+      "monsters": [
+        {"id":"m1","path":[[4,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270}
+      ]
+    },
+    {
+      "rows": [
+        "#######",
+        "##.####",
+        "##D####",
+        "ED...L#",
+        "####.##",
+        "####.##",
+        "#######"
+      ],
+      "props": {
+        "2,2": {"channel":1,"inverted":true,"vertical":false},
+        "0,3": {"dir":1},
+        "1,3": {"channel":1,"inverted":false,"vertical":true},
+        "5,3": {"channel":1}
+      },
+      "monsters": [
+        {"id":"m2","path":[[2,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":90}
+      ]
+    }
+  ]
+}

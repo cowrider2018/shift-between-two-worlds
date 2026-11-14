@@ -1,0 +1,59 @@
+{
+  "format": 1,
+  "id": "level10",
+  "name": "the_overlooked",
+  "size": {"w":8,"h":9},
+  "dimensions": [
+    {
+      "rows": [
+        "########",
+        "#S..D..#",
+        "#.####.#",
+        "#..L...#",
+        "#L####.#",
+        "#.L#...#",
+        "#D##D#.#",
+        "#.##E###",
+        "###     "
+      ],
+      "props": {
+        "4,1": {"channel":1,"inverted":false,"vertical":true},
+        "3,3": {"channel":2},
+        "1,4": {"channel":1},
+        "2,5": {"channel":3},
+        "1,6": {"channel":2,"inverted":true,"vertical":false},
+        "4,6": {"channel":3,"inverted":false,"vertical":false},
+        "4,7": {"dir":0}
+      },
+      "monsters": [
+        {"id":"m2","path":[[1,7]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270},
+        {"id":"m3","path":[[6,6]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270},
+        {"id":"m1","path":[[4,3]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":180}
+      ]
+    },
+    {
+      "rows": [
+        "########",
+        "#......#",
+        "#.####.#",
+        "#.L....#",
+        "#.####D#",
+        "#..#...#",
+        "#D##D#.#",
+        "#.##E###",
+        "###     "
+      ],
+      "props": {
+        "2,3": {"channel":4},
+        "6,4": {"channel":4,"inverted":false,"vertical":false},
+        "1,6": {"channel":2,"inverted":true,"vertical":false},
+        "4,6": {"channel":3,"inverted":false,"vertical":false},
+        "4,7": {"dir":0}
+      },
+      "monsters": [
+        {"id":"m4","path":[[1,5]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270},
+        {"id":"m5","path":[[5,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":180}
+      ]
+    }
+  ]
+}

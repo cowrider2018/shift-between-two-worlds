@@ -1,0 +1,44 @@
+{
+  "format": 1,
+  "id": "level11",
+  "name": "let_then_in",
+  "size": {"w":6,"h":6},
+  "dimensions": [
+    {
+      "rows": [
+        "######",
+        "#SD..#",
+        "#.####",
+        "#.L#  ",
+        "#.##  ",
+        "###   "
+      ],
+      "props": {
+        "2,1": {"channel":1,"inverted":false,"vertical":true},
+        "2,3": {"channel":1}
+      },
+      "monsters": [
+        {"id":"m1","path":[[3,1],[1,1],[1,4]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":0},
+        {"id":"m2","path":[[4,1],[1,1],[1,4]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":0}
+      ]
+    },
+    {
+      "rows": [
+        "######",
+        "#.D..E",
+        "#.####",
+        "#.L#  ",
+        "#.##  ",
+        "###   "
+      ],
+      "props": {
+        "2,1": {"channel":1,"inverted":false,"vertical":true},
+        "5,1": {"dir":3},
+        "2,3": {"channel":1}
+      },
+      "monsters": [
+        {"id":"m4","path":[[1,4]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270}
+      ]
+    }
+  ]
+}

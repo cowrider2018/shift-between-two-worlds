@@ -1,0 +1,51 @@
+{
+  "format": 1,
+  "id": "level07",
+  "name": "L",
+  "size": {"w":9,"h":9},
+  "dimensions": [
+    {
+      "rows": [
+        "#########",
+        "#SD.....E",
+        "#.#######",
+        "#.#      ",
+        "#.#      ",
+        "#.#      ",
+        "#.#      ",
+        "#L#      ",
+        "###      "
+      ],
+      "props": {
+        "2,1": {"channel":1,"inverted":false,"vertical":true},
+        "8,1": {"dir":3},
+        "1,7": {"channel":1}
+      },
+      "monsters": [
+        {"id":"m3","path":[[1,7],[1,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270},
+        {"id":"m1","path":[[7,1],[1,1],[1,7]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":0}
+      ]
+    },
+    {
+      "rows": [
+        "#########",
+        "#.D.....E",
+        "#.#######",
+        "#.#      ",
+        "#.#      ",
+        "#.#      ",
+        "#.#      ",
+        "#L#      ",
+        "###      "
+      ],
+      "props": {
+        "2,1": {"channel":1,"inverted":false,"vertical":true},
+        "8,1": {"dir":3},
+        "1,7": {"channel":1}
+      },
+      "monsters": [
+        {"id":"m5","path":[[1,7]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":270}
+      ]
+    }
+  ]
+}

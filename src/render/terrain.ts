@@ -90,6 +90,22 @@ class WallShape {
     return f;
   }
 
+  /** Where (x, z) lands when pushed out of the footprint onto its outline (unmoved when already outside), and
+   *  whether it had to move. */
+  pushOut(x: number, z: number): [number, number, boolean] {
+    const f = this.sdfNear(x, z);
+    const s = f(x, z);
+    if (s >= 0) return [x, z, false];
+    const h = 1e-4;
+    let gx = f(x + h, z) - f(x - h, z);
+    let gz = f(x, z + h) - f(x, z - h);
+    const gl = Math.hypot(gx, gz);
+    if (gl === 0) return [x, z, true];
+    gx /= gl;
+    gz /= gl;
+    return [x - gx * s, z - gz * s, true];
+  }
+
   /**
    * Snap a point of a flat patch onto the rounded wall. `side` points lie on a vertical face and are moved
    * horizontally onto the footprint outline; `top` points lie at the wall's height and are only pulled in when outside
@@ -467,22 +483,68 @@ export function outerWallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz
   return b.build();
 }
 
-let floorGeos: BufferGeometry[] | null = null;
+/** Floors of cells with no rock round them, shared per offset in the cobble pattern. */
+const freeFloors = new Map<number, BufferGeometry>();
 
-/** A 1×1 floor quad at y = 0 (local to the cell centre) whose UVs continue the world-space cobble pattern. */
-export function floorGeometry(cx: number, cz: number): BufferGeometry {
-  floorGeos ??= [0, 1, 2, 3].map((k) => {
-    const ox = k & 1;
-    const oz = k >> 1;
-    const g = new BufferGeometry();
-    const p = [-0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, 0.5, -0.5, 0, 0.5];
-    const uv: number[] = [];
-    for (let i = 0; i < 4; i++) uv.push((ox + p[i * 3] + 0.5) / COBBLE_SPAN, (oz + p[i * 3 + 2] + 0.5) / COBBLE_SPAN);
-    g.setAttribute('position', new BufferAttribute(new Float32Array(p), 3));
-    g.setAttribute('normal', new BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
-    g.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
-    g.setIndex([0, 2, 1, 0, 3, 2]);
+/**
+ * The floor of cell (cx, cz) at y = 0, local to the cell centre, with UVs continuing the world-space cobble pattern:
+ * the part of the cell outside the rounded rock, so it runs exactly up to every wall's foot. It neither reaches in
+ * under a fillet (where a cut-away wall would show its corner) nor leaves the cut-off corner of a rounded wall bare.
+ * A dug-out (void) cell counts as rock here, so no floor ever lies beyond the outermost wall. Null when the cell
+ * has no open part.
+ */
+export function floorGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number): BufferGeometry | null {
+  const solid: IsWall = (x, z) => isRock(grid, dim, x, z) || isVoid(grid, dim, x, z);
+  let near = false;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (solid(cx + dx, cz + dz)) near = true;
+  if (!near) {
+    // the pattern repeats every COBBLE_SPAN cells, so a free cell needs only its offset within one span
+    const ox = ((cx % COBBLE_SPAN) + COBBLE_SPAN) % COBBLE_SPAN;
+    const oz = ((cz % COBBLE_SPAN) + COBBLE_SPAN) % COBBLE_SPAN;
+    const key = ox * COBBLE_SPAN + oz;
+    let g = freeFloors.get(key);
+    if (!g) {
+      g = new BufferGeometry();
+      const p = [-0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, 0.5, -0.5, 0, 0.5];
+      const uv: number[] = [];
+      for (let i = 0; i < 4; i++) uv.push((ox + p[i * 3] + 0.5) / COBBLE_SPAN, (oz + p[i * 3 + 2] + 0.5) / COBBLE_SPAN);
+      g.setAttribute('position', new BufferAttribute(new Float32Array(p), 3));
+      g.setAttribute('normal', new BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
+      g.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+      g.setIndex([0, 2, 1, 0, 3, 2]);
+      freeFloors.set(key, g);
+    }
     return g;
-  });
-  return floorGeos[(cx & 1) + ((cz & 1) << 1)];
+  }
+  const shape = new WallShape(solid);
+  const n = FINE.length;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const moved: boolean[] = [];
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const [x, z, m] = shape.pushOut(cx + FINE[i], cz + FINE[j]);
+      pos.push(x - cx - 0.5, 0, z - cz - 0.5);
+      uv.push(x / COBBLE_SPAN, z / COBBLE_SPAN);
+      moved.push(m);
+    }
+  }
+  const idx: number[] = [];
+  for (let j = 0; j < n - 1; j++) {
+    for (let i = 0; i < n - 1; i++) {
+      const p0 = j * n + i;
+      const p1 = p0 + 1;
+      const p2 = p0 + n + 1;
+      const p3 = p0 + n;
+      if (moved[p0] && moved[p1] && moved[p2] && moved[p3]) continue; // wholly under rock
+      idx.push(p0, p2, p1, p0, p3, p2);
+    }
+  }
+  if (idx.length === 0) return null;
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(pos.map((_, k) => (k % 3 === 1 ? 1 : 0))), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+  g.setIndex(idx);
+  return g;
 }

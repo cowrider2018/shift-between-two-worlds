@@ -38,14 +38,16 @@ function m(g: ConstructorParameters<typeof Mesh>[0], mat: Material | Material[],
   return mesh;
 }
 
-function floorTile(cell: Cell, ctx: ModelCtx): Mesh {
-  return m(floorGeometry(cell.x, cell.y), cobble(ctx.theme.floor[(cell.x + cell.y) % 2]), 0, 0, 0, false);
+/** The cell's floor, up to the foot of the rounded rock (a rock cell has floor only where its corner is rounded off). */
+function floorTile(cell: Cell, ctx: ModelCtx): Mesh[] {
+  const geo = floorGeometry(ctx.grid, cell.dim, cell.x, cell.y);
+  return geo ? [m(geo, cobble(ctx.theme.floor[(cell.x + cell.y) % 2]), 0, 0, 0, false)] : [];
 }
 
 /** Floor plus decoration. */
 function onFloor(cell: Cell, ctx: ModelCtx, ...deco: Object3D[]): Group {
   const g = new Group();
-  g.add(floorTile(cell, ctx), ...deco);
+  g.add(...floorTile(cell, ctx), ...deco);
   place(g, cell);
   return g;
 }
@@ -287,7 +289,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   wall: (cell, ctx) => {
     const g = wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop);
     const group = new Group();
-    group.add(m(g, withHole(cobble('#ffffff', true))));
+    group.add(m(g, withHole(cobble('#ffffff', true))), ...floorTile(cell, ctx));
     addOuterWall(group, cell, ctx);
     return { object: place(group, cell) };
   },
@@ -375,7 +377,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     light.position.set(0, CAVE.spring * 0.8, 0.5 - CAVE.depth * 0.6);
     inside.add(light);
     const g = new Group();
-    g.add(rock, tunnel, inside);
+    g.add(rock, tunnel, inside, ...floorTile(cell, ctx));
     addOuterWall(g, cell, ctx);
     place(g, cell);
     return { object: g };

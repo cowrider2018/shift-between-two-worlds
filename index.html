@@ -14,12 +14,14 @@
       #cleared { position: absolute; inset: 0; display: grid; place-content: center; pointer-events: none;
         color: #fff; font-size: 44px; letter-spacing: 4px; text-shadow: 4px 4px 0 #000; }
       #cleared[hidden] { display: none; }
+      #fade { position: absolute; inset: 0; background: #0b0a0e; opacity: 0; pointer-events: none; }
     </style>
   </head>
   <body>
     <canvas id="game"></canvas>
     <a class="editor" href="./editor.html">編輯器</a>
     <div id="cleared" hidden>通關</div>
+    <div id="fade"></div>
     <script type="module" src="/src/game/main.ts"></script>
   </body>
 </html>

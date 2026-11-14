@@ -25,6 +25,12 @@ let last = performance.now();
 const CAUGHT_HOLD = 0.9;
 /** -1: not caught; 0: caught, bonk still playing; >0: counting down to restart. */
 let caughtT = -1;
+/** After a win: seconds to show 「通關」, then fade to black, swap in the next level, and fade back in. */
+const CLEAR_HOLD = 1.2;
+const FADE_OUT = 0.6;
+const FADE_IN = 0.6;
+/** Time since the win (-1: none pending). Runs through hold → fade out → (next level) → fade in. */
+let clearT = -1;
 
 function start(index: number): void {
   levelIndex = index;
@@ -34,18 +40,45 @@ function start(index: number): void {
   view.setSim(sim);
   caughtT = -1;
   $('cleared').hidden = true;
+  $('cleared').textContent = '通關';
+}
+
+function hasNext(): boolean {
+  return levelIndex + 1 < levels.length;
+}
+
+/** Advance the win → next-level transition; returns the black overlay's opacity. */
+function stepClear(dt: number): number {
+  if (clearT < 0) return 0;
+  const before = clearT;
+  clearT += dt;
+  const swapAt = CLEAR_HOLD + FADE_OUT;
+  if (before < swapAt && clearT >= swapAt) start(levelIndex + 1);
+  if (clearT >= swapAt + FADE_IN) {
+    clearT = -1;
+    return 0;
+  }
+  if (clearT < CLEAR_HOLD) return 0;
+  return clearT < swapAt ? (clearT - CLEAR_HOLD) / FADE_OUT : 1 - (clearT - swapAt) / FADE_IN;
 }
 
 function handle(events: SimEvent[]): void {
   // the restart countdown waits until the monster has bonked the hero (view.catchFinished)
   if (events.some((e) => e.type === 'caught')) caughtT = 0;
-  if (events.some((e) => e.type === 'won')) $('cleared').hidden = false;
+  if (events.some((e) => e.type === 'won')) {
+    $('cleared').hidden = false;
+    if (hasNext()) clearT = 0;
+    else $('cleared').textContent = levels.length > 1 ? '全部通關' : '通關';
+  }
   view.onEvents(events);
 }
 
-input.onKey.set('KeyR', () => start(levelIndex));
+input.onKey.set('KeyR', () => {
+  if (clearT < 0) start(levelIndex);
+});
+// Enter skips the 「通關」 hold and starts the fade right away
 input.onKey.set('Enter', () => {
-  if (sim.status === 'won') start(levelIndex + 1 < levels.length ? levelIndex + 1 : levelIndex);
+  if (clearT >= 0 && clearT < CLEAR_HOLD) clearT = CLEAR_HOLD;
 });
 
 function loop(now: number): void {
@@ -69,6 +102,7 @@ function loop(now: number): void {
     caughtT -= dt;
     if (caughtT <= 0) start(levelIndex);
   }
+  $('fade').style.opacity = String(stepClear(dt));
   view.frame(dt);
   requestAnimationFrame(loop);
 }

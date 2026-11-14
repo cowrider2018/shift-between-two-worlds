@@ -3,7 +3,7 @@
  * A factory returns an Object3D positioned at the cell origin plus an optional per-frame update.
  */
 import {
-  AdditiveBlending, BoxGeometry, CanvasTexture, CircleGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PointLight, Shape, Vector3, ShapeGeometry, TorusGeometry,
+  AdditiveBlending, BoxGeometry, CanvasTexture, CircleGeometry, CylinderGeometry, DoubleSide, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PointLight, Shape, Vector3, ShapeGeometry, TorusGeometry,
   type Material, type Object3D,
 } from 'three';
 import type { Cell, LevelGrid } from '../core/grid';
@@ -159,38 +159,93 @@ function hauntDoor(cell: Cell, doorH: number, alongX: boolean, part: DoorPart): 
   };
 }
 
-/** The red halo on the floor round a lever: it spans exactly the hero's reach (TUNING.interactRange). */
-const LEVER_HALO = '#ff3020';
-let haloTexture: CanvasTexture | null = null;
+/** The red light of a lever: it glows in the slot in the top of its base and rises out of it in a short fading shaft,
+ *  and pools on the floor round it exactly as far as the hero's reach (TUNING.interactRange). */
+const LEVER_GLOW = '#ff3020';
+const LEVER_ARM = 0.45;
+/** The shaft out of the slot rises a quarter of the arm's length. */
+const SHAFT_H = LEVER_ARM / 4;
+/** Length of the slot the arm swings in, along x on top of the base. */
+const SLOT_LEN = 0.16;
+let poolTexture: CanvasTexture | null = null;
+const shaftTextures = new Map<string, CanvasTexture>();
 
-/** A radial fade, bright at the centre, with a faint rim just inside the edge so the reach reads, clear at the edge. */
-function leverHaloTexture(): CanvasTexture {
-  if (haloTexture) return haloTexture;
+/** A vertical fade for the shaft: alpha at each height (0 at the slot, 1 at the top). */
+function shaftTexture(key: string, stops: [number, number][]): CanvasTexture {
+  let tex = shaftTextures.get(key);
+  if (tex) return tex;
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 128;
+  const g = c.getContext('2d')!;
+  const grad = g.createLinearGradient(0, 128, 0, 0); // the canvas' bottom row is uv.y = 0, the slot
+  for (const [at, a] of stops) grad.addColorStop(at, `rgba(255,255,255,${a})`);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 4, 128);
+  tex = new CanvasTexture(c);
+  shaftTextures.set(key, tex);
+  return tex;
+}
+
+/** The floor pool's falloff, like the monsters' vision cones (0.6 at the source, thinning linearly to 0.12 at the edge
+ *  of reach, where it stops). */
+function leverPoolTexture(): CanvasTexture {
+  if (poolTexture) return poolTexture;
   const size = 128;
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const g = c.getContext('2d')!;
   const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  grad.addColorStop(0, 'rgba(255,255,255,0.75)');
-  grad.addColorStop(0.55, 'rgba(255,255,255,0.35)');
-  grad.addColorStop(0.88, 'rgba(255,255,255,0.45)');
+  grad.addColorStop(0, 'rgba(255,255,255,0.6)');
+  grad.addColorStop(0.999, 'rgba(255,255,255,0.12)');
   grad.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = grad;
   g.fillRect(0, 0, size, size);
-  haloTexture = new CanvasTexture(c);
-  return haloTexture;
+  poolTexture = new CanvasTexture(c);
+  return poolTexture;
 }
 
-function leverHalo(): { mesh: Mesh; mat: MeshBasicMaterial } {
-  const mat = new MeshBasicMaterial({
-    color: LEVER_HALO, map: leverHaloTexture(), transparent: true, depthWrite: false, blending: AdditiveBlending,
-    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+interface LeverGlow {
+  parts: Object3D[];
+  update(t: number): void;
+}
+
+function leverGlow(cell: Cell): LeverGlow {
+  const poolMat = new MeshBasicMaterial({
+    color: LEVER_GLOW, map: leverPoolTexture(),
+    transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
   });
-  const mesh = new Mesh(new CircleGeometry(TUNING.interactRange, 40), mat);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.005;
-  mesh.renderOrder = 2;
-  return { mesh, mat };
+  const pool = new Mesh(new CircleGeometry(TUNING.interactRange, 40), poolMat);
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.y = 0.025;
+  pool.renderOrder = 2;
+  // the slot the arm swings in, along x on top of the base
+  const slotMat = new MeshBasicMaterial({ color: LEVER_GLOW, transparent: true, depthWrite: false, blending: AdditiveBlending });
+  const slot = m(new BoxGeometry(SLOT_LEN, 0.006, 0.06), slotMat, 0, 0.143, 0, false);
+  // a short shaft of light out of the slot, widening and thinning away, round a brighter core
+  const additive = (map: CanvasTexture) => new MeshBasicMaterial({
+    color: LEVER_GLOW, map, transparent: true, depthWrite: false, blending: AdditiveBlending, side: DoubleSide,
+  });
+  const shaftMat = additive(shaftTexture('shaft', [[0, 0.7], [0.25, 0.35], [1, 0]]));
+  const shaft = new Mesh(new CylinderGeometry(0.24, 0.16, SHAFT_H, 20, 1, true), shaftMat);
+  shaft.position.y = 0.14 + SHAFT_H / 2;
+  shaft.scale.set(SLOT_LEN / 0.32, 1, 0.55); // as long as the slot, flattened across it
+  const coreMat = additive(shaftTexture('core', [[0, 0.9], [0.15, 0.4], [0.6, 0]]));
+  const core = new Mesh(new CylinderGeometry(0.12, 0.13, SHAFT_H * 0.7, 16, 1, true), coreMat);
+  core.position.y = 0.14 + SHAFT_H * 0.35;
+  core.scale.set(SLOT_LEN / 0.32, 1, 0.4);
+  for (const o of [shaft, core]) o.renderOrder = 3;
+  const phase = (cell.x * 1.7 + cell.y * 2.3) % 6.28;
+  return {
+    parts: [pool, slot, shaft, core],
+    update: (t) => {
+      // a slow breath plus a faint flutter, the same whichever way the arm leans
+      const f = 0.85 + 0.1 * Math.sin(t * 2 + phase) + 0.05 * Math.sin(t * 7.3 + phase * 3);
+      poolMat.opacity = f;
+      slotMat.opacity = f;
+      shaftMat.opacity = f;
+      coreMat.opacity = f;
+    },
+  };
 }
 
 export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
@@ -213,16 +268,15 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     const base = m(new BoxGeometry(0.44, 0.16, 0.3), toon('#5a5560'), 0, 0.06, 0);
     const arm = new Group();
     arm.position.y = 0.1;
-    arm.add(m(new CylinderGeometry(0.04, 0.04, 0.45, 6), toon('#3a3238'), 0, 0.16, 0));
+    arm.add(m(new CylinderGeometry(0.04, 0.04, LEVER_ARM, 6), toon('#3a3238'), 0, 0.16, 0));
     arm.add(m(new IcosahedronGeometry(0.09), toon('#6a6470'), 0, 0.46, 0));
-    const halo = leverHalo();
-    const g = onFloor(cell, ctx, halo.mesh, base, arm);
+    const glow = leverGlow(cell);
+    const g = onFloor(cell, ctx, ...glow.parts, base, arm);
     let angle = -0.6;
-    const phase = (cell.x * 1.7 + cell.y * 2.3) % 6.28;
     return {
       object: g,
       update: (sim, dt, t) => {
-        halo.mat.opacity = 0.85 + 0.15 * Math.sin(t * 2 + phase); // a slow breath, the same whichever way the arm leans
+        glow.update(t);
         const on = sim.leverOn(cell);
         const target = on ? 0.6 : -0.6;
         angle += (target - angle) * Math.min(1, dt * 12);

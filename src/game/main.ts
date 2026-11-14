@@ -1,5 +1,6 @@
 import type { Level } from '../core/level';
 import { Sim, type SimEvent } from '../core/sim';
+import { Briefing } from '../render/briefing';
 import { CAMERA } from '../render/followCamera';
 import { loadModels } from '../render/models';
 import { GameView } from '../render/view';
@@ -30,6 +31,8 @@ const FADE_OUT = 0.6;
 const FADE_IN = 0.6;
 /** Time since the win (-1: none pending). Runs through fade out → (next level) → fade in. */
 let clearT = -1;
+/** The controls screen shown once before the first level (not when playtesting from the editor); null once dismissed. */
+let briefing: Briefing | null = null;
 
 function start(index: number): void {
   levelIndex = index;
@@ -68,6 +71,11 @@ input.onKey.set('KeyR', () => {
 function loop(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  if (briefing) {
+    briefing.frame(dt);
+    requestAnimationFrame(loop);
+    return;
+  }
   acc += dt;
   view.follow.yaw += input.takeTurn(dt, CAMERA.mouseSensitivity, CAMERA.keyTurnSpeed);
   view.follow.tilt(input.takeTilt(CAMERA.mouseSensitivity));
@@ -91,10 +99,38 @@ function loop(now: number): void {
   requestAnimationFrame(loop);
 }
 
+/** Show the control pages; each key release or mouse press turns one, and past the last the level starts. Waiting
+ *  for the release lets a Shift tap finish here, so it does not shift dimension on the first frame; the actions
+ *  pressed meanwhile are dropped. */
+function showBriefing(): void {
+  const el = $('briefing');
+  el.hidden = false;
+  view.resize();
+  const pages = [...el.querySelectorAll<HTMLElement>('.page')];
+  const hint = el.querySelector<HTMLElement>('.start')!;
+  const b = new Briefing(view.pipeline, pages, pages.map((p) => [...p.querySelectorAll<HTMLElement>('.station')]));
+  briefing = b;
+  const turn = () => {
+    input.take();
+    if (b.next()) {
+      if (pages.at(-1)?.hidden === false) hint.textContent = '按任意鍵開始';
+      return;
+    }
+    removeEventListener('keyup', turn);
+    removeEventListener('mousedown', turn);
+    el.hidden = true;
+    briefing = null;
+    acc = 0;
+  };
+  addEventListener('keyup', turn);
+  addEventListener('mousedown', turn);
+}
+
 window.addEventListener('resize', () => view.resize());
 async function boot(): Promise<void> {
   if (levels.length === 0) return;
   await loadModels();
+  if (!playtest) showBriefing();
   start(levelIndex);
   last = performance.now();
   requestAnimationFrame(loop);

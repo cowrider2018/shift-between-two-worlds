@@ -12,11 +12,35 @@
       #game { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); image-rendering: pixelated; }
       a.editor { position: absolute; top: 12px; right: 16px; color: var(--ink); opacity: .6; text-shadow: 2px 2px 0 #000; }
       #fade { position: absolute; inset: 0; background: #0b0a0e; opacity: 0; pointer-events: none; }
+      #briefing { position: absolute; inset: 0; pointer-events: none; text-shadow: 2px 2px 0 #000; }
+      #briefing[hidden] { display: none; }
+      #briefing .page[hidden] { display: none; }
+      #briefing .station { position: absolute; transform: translateX(-50%); text-align: center; white-space: nowrap; }
+      #briefing .station.side { transform: translateY(-50%); text-align: left; }
+      #briefing .how { display: block; margin-top: 6px; opacity: .8; font-size: 13px; }
+      #briefing kbd { display: inline-block; min-width: 2.4em; padding: 3px 10px 5px; font: inherit; color: #22160a;
+        background: var(--ink); border-radius: 3px; box-shadow: inset 0 -3px 0 #b8a88a, 2px 2px 0 #000; text-shadow: none; }
+      #briefing .start { position: absolute; left: 0; right: 0; bottom: 8%; text-align: center; opacity: .75;
+        animation: blink 1.2s steps(2, jump-none) infinite; }
+      @keyframes blink { 50% { opacity: .25; } }
     </style>
   </head>
   <body>
     <canvas id="game"></canvas>
     <a class="editor" href="./editor.html">編輯器</a>
+    <div id="briefing" hidden>
+      <div class="page">
+        <div class="station"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd><span class="how">移動（以鏡頭方向為準）</span></div>
+      </div>
+      <div class="page" hidden>
+        <div class="station"><kbd>Space</kbd><span class="how">從背後摸到怪物身邊：割喉</span></div>
+        <div class="station"><kbd>Space</kbd><span class="how">站到拉桿旁：拉桿</span></div>
+      </div>
+      <div class="page" hidden>
+        <div class="station side"><kbd>Shift</kbd><span class="how">輕點：轉移到倒影的次元</span><span class="how">按住：潛行</span></div>
+      </div>
+      <div class="start">按任意鍵繼續</div>
+    </div>
     <div id="fade"></div>
     <script type="module" src="/src/game/main.ts"></script>
   </body>

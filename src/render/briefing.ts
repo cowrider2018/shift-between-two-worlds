@@ -10,7 +10,7 @@
  * post pass still reads its depth buffer the way it expects.
  */
 import {
-  BufferAttribute, DirectionalLight, Group, HemisphereLight, Mesh, PerspectiveCamera, PlaneGeometry, Scene, Vector3,
+  BufferAttribute, CircleGeometry, DirectionalLight, Group, HemisphereLight, Mesh, PerspectiveCamera, PlaneGeometry, Scene, Vector3,
   type Material,
 } from 'three';
 import { leverParts } from './blockModels';
@@ -112,9 +112,9 @@ export class Briefing {
     troll.play('idle', 0);
     const lever = leverParts({ x: 0, y: 0 });
     const leverRoot = new Group();
-    leverRoot.add(...lever.parts);
-    leverRoot.position.x = 0.85;
-    leverRoot.rotation.x = 0.5; // tipped toward the camera so the slot and its glow show
+    // without its pool of light on the floor: there is no floor here, and seen level it is only a red line
+    leverRoot.add(...lever.parts.filter((o) => !(o instanceof Mesh && o.geometry instanceof CircleGeometry)));
+    leverRoot.position.x = 0.85; // seen dead level, side on, like every other figure
     root.add(troll.root, leverRoot);
     return {
       root, centerY: 0.5, mirrored: false,

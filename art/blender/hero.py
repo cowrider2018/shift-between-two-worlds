@@ -423,6 +423,28 @@ def _narrow_face(co):
     return H + Vector((d.x, d.y * (1 - FACE_NARROW * w), d.z))
 
 
+# Skull sides: the left and right of the skull are cut flat by a vertical plane SKULL_FLAT deep (half a face of the
+# head mesh at the equator), its rim rounded over SKULL_FLAT_SOFT. The ears move in with the scalp under them.
+SKULL_FLAT = 0.5 * 2 * math.pi * HEAD_R / FACE_SEGS
+SKULL_FLAT_SOFT = 0.006
+
+
+def _flat_y(y):
+    """A point's side offset from the head centre, cut back to the flat."""
+    a, b, k = abs(y), HEAD_R - SKULL_FLAT, SKULL_FLAT_SOFT
+    h = max(k - abs(a - b), 0.0) / k
+    return math.copysign(min(a, b) - h * h * k / 4, y)
+
+
+def _follow_flat(obj):
+    """Move a part sitting on the skull (the ears) in by as much as the scalp under it moved."""
+    for v in obj.data.vertices:
+        n = (v.co - H).normalized()
+        y = n.y * HEAD_R
+        v.co.y += _flat_y(y) - y
+    obj.data.update()
+
+
 def build_head():
     from mathutils.bvhtree import BVHTree
     k = HEAD_K
@@ -460,6 +482,12 @@ def build_head():
         for v in o.data.vertices:
             v.co = _narrow_face(v.co)
         o.data.update()
+    for v in head.data.vertices:
+        v.co.y = H.y + _flat_y(v.co.y - H.y)
+    head.data.update()
+    for o in parts:
+        if o.name.startswith("ear"):
+            _follow_flat(o)
     return parts
 
 

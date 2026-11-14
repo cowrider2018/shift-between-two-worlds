@@ -26,6 +26,9 @@ const FAR = 20;
 const CAMERA_DIST = 1.7;
 const CAMERA_PITCH = (15 * Math.PI) / 180;
 const LOOK_Y = 0.4;
+/** The way the hero runs, on the ground (0 = toward the screen's right, π/2 = toward the camera): 60° round from
+ *  the right toward the camera. The ground scrolls against it. */
+const HERO_HEADING = Math.PI / 3;
 /** The words weigh less than the hero, so the hero runs a little right of centre to balance them. */
 const HERO_X = 0.2;
 /** The words are centred at the hero's mid-body height. */
@@ -69,7 +72,7 @@ export class Ending {
     this.scene.add(this.sun, this.sun.target, this.floor);
 
     // running to the screen's right, turned 60° toward the camera
-    this.hero.root.rotation.y = -Math.PI / 3;
+    this.hero.root.rotation.y = -HERO_HEADING;
     this.hero.root.position.x = HERO_X;
     this.hero.root.traverse((o) => (o.castShadow = true));
     this.hero.play('run', 0);
@@ -98,8 +101,10 @@ export class Ending {
   frame(dt: number): void {
     this.t += dt;
     this.hero.update(dt);
-    // the ground goes by at the hero's running speed, wrapped by whole texture repeats
-    this.floor.position.x = -((this.t * TUNING.playerSpeed) % COBBLE_SPAN);
+    // the ground goes by against the way the hero runs, at their running speed, wrapped by whole texture repeats
+    const run = this.t * TUNING.playerSpeed;
+    this.floor.position.x = -((run * Math.cos(HERO_HEADING)) % COBBLE_SPAN);
+    this.floor.position.z = -((run * Math.sin(HERO_HEADING)) % COBBLE_SPAN);
     this.camera.aspect = this.pipeline.width / this.pipeline.height;
     this.camera.updateProjectionMatrix();
     renderStandalone(this.pipeline, this.scene, this.camera, this.sun, this.t);

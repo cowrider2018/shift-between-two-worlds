@@ -36,20 +36,33 @@ BOOT_TOP = 0.34  # boot rim height between ankle and knee: low, so the trouser l
 THICK = 1.5  # trunk and leg girth relative to the original slim build (heights unchanged)
 DEPTH = 0.7  # the trunk's front-to-back depth relative to THICK (a flatter, less barrel-chested body)
 H = Vector((0.0, 0.0, 0.555))  # head centre
-# The backpack: cloak cloth, high on the back, on a leather strap from the left shoulder across the chest to the right
-# hip (the scabbard crosses the back the other way). The cloak and hood are folded away in it. In the "cloak" clip its
-# flap (bone "bag_flap", hinged at the top) flips open, and the bag (bone "bag") shrinks away, flap and all, as the hood
-# swells out of it about the bag's centre (HOOD_PIVOT).
-BAG_C = Vector((-0.118, 0.0, 0.345))  # bag centre, its front against the back
-# The bag's body, bottom to top: (z, half-width, half-depth). A little wider at the bottom, rounded over the top.
-BAG_RINGS = [(0.278, 0.064, 0.03), (0.29, 0.066, 0.032), (0.33, 0.063, 0.032), (0.37, 0.058, 0.031),
-             (0.393, 0.05, 0.027), (0.406, 0.034, 0.017)]
-BAG_TOP = 0.41
-# The flap: over the top and down the outside, its free edge slanting from FLAP_EDGE[0] high on the left to
-# FLAP_EDGE[1] low on the right, a round button at its middle. Its profile over the top: (out from the bag centre, z).
-FLAP_PROFILE = [(-0.012, 0.409), (0.008, 0.414), (0.024, 0.406), (0.034, 0.39), (0.037, 0.37)]
-FLAP_EDGE = (0.345, 0.312)
-FLAP_HINGE = BAG_C + Vector((0.012, 0, BAG_TOP - BAG_C.z))  # top of the bag, back edge
+# The backpack: cloak cloth, low on the back below the head (so it shows from the camera behind), on a leather strap
+# from the left shoulder across the chest to the right hip (the scabbard crosses the back the other way). The cloak and
+# hood are folded away in it. In the "cloak" clip its flap (bone "bag_flap", hinged at the top) flips open, and the bag
+# (bone "bag") shrinks away, flap and all, as the hood swells out of it about the bag's centre (HOOD_PIVOT).
+# The bag is built in its own frame: `a` up its flat back, `d` out from it, `y` across. The back lies on the tunic,
+# which slopes in toward the shoulders (pear-shaped trunk), so the frame leans in by BAG_LEAN.
+BAG_LEAN = 24
+BAG_UP = Vector((math.sin(math.radians(BAG_LEAN)), 0, math.cos(math.radians(BAG_LEAN))))
+BAG_OUT = Vector((-math.cos(math.radians(BAG_LEAN)), 0, math.sin(math.radians(BAG_LEAN))))
+BAG_BASE = Vector((-0.124, 0.0, 0.232))  # bottom of the flat back, just clear of the tunic
+# The body, bottom to top: (a, half-width, depth). Thin at the top, thick and round at the bottom.
+BAG_RINGS = [(0.0, 0.062, 0.054), (0.012, 0.072, 0.068), (0.035, 0.075, 0.072), (0.07, 0.074, 0.06),
+             (0.11, 0.07, 0.042), (0.14, 0.066, 0.026), (0.15, 0.06, 0.02)]
+BAG_TOP = 0.153
+# The flap: over the top and down the outside to its free edge, which slants from FLAP_EDGE[0] high on the left to
+# FLAP_EDGE[1] low on the right (heights `a`), a round button at its middle.
+FLAP_EDGE = (0.098, 0.074)
+FLAP_OFF = 0.004  # how far the flap stands off the body
+
+
+def bag_point(d, y, a):
+    """A point in the bag's frame (see BAG_LEAN), in armature space."""
+    return BAG_BASE + BAG_OUT * d + Y * y + BAG_UP * a
+
+
+BAG_C = bag_point(0.032, 0, 0.06)  # the middle of the bag's bulk
+FLAP_HINGE = bag_point(FLAP_OFF, 0, BAG_TOP)  # top of the bag, back edge
 STRAP_TILT = 45   # the strap's slant from the vertical (degrees), up toward the left shoulder
 STRAP_C = Vector((0.0, 0.0, 0.31))    # the strap rings the trunk in the plane through here holding X and the slant
 STRAP_W = 0.018
@@ -796,43 +809,53 @@ def build_cape():
     return cloak, clasp
 
 
-def _bag_half_width(z):
-    zs = [r[0] for r in BAG_RINGS]
-    return _pchip([(z_, w) for z_, w, _ in reversed(BAG_RINGS)], min(max(z, zs[0]), zs[-1]))
+def _bag_size(a):
+    """(half-width, depth) of the bag's body at height `a`, linear between BAG_RINGS."""
+    rings = BAG_RINGS
+    a = min(max(a, rings[0][0]), rings[-1][0])
+    for (a0, w0, d0), (a1, w1, d1) in zip(rings, rings[1:]):
+        if a <= a1:
+            t = (a - a0) / (a1 - a0)
+            return w0 + (w1 - w0) * t, d0 + (d1 - d0) * t
+    return rings[-1][1:]
 
 
 def build_bag():
-    """The backpack's body: rounded-rectangle rings (a superellipse) from the flat bottom up over the rounded top."""
+    """The backpack's body: rounded-rectangle rings (a superellipse) on the flat back, from the bottom up to the top."""
     sides, e = 12, 0.4  # e < 1 squares the rings off
 
-    def ring(z, hw, hd):
+    def ring(a, hw, depth):
         pts = []
         for i in range(sides):
-            a = 2 * math.pi * i / sides
-            c, s_ = math.cos(a), math.sin(a)
-            pts.append((BAG_C.x - math.copysign(abs(c) ** e, c) * hd, math.copysign(abs(s_) ** e, s_) * hw, z))
+            t = 2 * math.pi * i / sides
+            c, s_ = math.cos(t), math.sin(t)
+            d = depth / 2 * (1 - math.copysign(abs(c) ** e, c))  # 0 on the back, `depth` on the outside
+            pts.append(bag_point(d, math.copysign(abs(s_) ** e, s_) * hw, a))
         return pts
 
     rings = [ring(*r) for r in BAG_RINGS]
-    return lib.loft("bag", rings, "hero_cape", tip=(BAG_C.x, 0, BAG_TOP), start=(BAG_C.x, 0, BAG_RINGS[0][0]))
+    return lib.loft("bag", rings, "hero_cape", tip=bag_point(BAG_RINGS[-1][2] / 2, 0, BAG_TOP),
+                    start=bag_point(BAG_RINGS[0][2] / 2, 0, 0))
 
 
 def build_bag_flap(cols=7):
     """The flap: a sheet over the top and down the outside to a slanting edge, and its round button."""
-    rows = len(FLAP_PROFILE) + 2
+    top_w, top_d = _bag_size(BAG_RINGS[-1][0])
+    over = [(FLAP_OFF, BAG_TOP + FLAP_OFF), (top_d / 2, BAG_TOP + FLAP_OFF + 0.002), (top_d + FLAP_OFF, BAG_TOP)]
+    side = [0.13, 0.115]  # down the outside, before the slanting part
+    rows = len(over) + len(side) + 2
     verts = []
     for c in range(cols):
         t = -1 + 2 * c / (cols - 1)  # -1 right side .. 1 left side
         edge = FLAP_EDGE[1] + (FLAP_EDGE[0] - FLAP_EDGE[1]) * (t + 1) / 2
-        u_side, z_side = FLAP_PROFILE[-1]
-        path = FLAP_PROFILE + [(u_side, z_side + (edge - z_side) * k / 2) for k in (1, 2)]
-        for u, z in path:
-            verts.append((BAG_C.x - u, t * (_bag_half_width(z) + 0.004), z))
+        path = over + [(_bag_size(a)[1] + FLAP_OFF, a) for a in side + [side[-1] + (edge - side[-1]) * k / 2 for k in (1, 2)]]
+        for d, a in path:
+            verts.append(bag_point(d, t * (_bag_size(a)[0] + FLAP_OFF), a))
     faces = [(c * rows + r, c * rows + r + 1, (c + 1) * rows + r + 1, (c + 1) * rows + r)
              for c in range(cols - 1) for r in range(rows - 1)]
     flap = lib.mesh_from("bag_flap", verts, faces, "hero_cape")
-    u_side = FLAP_PROFILE[-1][0]
-    button = lib.ico("bag_button", (BAG_C.x - u_side - 0.004, 0, sum(FLAP_EDGE) / 2 + 0.01), 0.009, "hero_buckle", 1,
+    a = sum(FLAP_EDGE) / 2 + 0.01
+    button = lib.ico("bag_button", bag_point(_bag_size(a)[1] + FLAP_OFF + 0.002, 0, a), 0.009, "hero_buckle", 1,
                      scale=(0.5, 1, 1))
     return lib.join("bag_flap", [flap, button])
 

@@ -1,7 +1,8 @@
 /**
  * Ending (DESIGN §2): after the last level, the hero runs toward the right of the screen, three-quarters to the
  * camera, over an endless plain of the surface's flagstones that fades into the dark, seen from 15° above the
- * ground. The hero, large, runs a little right of centre; the words are centred in the space to their left. The hero stays put and the
+ * ground. The hero, large and turned 60° toward the camera, runs a little right of centre; the words are
+ * centred in the space to their left. The hero stays put and the
  * ground slides under them; the plane steps back by whole texture repeats, so the stones never jump.
  * The words are HTML (index.html #ending); this pins them beside the hero, main fades them in.
  */
@@ -27,8 +28,11 @@ const CAMERA_PITCH = (15 * Math.PI) / 180;
 const LOOK_Y = 0.4;
 /** The words weigh less than the hero, so the hero runs a little right of centre to balance them. */
 const HERO_X = 0.2;
-/** The hero's left-hand edge at mid-body: the words are centred in the screen to the left of it. */
-const HERO_LEFT = new Vector3(HERO_X - 0.35, 0.45, 0);
+/** The words are centred at the hero's mid-body height. */
+const WORDS_AT = new Vector3(HERO_X, 0.45, 0);
+/** Seconds of running (more than one stride cycle) over which the hero's leftmost reach on screen is measured; the
+ *  words are centred between it and the screen's left edge, and stay put once it is known. */
+const MEASURE_FOR = 1.5;
 
 export class Ending {
   readonly scene = new Scene();
@@ -38,6 +42,11 @@ export class Ending {
   private readonly floor: Mesh;
   private readonly at = new Vector3();
   private t = 0;
+  /** Leftmost x (normalised device coordinates) the hero's geometry has reached, measured since `measureFrom`;
+   *  restarted whenever the view changes size. */
+  private heroLeft = Infinity;
+  private measureFrom = 0;
+  private measuredSize = '';
 
   constructor(private readonly pipeline: PixelPipeline, private readonly label: HTMLElement) {
     const th = THEMES[0];
@@ -56,8 +65,8 @@ export class Ending {
     this.floor = this.plain();
     this.scene.add(this.sun, this.sun.target, this.floor);
 
-    // running to the screen's right, turned 45° toward the camera
-    this.hero.root.rotation.y = -Math.PI / 4;
+    // running to the screen's right, turned 60° toward the camera
+    this.hero.root.rotation.y = -Math.PI / 3;
     this.hero.root.position.x = HERO_X;
     this.hero.root.traverse((o) => (o.castShadow = true));
     this.hero.play('run', 0);
@@ -91,10 +100,33 @@ export class Ending {
     this.camera.aspect = this.pipeline.width / this.pipeline.height;
     this.camera.updateProjectionMatrix();
     renderStandalone(this.pipeline, this.scene, this.camera, this.sun, this.t);
+    this.measureHero();
     const rect = this.pipeline.canvas.getBoundingClientRect();
-    const p = this.at.copy(HERO_LEFT).project(this.camera);
-    const edge = rect.left + (p.x * 0.5 + 0.5) * rect.width;
+    const edge = rect.left + (this.heroLeft * 0.5 + 0.5) * rect.width;
     this.label.style.left = `${(rect.left + edge) / 2}px`;
+    const p = this.at.copy(WORDS_AT).project(this.camera);
     this.label.style.top = `${rect.top + (0.5 - p.y * 0.5) * rect.height}px`;
+  }
+
+  /** Widen heroLeft to the hero's skinned, posed geometry this frame, for the first MEASURE_FOR seconds at a size. */
+  private measureHero(): void {
+    const size = `${this.pipeline.width}x${this.pipeline.height}`;
+    if (size !== this.measuredSize) {
+      this.measuredSize = size;
+      this.heroLeft = Infinity;
+      this.measureFrom = this.t;
+    }
+    if (this.t - this.measureFrom > MEASURE_FOR) return;
+    const v = this.at;
+    this.hero.root.updateMatrixWorld(true);
+    this.hero.root.traverseVisible((o) => {
+      if (!(o instanceof Mesh)) return;
+      const n = o.geometry.getAttribute('position').count;
+      for (let i = 0; i < n; i++) {
+        o.getVertexPosition(i, v);
+        v.applyMatrix4(o.matrixWorld).project(this.camera);
+        if (v.x < this.heroLeft) this.heroLeft = v.x;
+      }
+    });
   }
 }

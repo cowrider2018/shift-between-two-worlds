@@ -3,11 +3,11 @@
  * A factory returns an Object3D positioned at the cell origin plus an optional per-frame update.
  */
 import {
-  AdditiveBlending, BoxGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PointLight, Shape, Vector3, ShapeGeometry, TorusGeometry,
+  AdditiveBlending, BoxGeometry, CanvasTexture, CircleGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PointLight, Shape, Vector3, ShapeGeometry, TorusGeometry,
   type Material, type Object3D,
 } from 'three';
 import type { Cell, LevelGrid } from '../core/grid';
-import type { Sim } from '../core/sim';
+import { TUNING, type Sim } from '../core/sim';
 import type { DimTheme } from './palette';
 import { cobble, toon, whitening, wood } from './materials';
 import { throughMouth, withHole, type Mouth } from './cutaway';
@@ -159,6 +159,40 @@ function hauntDoor(cell: Cell, doorH: number, alongX: boolean, part: DoorPart): 
   };
 }
 
+/** The red halo on the floor round a lever: it spans exactly the hero's reach (TUNING.interactRange). */
+const LEVER_HALO = '#ff3020';
+let haloTexture: CanvasTexture | null = null;
+
+/** A radial fade, bright at the centre, with a faint rim just inside the edge so the reach reads, clear at the edge. */
+function leverHaloTexture(): CanvasTexture {
+  if (haloTexture) return haloTexture;
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, 'rgba(255,255,255,0.75)');
+  grad.addColorStop(0.55, 'rgba(255,255,255,0.35)');
+  grad.addColorStop(0.88, 'rgba(255,255,255,0.45)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  haloTexture = new CanvasTexture(c);
+  return haloTexture;
+}
+
+function leverHalo(): { mesh: Mesh; mat: MeshBasicMaterial } {
+  const mat = new MeshBasicMaterial({
+    color: LEVER_HALO, map: leverHaloTexture(), transparent: true, depthWrite: false, blending: AdditiveBlending,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+  });
+  const mesh = new Mesh(new CircleGeometry(TUNING.interactRange, 40), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.005;
+  mesh.renderOrder = 2;
+  return { mesh, mat };
+}
+
 export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   floor: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
 
@@ -181,11 +215,14 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     arm.position.y = 0.1;
     arm.add(m(new CylinderGeometry(0.04, 0.04, 0.45, 6), toon('#3a3238'), 0, 0.16, 0));
     arm.add(m(new IcosahedronGeometry(0.09), toon('#6a6470'), 0, 0.46, 0));
-    const g = onFloor(cell, ctx, base, arm);
+    const halo = leverHalo();
+    const g = onFloor(cell, ctx, halo.mesh, base, arm);
     let angle = -0.6;
+    const phase = (cell.x * 1.7 + cell.y * 2.3) % 6.28;
     return {
       object: g,
-      update: (sim, dt) => {
+      update: (sim, dt, t) => {
+        halo.mat.opacity = 0.85 + 0.15 * Math.sin(t * 2 + phase); // a slow breath, the same whichever way the arm leans
         const on = sim.leverOn(cell);
         const target = on ? 0.6 : -0.6;
         angle += (target - angle) * Math.min(1, dt * 12);

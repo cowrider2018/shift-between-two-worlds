@@ -9,13 +9,19 @@ npm install
 npm run dev        # http://localhost:5173/ 遊戲、/editor.html 編輯器
 npm run check      # 型別檢查 + 單元測試 + 關卡驗證
 npm run validate   # 只驗證 levels/*.json（可帶檔名）
-npm run build      # 輸出 dist/（靜態網站，編輯器只能下載 JSON，不能直接存檔）
+npm run build      # 正式版 → dist/（只有遊戲，見下方「正式版」）
 npm run models     # 用 Blender 重建角色模型（BLENDER=<blender.exe> 或專案旁的 blender-* 資料夾）
 ```
 
 ## 操作
 
-WASD 移動（以鏡頭為準）・滑鼠 / ←→ 轉鏡頭・**按住 Shift 潛行**（怪物視野半徑減半）・**輕點 Shift 轉移次元**（兩側腳下都是空塊時）・Space 拉桿或割喉（拉桿在範圍內時優先拉桿；割喉要從背後摸到表次元的怪物，裏次元的幽靈殺不死）・R 重來
+WASD 移動（以鏡頭為準）・滑鼠 / ←→ 轉鏡頭・**按住 Shift 潛行**（怪物視野半徑減半）・**輕點 Shift 轉移次元**（兩側腳下都是空塊時）・Space 拉桿或割喉（拉桿在範圍內時優先拉桿；割喉要從背後摸到表次元的怪物，裏次元的幽靈殺不死）
+
+開發模式（`npm run dev`）另有：R 重來・←→ 轉鏡頭・+/− 縮放・`?level=<id>` 直接跳關・右上角編輯器連結。
+
+## 正式版
+
+`npm run build` 輸出 `dist/`：只有遊戲本體，鍵盤只認教學頁教的 WASD、Space、Shift（滑鼠轉鏡頭與滾輪縮放保留），沒有編輯器、試玩、跳關與 R 重來。`dist/` 要用 HTTP 伺服器開（例如 `npx vite preview`），直接雙擊 index.html 無法載入模型。
 
 ## 製作關卡
 

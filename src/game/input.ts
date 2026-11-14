@@ -36,15 +36,19 @@ export class Input {
   private raw = true;
   private zoomNotches = 0;
 
-  constructor(target: Window = window) {
+  /** Dev-only keys beyond the taught WASD / Space / Shift: ← → turn the camera, + − zoom it (the mouse does both always). */
+  private readonly devKeys: boolean;
+
+  constructor(target: Window = window, { devKeys = true }: { devKeys?: boolean } = {}) {
+    this.devKeys = devKeys;
     target.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       this.down.add(e.code);
       if (e.key === 'Shift') this.shiftDownAt = performance.now();
       // Space is the one action key: the sim pulls a lever in reach, otherwise tries a takedown
       if (e.code === 'Space') this.pending.interact = this.pending.attack = true;
-      if (e.code === 'Equal' || e.code === 'NumpadAdd') this.zoomNotches -= 1;
-      if (e.code === 'Minus' || e.code === 'NumpadSubtract') this.zoomNotches += 1;
+      if (devKeys && (e.code === 'Equal' || e.code === 'NumpadAdd')) this.zoomNotches -= 1;
+      if (devKeys && (e.code === 'Minus' || e.code === 'NumpadSubtract')) this.zoomNotches += 1;
       this.onKey.get(e.code)?.();
       if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
     });
@@ -107,7 +111,7 @@ export class Input {
 
   /** Camera yaw change this frame, in radians (positive = turn right). */
   takeTurn(dt: number, mouseSensitivity: number, keySpeed: number): number {
-    const keys = (this.any('ArrowRight') ? 1 : 0) - (this.any('ArrowLeft') ? 1 : 0);
+    const keys = this.devKeys ? (this.any('ArrowRight') ? 1 : 0) - (this.any('ArrowLeft') ? 1 : 0) : 0;
     const turn = this.mouseDX * mouseSensitivity + keys * keySpeed * dt;
     this.mouseDX = 0;
     return turn;

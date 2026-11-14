@@ -12,13 +12,16 @@ import { loadPlaytest } from './playtest';
 const STEP = 1 / 60;
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+/** The release build (npm run build) is the game alone: no editor link, no playtest hand-off, no ?level= jump, and only
+ *  the keys the control pages teach (WASD, Space, Shift; R and the camera keys are dev-only). */
+const DEV = import.meta.env.DEV;
 const params = new URLSearchParams(location.search);
-const playtest = params.has('playtest') ? loadPlaytest() : null;
+const playtest = DEV && params.has('playtest') ? loadPlaytest() : null;
 const levels: Level[] = playtest ? [playtest] : BUILTIN_LEVELS;
-let levelIndex = Math.max(0, levels.findIndex((l) => l.id === params.get('level')));
+let levelIndex = DEV ? Math.max(0, levels.findIndex((l) => l.id === params.get('level'))) : 0;
 
 const view = new GameView($<HTMLCanvasElement>('game'));
-const input = new Input();
+const input = new Input(window, { devKeys: DEV });
 input.bindPointerLock($<HTMLCanvasElement>('game'));
 let sim: Sim;
 let acc = 0;
@@ -82,9 +85,16 @@ function handle(events: SimEvent[]): void {
   view.onEvents(events);
 }
 
-input.onKey.set('KeyR', () => {
-  if (!fade && !briefing && !ending) start(levelIndex);
-});
+if (DEV) {
+  input.onKey.set('KeyR', () => {
+    if (!fade && !briefing && !ending) start(levelIndex);
+  });
+  const link = document.createElement('a');
+  link.className = 'editor';
+  link.href = './editor.html';
+  link.textContent = '編輯器';
+  document.body.append(link);
+}
 
 function loop(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);

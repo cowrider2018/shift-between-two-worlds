@@ -119,10 +119,9 @@ function levelStore(): Plugin {
 export default defineConfig({
   base: './',
   plugins: [levelStore()],
+  // the release build ships the game alone; the editor (editor.html) runs only under the dev server
   build: {
     chunkSizeWarningLimit: 1500,
-    rollupOptions: {
-      input: { game: resolve(import.meta.dirname, 'index.html'), editor: resolve(import.meta.dirname, 'editor.html') },
-    },
+    rollupOptions: { input: { game: resolve(import.meta.dirname, 'index.html') } },
   },
 });

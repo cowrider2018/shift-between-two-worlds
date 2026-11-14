@@ -26,11 +26,12 @@ let last = performance.now();
 const CAUGHT_HOLD = 0.9;
 /** -1: not caught; 0: caught, bonk still playing; >0: counting down to restart. */
 let caughtT = -1;
-/** On a win the screen fades to black at once, the next level loads, and it fades back in. */
+/** Every change of screen (a control page to the next, the last page to the first level, a won level to the next)
+ *  fades to black, swaps at full black, and fades back in. */
 const FADE_OUT = 0.6;
 const FADE_IN = 0.6;
-/** Time since the win (-1: none pending). Runs through fade out → (next level) → fade in. */
-let clearT = -1;
+/** The fade in progress: seconds since it began, and the swap to make at full black (already made once past it). */
+let fade: { t: number; atBlack: (() => void) | null } | null = null;
 /** The controls screen shown once before the first level (not when playtesting from the editor); null once dismissed. */
 let briefing: Briefing | null = null;
 
@@ -43,34 +44,43 @@ function start(index: number): void {
   caughtT = -1;
 }
 
-/** Advance the win → next-level transition; returns the black overlay's opacity. */
-function stepClear(dt: number): number {
-  if (clearT < 0) return 0;
-  const before = clearT;
-  clearT += dt;
-  if (before < FADE_OUT && clearT >= FADE_OUT) start(levelIndex + 1);
-  if (clearT >= FADE_OUT + FADE_IN) {
-    clearT = -1;
+/** Fade to black, run `atBlack` there, and fade back in (ignored while another fade is running). */
+function fadeThrough(atBlack: () => void): void {
+  fade ??= { t: 0, atBlack };
+}
+
+/** Advance the fade; returns the black overlay's opacity. */
+function stepFade(dt: number): number {
+  if (!fade) return 0;
+  fade.t += dt;
+  if (fade.t >= FADE_OUT && fade.atBlack) {
+    const swap = fade.atBlack;
+    fade.atBlack = null;
+    swap();
+  }
+  if (fade.t >= FADE_OUT + FADE_IN) {
+    fade = null;
     return 0;
   }
-  return clearT < FADE_OUT ? clearT / FADE_OUT : 1 - (clearT - FADE_OUT) / FADE_IN;
+  return fade.t < FADE_OUT ? fade.t / FADE_OUT : 1 - (fade.t - FADE_OUT) / FADE_IN;
 }
 
 function handle(events: SimEvent[]): void {
   // the restart countdown waits until the monster has bonked the hero (view.catchFinished)
   if (events.some((e) => e.type === 'caught')) caughtT = 0;
   // the last level has no transition: an ending sequence will go here
-  if (events.some((e) => e.type === 'won') && levelIndex + 1 < levels.length) clearT = 0;
+  if (events.some((e) => e.type === 'won') && levelIndex + 1 < levels.length) fadeThrough(() => start(levelIndex + 1));
   view.onEvents(events);
 }
 
 input.onKey.set('KeyR', () => {
-  if (clearT < 0) start(levelIndex);
+  if (!fade && !briefing) start(levelIndex);
 });
 
 function loop(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  $('fade').style.opacity = String(stepFade(dt));
   if (briefing) {
     briefing.frame(dt);
     requestAnimationFrame(loop);
@@ -94,12 +104,11 @@ function loop(now: number): void {
     caughtT -= dt;
     if (caughtT <= 0) start(levelIndex);
   }
-  $('fade').style.opacity = String(stepClear(dt));
   view.frame(dt);
   requestAnimationFrame(loop);
 }
 
-/** Show the control pages; each key release or mouse press turns one, and past the last the level starts. Waiting
+/** Show the control pages; each key release or mouse press fades to the next, and past the last into the level. Waiting
  *  for the release lets a Shift tap finish here, so it does not shift dimension on the first frame; the actions
  *  pressed meanwhile are dropped. */
 function showBriefing(): void {
@@ -110,7 +119,9 @@ function showBriefing(): void {
   const hint = el.querySelector<HTMLElement>('.start')!;
   const b = new Briefing(view.pipeline, pages, pages.map((p) => [...p.querySelectorAll<HTMLElement>('.station')]));
   briefing = b;
-  const turn = () => {
+  // the first page fades in from black too
+  fade = { t: FADE_OUT, atBlack: null };
+  const swap = () => {
     input.take();
     if (b.next()) {
       if (pages.at(-1)?.hidden === false) hint.textContent = '按任意鍵開始';
@@ -121,6 +132,9 @@ function showBriefing(): void {
     el.hidden = true;
     briefing = null;
     acc = 0;
+  };
+  const turn = () => {
+    if (!fade) fadeThrough(swap);
   };
   addEventListener('keyup', turn);
   addEventListener('mousedown', turn);

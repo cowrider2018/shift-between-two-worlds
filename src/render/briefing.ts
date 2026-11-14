@@ -19,6 +19,7 @@ import { cobble } from './materials';
 import { CharacterInstance } from './models';
 import { THEMES } from './palette';
 import type { PixelPipeline } from './pixelPipeline';
+import { renderStandalone } from './standalone';
 
 /** Field of view (degrees): narrow enough that nothing visibly recedes. */
 const FOV = 6;
@@ -172,22 +173,7 @@ export class Briefing {
     camera.far = dist + 5;
     camera.updateProjectionMatrix();
     camera.lookAt(0, page.centerY, 0);
-    camera.updateMatrixWorld();
-    // the post pass's rim light wants the sun's direction on screen (as the game view does)
-    const s = this.at.subVectors(this.sun.position, this.sun.target.position).transformDirection(camera.matrixWorldInverse);
-    pipeline.sun.dir.set(s.x, s.y);
-    if (pipeline.sun.dir.lengthSq() > 1e-6) pipeline.sun.dir.normalize();
-    pipeline.sun.color.copy(this.sun.color);
-    pipeline.subpixel.x = pipeline.subpixel.y = 0;
-    pipeline.hole = { x: 0, y: 0, r: 0, tip: 0, capR: 0 };
-    pipeline.fx.flash = pipeline.fx.ripple = pipeline.fx.danger = 0;
-    pipeline.fx.time = this.t;
-    // the game clips everything under the floor (its mirror pass draws the other dimension there); the pages do not
-    const renderer = pipeline.renderer;
-    const clip = renderer.clippingPlanes;
-    renderer.clippingPlanes = [];
-    pipeline.render(this.scene, camera);
-    renderer.clippingPlanes = clip;
+    renderStandalone(pipeline, this.scene, camera, this.sun, this.t);
     this.placeLabels(page);
   }
 

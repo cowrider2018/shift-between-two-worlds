@@ -85,8 +85,6 @@ export function validateLevel(level: Level): ValidationReport {
     if (src.length === 0) {
       if (door.props.inverted) warn(`${where(door.dim, door.x, door.y)} 反相門沒有拉桿，永遠開著`, at);
       else err(`${where(door.dim, door.x, door.y)} 門（頻道 ${door.props.channel}）沒有任何拉桿，永遠打不開`, at);
-    } else if (src.every((l) => l.dim === door.dim)) {
-      warn(`${where(door.dim, door.x, door.y)} 門的拉桿都在同一次元（原則上應跨次元）`, at);
     }
   }
   for (const l of levers) {

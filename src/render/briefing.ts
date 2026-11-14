@@ -2,8 +2,8 @@
  * Start screens (DESIGN §2): the controls, shown once before the first level as three flat pages in the game's own
  * pixel look. Each is a full-screen canvas of rock facing the camera, with the figures standing flat in front of it:
  *  1. the hero running: WASD moves;
- *  2. a troll seen from behind and a lever: Space cuts its throat, or pulls the lever;
- *  3. the hero above their exact mirror image in the other dimension's colours: Shift.
+ *  2. a troll and a lever, under one Space key: it cuts the troll's throat, or pulls the lever;
+ *  3. the hero above their exact mirror image, on the rock mirrored too, in the other dimension's colours: Shift.
  * Any key turns the page; after the last the first level starts. The labels are HTML (index.html #briefing); this
  * only pins them to their figures each frame.
  * The camera is a perspective one with a very narrow field of view from far off, so the picture is flat but the
@@ -33,8 +33,8 @@ interface Page {
   centerY: number;
   /** Where each of the page's labels is pinned, in label order. */
   anchors: Vector3[];
-  /** Theme of the rock below y = 0 (the reflection's side on the last page). */
-  lowerTheme: 0 | 1;
+  /** The rock below y = 0: the same surface rock running on, or (the last page) its mirror image in the underside. */
+  mirrored: boolean;
   update(dt: number, t: number): void;
 }
 
@@ -43,8 +43,9 @@ export class Briefing {
   readonly camera = new PerspectiveCamera(FOV, 1, 1, 100);
   private readonly sun = new DirectionalLight();
   private readonly pages: Page[];
+  /** Below y = 0: the surface rock carrying on, and the rock above mirrored in the underside's colours. */
   private readonly lower: Mesh;
-  private readonly lowerMats: [Material, Material];
+  private readonly mirrorLower: Mesh;
   private readonly at = new Vector3();
   private index = 0;
   private t = 0;
@@ -60,18 +61,19 @@ export class Briefing {
     this.sun.position.set(-4, 6, 8);
     this.scene.add(this.sun, this.sun.target);
 
-    this.lowerMats = [cobble(THEMES[0].floor[0]), cobble(THEMES[1].floor[0])];
-    this.scene.add(this.rock(1, this.lowerMats[0]));
-    this.lower = this.rock(-1, this.lowerMats[0]);
-    this.scene.add(this.lower);
+    const surface = cobble(THEMES[0].floor[0]);
+    this.lower = this.rock(-1, surface, false);
+    this.mirrorLower = this.rock(-1, cobble(THEMES[1].floor[0]), true);
+    this.scene.add(this.rock(1, surface, false), this.lower, this.mirrorLower);
 
     this.pages = [this.movePage(), this.actPage(), this.shiftPage()];
     for (const p of this.pages) this.scene.add(p.root);
     this.show(0);
   }
 
-  /** Half of the rock canvas: above (side 1) or below (side -1) y = 0, tiled at the floor's scale in play. */
-  private rock(side: 1 | -1, mat: Material): Mesh {
+  /** Half of the rock canvas: above (side 1) or below (side -1) y = 0, tiled at the floor's scale in play;
+   *  `mirrored` flips its texture about y = 0, so the lower half shows the upper one's stones reflected. */
+  private rock(side: 1 | -1, mat: Material, mirrored: boolean): Mesh {
     const w = 40;
     const h = 20;
     const g = new PlaneGeometry(w, h);
@@ -80,7 +82,7 @@ export class Briefing {
     const uv = new Float32Array(pos.count * 2);
     for (let i = 0; i < pos.count; i++) {
       uv[i * 2] = pos.getX(i) / COBBLE_SPAN;
-      uv[i * 2 + 1] = pos.getY(i) / COBBLE_SPAN;
+      uv[i * 2 + 1] = (mirrored ? -pos.getY(i) : pos.getY(i)) / COBBLE_SPAN;
     }
     g.setAttribute('uv', new BufferAttribute(uv, 2));
     return new Mesh(g, mat);
@@ -98,15 +100,15 @@ export class Briefing {
     const root = new Group();
     const hero = this.hero('plain', 'run', -0.45);
     root.add(hero.root);
-    return { root, centerY: 0.3, anchors: [new Vector3(0, -0.2, 0)], lowerTheme: 0, update: (dt) => hero.update(dt) };
+    return { root, centerY: 0.3, anchors: [new Vector3(0, -0.2, 0)], mirrored: false, update: (dt) => hero.update(dt) };
   }
 
-  /** 2. A troll with its back to us, and a lever: Space for both. */
+  /** 2. A troll facing us and a lever, one Space key between them: it does both. */
   private actPage(): Page {
     const root = new Group();
     const troll = new CharacterInstance('troll', 'normal');
     troll.root.position.x = -0.75;
-    troll.root.rotation.y = Math.PI / 2; // facing away from the camera: this is the side to come at it from
+    troll.root.rotation.y = -Math.PI / 2; // facing the camera
     troll.play('idle', 0);
     const lever = leverParts({ x: 0, y: 0 });
     const leverRoot = new Group();
@@ -115,8 +117,8 @@ export class Briefing {
     leverRoot.rotation.x = 0.5; // tipped toward the camera so the slot and its glow show
     root.add(troll.root, leverRoot);
     return {
-      root, centerY: 0.5, lowerTheme: 0,
-      anchors: [new Vector3(-0.75, -0.2, 0), new Vector3(0.85, -0.2, 0)],
+      root, centerY: 0.5, mirrored: false,
+      anchors: [new Vector3(0.05, -0.2, 0)],
       update: (dt, t) => {
         troll.update(dt);
         lever.update(t, dt, false);
@@ -124,7 +126,8 @@ export class Briefing {
     };
   }
 
-  /** 3. The hero over their own reflection, one to one, in the underside's rock and cloak: Shift. */
+  /** 3. The hero over their own reflection, one to one, on the rock's reflection in the underside's colours and
+   *  cloak: Shift. */
   private shiftPage(): Page {
     const root = new Group();
     const yaw = -Math.PI / 2 + 0.45;
@@ -133,7 +136,7 @@ export class Briefing {
     mirror.root.scale.y = -1;
     root.add(hero.root, mirror.root);
     return {
-      root, centerY: 0, lowerTheme: 1,
+      root, centerY: 0, mirrored: true,
       anchors: [new Vector3(0.45, 0, 0)],
       update: (dt) => {
         hero.update(dt);
@@ -146,7 +149,8 @@ export class Briefing {
     this.index = i;
     this.pages.forEach((p, j) => (p.root.visible = j === i));
     this.pageEls.forEach((el, j) => (el.hidden = j !== i));
-    this.lower.material = this.lowerMats[this.pages[i].lowerTheme];
+    this.mirrorLower.visible = this.pages[i].mirrored;
+    this.lower.visible = !this.mirrorLower.visible;
   }
 
   /** Turn to the next page; false once past the last one. */

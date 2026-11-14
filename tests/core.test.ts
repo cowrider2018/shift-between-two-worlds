@@ -59,6 +59,28 @@ describe('level files', () => {
   }
 });
 
+describe('outermost rock', () => {
+  const grid = (rows: string[]) => {
+    const l = createEmptyLevel('t', rows[0].length, rows.length);
+    for (const dim of [0, 1] as const) l.dimensions[dim].rows = rows;
+    return new LevelGrid(l);
+  };
+
+  it('takes in rock filled in behind the rim, alone or as a block', () => {
+    const g = grid(['######', '#...##', '#...##', '##...#', '######']);
+    expect(isOuterRock(g, 0, 1, 3)).toBe(true); // a corner filled in
+    expect(isOuterRock(g, 0, 4, 1)).toBe(true); // a two-cell block backing the rim
+    expect(isOuterRock(g, 0, 4, 2)).toBe(true);
+  });
+
+  it('leaves out a wall with play on two opposite sides', () => {
+    const g = grid(['#######', '#.....#', '#.###.#', '#.....#', '#######']);
+    expect(isOuterRock(g, 0, 3, 2)).toBe(false); // open above and below
+    const finger = grid(['#######', '#.##..#', '#.##..#', '#.....#', '#######']);
+    expect(isOuterRock(finger, 0, 2, 1)).toBe(false); // a thick finger from the rim: open on its left and right
+  });
+});
+
 describe('dug-out (void) cells', () => {
   /** An L-shaped level: the top-right corner is dug out. */
   const lShape = (): Level => {

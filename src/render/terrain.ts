@@ -386,15 +386,72 @@ function isRock(grid: LevelGrid, dim: DimIndex, x: number, z: number): boolean {
 
 const isVoid = (grid: LevelGrid, dim: DimIndex, x: number, z: number) => grid.cell(dim, x, z).def.behavior === 'void';
 
-/**
- * The outermost rock, raised to OUTER_H: rock on the grid border, everything outside the grid, and rock bordering
- * a dug-out (void) cell, side or corner, so a level of any outline is ringed by the cliff.
- */
-export function isOuterRock(grid: LevelGrid, dim: DimIndex, x: number, z: number): boolean {
+/** Rock on the grid border, everything outside the grid, and rock bordering a dug-out (void) cell, side or corner. */
+function isRimRock(grid: LevelGrid, dim: DimIndex, x: number, z: number): boolean {
   if (!isRock(grid, dim, x, z)) return false;
   if (x <= 0 || z <= 0 || x >= grid.w - 1 || z >= grid.h - 1) return true;
   for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (isVoid(grid, dim, x + dx, z + dz)) return true;
   return false;
+}
+
+const outerCache = new WeakMap<LevelGrid, Set<number>[]>();
+
+/**
+ * The in-grid outermost rock of each dimension, as cell indices (see isOuterRock); the grid never changes. Besides
+ * the rim, a block of rock that only backs the rim joins it: each 8-connected block of the other rock rises with the
+ * rim unless it has open cells on two opposite sides (W and E, or N and S), which makes it a wall standing in the
+ * level, with play on both sides of it, rather than rock filled in behind the edge.
+ */
+function outerCells(grid: LevelGrid, dim: DimIndex): Set<number> {
+  let sets = outerCache.get(grid);
+  if (!sets) outerCache.set(grid, (sets = []));
+  const cached = sets[dim];
+  if (cached) return cached;
+  const out = new Set<number>();
+  sets[dim] = out;
+  const key = (x: number, z: number) => z * grid.w + x;
+  const seen = new Set<number>();
+  for (let z = 0; z < grid.h; z++) {
+    for (let x = 0; x < grid.w; x++) {
+      if (!isRock(grid, dim, x, z)) continue;
+      if (isRimRock(grid, dim, x, z)) {
+        out.add(key(x, z));
+        continue;
+      }
+      if (seen.has(key(x, z))) continue;
+      const block: [number, number][] = [[x, z]];
+      seen.add(key(x, z));
+      let w = false, e = false, n = false, s = false;
+      for (let i = 0; i < block.length; i++) {
+        const [bx, bz] = block[i];
+        w ||= !isRock(grid, dim, bx - 1, bz);
+        e ||= !isRock(grid, dim, bx + 1, bz);
+        n ||= !isRock(grid, dim, bx, bz - 1);
+        s ||= !isRock(grid, dim, bx, bz + 1);
+        for (let dz = -1; dz <= 1; dz++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = bx + dx;
+            const nz = bz + dz;
+            if (!grid.inBounds(nx, nz) || seen.has(key(nx, nz)) || !isRock(grid, dim, nx, nz) || isRimRock(grid, dim, nx, nz)) continue;
+            seen.add(key(nx, nz));
+            block.push([nx, nz]);
+          }
+        }
+      }
+      if (!(w && e) && !(n && s)) for (const [bx, bz] of block) out.add(key(bx, bz));
+    }
+  }
+  return out;
+}
+
+/**
+ * The outermost rock, raised to OUTER_H: rock on the grid border, everything outside the grid, and rock bordering
+ * a dug-out (void) cell, side or corner, so a level of any outline is ringed by the cliff; plus rock that only
+ * backs that rim (see outerCells), so a corner filled in behind it rises with it.
+ */
+export function isOuterRock(grid: LevelGrid, dim: DimIndex, x: number, z: number): boolean {
+  if (!grid.inBounds(x, z)) return isRimRock(grid, dim, x, z);
+  return outerCells(grid, dim).has(z * grid.w + x);
 }
 
 /** Rounded inner-corner tops at height y: where this wall's two neighbours are walls but the diagonal cell is

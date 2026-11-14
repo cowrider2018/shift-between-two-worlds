@@ -83,6 +83,10 @@ export function withHole<T extends Material>(mat: T): T {
  *  the direction along the face, its half width and the height where the round top springs. */
 export interface Mouth { origin: Vector3; normal: Vector3; along: Vector3; half: number; spring: number }
 
+/** +1 normally; the view sets -1 while it renders the reflection, where the world hangs upside down below the floor,
+ *  so a mouth's arch is measured downwards there instead of everything inside it being cut away. */
+export const MOUTH_UP = { value: 1 };
+
 /**
  * A copy of `mat` (already given the camera hole) that only shows through `mouth`: a fragment is kept only if the
  * line from the camera to it crosses the face plane inside the arch. Whatever sits behind the opening (a cave) is
@@ -95,6 +99,7 @@ export function throughMouth<T extends Material>(mat: T, mouth: Mouth): T {
     uMouthNormal: { value: mouth.normal },
     uMouthAlong: { value: mouth.along },
     uMouthSize: { value: new Vector2(mouth.half, mouth.spring) },
+    uMouthUp: MOUTH_UP,
   };
   const before = mat.onBeforeCompile.bind(mat);
   m.onBeforeCompile = (shader, renderer) => {
@@ -109,7 +114,8 @@ vMouthWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
       .replace('#include <common>', `#include <common>
 varying vec3 vMouthWorld;
 uniform vec3 uMouthOrigin, uMouthNormal, uMouthAlong;
-uniform vec2 uMouthSize;`)
+uniform vec2 uMouthSize;
+uniform float uMouthUp;`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
 {
   vec3 rd = vMouthWorld - cameraPosition;
@@ -118,7 +124,7 @@ uniform vec2 uMouthSize;`)
   if (side > 0.0 && dn < 0.0) {
     vec3 hit = cameraPosition + rd * (-side / dn) - uMouthOrigin;
     float u = abs(dot(hit, uMouthAlong));
-    float y = hit.y;
+    float y = hit.y * uMouthUp;
     float r = uMouthSize.x + 0.03;
     bool inside = y > -0.03 && u < r && (y < uMouthSize.y || length(vec2(u, y - uMouthSize.y)) < r);
     if (!inside) discard;

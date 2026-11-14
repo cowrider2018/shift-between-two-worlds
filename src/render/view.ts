@@ -19,7 +19,7 @@ import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
-import { HOLE } from './cutaway';
+import { HOLE, MOUTH_UP } from './cutaway';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -359,6 +359,7 @@ export class GameView {
     this.scene.fog = this.mirrorFog;
     const flip = [this.world.scale, this.sun.position, this.sun.target.position, this.hemi.position];
     for (const v of flip) v.y = -v.y;
+    MOUTH_UP.value = -1;
     const background = this.scene.background;
     this.scene.background = null;
     const r = this.pipeline.renderer;
@@ -374,6 +375,7 @@ export class GameView {
     r.setClearColor(this.clearColor, clearAlpha);
     this.scene.background = background;
     for (const v of flip) v.y = -v.y;
+    MOUTH_UP.value = 1;
     this.light(shown);
     shows.forEach(([o], i) => (o.visible = was[i]));
   }

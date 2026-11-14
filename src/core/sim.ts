@@ -15,7 +15,7 @@ export const TUNING = {
   detectFall: 1,
   /** Centre-to-centre reach of everything the hero acts on: pulling a lever (its cell centre) and the throat-cut
    *  takedown (the monster's centre). */
-  interactRange: 0.5,
+  interactRange: 0.85,
   /** Seconds the hero is busy with a takedown (leap on, ride out the troll's thrashing, cut, hop back off) and takes
    *  no input; matches the hero's `takedown` clip. */
   takedownTime: 1.8,

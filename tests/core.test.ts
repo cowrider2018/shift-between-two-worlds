@@ -202,7 +202,7 @@ describe('paired levers', () => {
     const sim = new Sim(paired());
     const a = sim.grid.cell(0, 1, 1);
     const b = sim.grid.cell(1, 1, 1);
-    walkTo(sim, 1, 1); // onto the lever: it is pulled from within half a cell of its centre
+    walkTo(sim, 1, 1); // onto the lever: it is pulled from within TUNING.interactRange of its centre
     tap(sim, 'interact');
     expect([sim.leverOn(a), sim.leverOn(b)]).toEqual([true, true]);
     expect([sim.channelOn(1), sim.channelOn(2)]).toEqual([true, true]);
@@ -294,7 +294,7 @@ describe('simulation on level01', () => {
     expect(sim.hunter).toBeNull();
   });
 
-  it('acts only within half a cell, centre to centre, of a lever or a monster', () => {
+  it('acts only within the interact range, centre to centre, of a lever or a monster', () => {
     const sim = new Sim(ambushLevel(7));
     const m = sim.monsters[0];
     sim.x = m.x + TUNING.interactRange + 0.05;

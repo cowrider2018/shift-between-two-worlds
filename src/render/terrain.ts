@@ -70,7 +70,13 @@ interface Snapped { p: [number, number, number]; n: [number, number, number] }
 
 class WallShape {
   private readonly cache = new Map<string, Sdf>();
-  constructor(private readonly isWall: IsWall, private readonly height = WALL_H) {}
+  /** `height` may vary over the footprint (see wallGeometry): the top, and its bevel, are taken where each point is. */
+  constructor(private readonly isWall: IsWall, private readonly height: number | Sdf = WALL_H) {}
+
+  /** Signed distance to the footprint outline (negative inside). */
+  sdf(x: number, z: number): number {
+    return this.sdfNear(x, z)(x, z);
+  }
 
   private sdfNear(x: number, z: number): Sdf {
     const vx = Math.round(x);
@@ -106,7 +112,7 @@ class WallShape {
       z -= gz * s;
       e = 0;
     }
-    const base = this.height - BEVEL;
+    const base = (typeof this.height === 'number' ? this.height : this.height(x, z)) - BEVEL;
     if (e < BEVEL && y > base) {
       const dx = gx * (BEVEL - e);
       const dz = gz * (BEVEL - e);
@@ -394,24 +400,35 @@ function fillets(b: MeshBuilder, isWall: IsWall, cx: number, cz: number, y: numb
 export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
   topColor: string, cave?: CaveMouth): BufferGeometry {
   const isWall: IsWall = (x, z) => isRock(grid, dim, x, z);
-  // an outermost wall stops at WALL_H here (no top, no bevel); outerWallGeometry carries it on up
-  const outer = isOuterRock(grid, dim, cx, cz);
-  const shape = new WallShape(isWall, outer ? OUTER_H : WALL_H);
-  const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
+  const isOuter: IsWall = (x, z) => isOuterRock(grid, dim, x, z);
+  // an outermost wall stops at WALL_H here (no top, no bevel); outerWallGeometry carries it on up. Where ordinary
+  // rock meets it, the two footprints differ at WALL_H (the cliff has no fillet into, and rounds the corner beside,
+  // the lower wall), so there it is also topped and bevelled like an ordinary wall wherever it lies outside the cliff.
+  const outer = isOuter(cx, cz);
   let exposed = false;
-  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!isWall(cx + dx, cz + dz)) exposed = true;
+  let shelf = false;
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (!isWall(cx + dx, cz + dz)) exposed = true;
+      else if (outer && !isOuter(cx + dx, cz + dz)) shelf = true;
+    }
+  }
+  const cliff = new WallShape(isOuter);
+  const shape = new WallShape(isWall, !outer ? WALL_H : !shelf ? OUTER_H : (x, z) => (cliff.sdf(x, z) < 1e-3 ? OUTER_H : WALL_H));
+  const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
   const B = exposed ? FINE : COARSE;
   const n = B.length;
-  const H = outer ? [0, WALL_H] : HEIGHTS;
+  const topped = !outer || shelf;
+  const H = topped ? HEIGHTS : [0, WALL_H];
 
-  if (!outer) b.patch(n, n, (i, j) => [cx + B[i], WALL_H, cz + B[j]], false, [0, 1, 0]);
+  if (topped) b.patch(n, n, (i, j) => [cx + B[i], WALL_H, cz + B[j]], false, [0, 1, 0]);
   const open = (dx: number, dz: number) => !isWall(cx + dx, cz + dz) && !(cave && cave.dx === dx && cave.dz === dz);
   if (cave) caveFace(b, cx, cz, cave, H);
   if (open(1, 0)) b.patch(n, H.length, (i, j) => [cx + 1, H[j], cz + B[i]], true, [1, 0, 0]);
   if (open(-1, 0)) b.patch(n, H.length, (i, j) => [cx, H[j], cz + B[i]], true, [-1, 0, 0]);
   if (open(0, 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz + 1], true, [0, 0, 1]);
   if (open(0, -1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz], true, [0, 0, -1]);
-  fillets(b, isWall, cx, cz, WALL_H);
+  if (topped) fillets(b, isWall, cx, cz, WALL_H);
   return b.build();
 }
 

@@ -212,7 +212,7 @@ interface LeverGlow {
   update(t: number, dt: number, on: boolean): void;
 }
 
-function leverGlow(cell: Cell): LeverGlow {
+function leverGlow(cell: Pick<Cell, 'x' | 'y'>): LeverGlow {
   const poolMat = new MeshBasicMaterial({
     color: LEVER_GLOW, map: leverPoolTexture(),
     transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
@@ -258,6 +258,26 @@ function leverGlow(cell: Cell): LeverGlow {
   };
 }
 
+/** A lever without its floor tile: base, swinging arm and glow, centred on the origin. `update` swings the arm
+ *  and recolours the glow toward `on`. */
+export function leverParts(cell: Pick<Cell, 'x' | 'y'>): LeverGlow {
+  const base = m(new BoxGeometry(0.44, 0.16, 0.3), toon('#5a5560'), 0, 0.06, 0);
+  const arm = new Group();
+  arm.position.y = 0.1;
+  arm.add(m(new CylinderGeometry(0.04, 0.04, LEVER_ARM, 6), toon('#3a3238'), 0, 0.16, 0));
+  arm.add(m(new IcosahedronGeometry(0.09), toon('#6a6470'), 0, 0.46, 0));
+  const glow = leverGlow(cell);
+  let angle = -0.6;
+  return {
+    parts: [...glow.parts, base, arm],
+    update: (t, dt, on) => {
+      glow.update(t, dt, on);
+      angle += ((on ? 0.6 : -0.6) - angle) * Math.min(1, dt * 12);
+      arm.rotation.z = angle;
+    },
+  };
+}
+
 export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   floor: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
 
@@ -275,23 +295,10 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   spawn: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
 
   lever: (cell, ctx) => {
-    const base = m(new BoxGeometry(0.44, 0.16, 0.3), toon('#5a5560'), 0, 0.06, 0);
-    const arm = new Group();
-    arm.position.y = 0.1;
-    arm.add(m(new CylinderGeometry(0.04, 0.04, LEVER_ARM, 6), toon('#3a3238'), 0, 0.16, 0));
-    arm.add(m(new IcosahedronGeometry(0.09), toon('#6a6470'), 0, 0.46, 0));
-    const glow = leverGlow(cell);
-    const g = onFloor(cell, ctx, ...glow.parts, base, arm);
-    let angle = -0.6;
+    const lever = leverParts(cell);
     return {
-      object: g,
-      update: (sim, dt, t) => {
-        const on = sim.leverOn(cell);
-        glow.update(t, dt, on);
-        const target = on ? 0.6 : -0.6;
-        angle += (target - angle) * Math.min(1, dt * 12);
-        arm.rotation.z = angle;
-      },
+      object: onFloor(cell, ctx, ...lever.parts),
+      update: (sim, dt, t) => lever.update(t, dt, sim.leverOn(cell)),
     };
   },
 

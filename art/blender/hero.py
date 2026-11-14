@@ -615,6 +615,54 @@ EAR_OUT = 0.004
 EAR_FLARE = 10.0
 
 
+# Eyebrows: a solid bar on the brow's top crease (the ring where the forehead turns into the set-back under the brow),
+# following it round the face over each eye: BROW_LEN eye-widths long, BROW_THICK of an eye's width from top to
+# bottom, standing BROW_OUT out of the face (and sunk a little into it, so no gap shows).
+BROW_LEN = 1.5
+BROW_THICK = 0.15
+BROW_OUT = 0.006
+BROW_SINK = 0.002
+BROW_STEPS = 6
+
+
+def _build_brows(head, eyes):
+    vs = head.data.vertices
+    ring = max(i for i in range(1, FACE_RINGS) if _ring_z(i) >= FACE_BROW_Z)   # the lowest ring still on the forehead
+    brows = []
+    for eye in eyes:
+        ys = [v.co.y - H.y for v in eye.data.vertices]
+        side = 1 if sum(ys) > 0 else -1
+        width = max(ys) - min(ys)
+        centre = (max(ys) + min(ys)) / 2
+        # the crease on this side of the face, from the midline outward: a polyline of the ring's vertices
+        crease = [vs[1 + (ring - 1) * FACE_SEGS + _column(side, c)].co.copy() for c in range(FACE_SEGS // 4)]
+
+        def on_crease(y):
+            for p, q in zip(crease, crease[1:]):
+                if (p.y - H.y - y) * (q.y - H.y - y) <= 0:
+                    t = (y - (p.y - H.y)) / ((q.y - p.y) or 1e-9)
+                    along = (q - p).normalized()
+                    return p.lerp(q, t), Vector((along.y, -along.x, 0)).normalized() * side
+            raise ValueError("eyebrow off the crease")
+
+        half, th = BROW_LEN * width / 2, BROW_THICK * width / 2
+        verts = []
+        for k in range(BROW_STEPS + 1):
+            y = centre - half + 2 * half * k / BROW_STEPS
+            p, n = on_crease(y)
+            if n.x < 0:
+                n = -n
+            verts += [p - n * BROW_SINK + Z * th, p + n * BROW_OUT + Z * th, p + n * BROW_OUT - Z * th,
+                      p - n * BROW_SINK - Z * th]
+        faces = []
+        for k in range(BROW_STEPS):
+            a, b = 4 * k, 4 * (k + 1)
+            faces += [(a + j, b + j, b + (j + 1) % 4, a + (j + 1) % 4) for j in range(4)]
+        faces += [(0, 1, 2, 3), tuple(4 * BROW_STEPS + j for j in (3, 2, 1, 0))]
+        brows.append(lib.mesh_from(f"brow.{'L' if side > 0 else 'R'}", verts, faces, "hero_hair", recalc=True))
+    return brows
+
+
 def build_head():
     from mathutils.bvhtree import BVHTree
     k = HEAD_K
@@ -675,7 +723,7 @@ def build_head():
     for o in parts:
         if o.name.startswith("ear"):
             _follow_flat(o)
-    return parts
+    return parts + _build_brows(head, eyes)
 
 
 # Hair: five big, thick cones ("locks") and nothing else — no caps, spheres, sheets or bangs.

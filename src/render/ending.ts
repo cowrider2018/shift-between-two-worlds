@@ -1,7 +1,7 @@
 /**
  * Ending (DESIGN §2): after the last level, the hero runs toward the right of the screen, three-quarters to the
- * camera, over an endless plain of the surface's flagstones that fades into the dark. Framed like the first control
- * page: the hero in the middle at the same size, the words centred under their feet. The hero stays put and the
+ * camera, over an endless plain of the surface's flagstones that fades into the dark, seen from 15° above the
+ * ground. The hero, large, runs a little right of centre; the words are centred in the space to their left. The hero stays put and the
  * ground slides under them; the plane steps back by whole texture repeats, so the stones never jump.
  * The words are HTML (index.html #ending); this pins them beside the hero, main fades them in.
  */
@@ -19,17 +19,16 @@ import { renderStandalone } from './standalone';
 const PLANE = { w: 200, d: 200 };
 /** Near and far planes kept tight: with the usual 0.1 near plane the depth far off is too coarse, and the post pass
  *  outlines its noise as a bright band along the horizon. The fog is solid well before FAR. */
-const NEAR = 1;
+const NEAR = 0.5;
 const FAR = 20;
-/** Camera: as far from the hero as the first control page has them look (about a third of the screen's height),
- *  15° above the ground. */
-const CAMERA_DIST = 3.4;
+/** Camera: close enough that the hero stands about two thirds of the screen's height, 15° above the ground. */
+const CAMERA_DIST = 1.7;
 const CAMERA_PITCH = (15 * Math.PI) / 180;
 const LOOK_Y = 0.4;
-/** The words weigh less than the hero, so the hero runs a little left of centre to balance them. */
-const HERO_X = -0.4;
-/** The hero's right-hand edge at mid-body: the words are centred in the screen to the right of it. */
-const HERO_RIGHT = new Vector3(HERO_X + 0.35, 0.45, 0);
+/** The words weigh less than the hero, so the hero runs a little right of centre to balance them. */
+const HERO_X = 0.2;
+/** The hero's left-hand edge at mid-body: the words are centred in the screen to the left of it. */
+const HERO_LEFT = new Vector3(HERO_X - 0.35, 0.45, 0);
 
 export class Ending {
   readonly scene = new Scene();
@@ -93,9 +92,9 @@ export class Ending {
     this.camera.updateProjectionMatrix();
     renderStandalone(this.pipeline, this.scene, this.camera, this.sun, this.t);
     const rect = this.pipeline.canvas.getBoundingClientRect();
-    const p = this.at.copy(HERO_RIGHT).project(this.camera);
+    const p = this.at.copy(HERO_LEFT).project(this.camera);
     const edge = rect.left + (p.x * 0.5 + 0.5) * rect.width;
-    this.label.style.left = `${(edge + rect.right) / 2}px`;
+    this.label.style.left = `${(rect.left + edge) / 2}px`;
     this.label.style.top = `${rect.top + (0.5 - p.y * 0.5) * rect.height}px`;
   }
 }

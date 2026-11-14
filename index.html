@@ -5,10 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SHIFT</title>
     <style>
+      /* Fusion Pixel 10px (SIL OFL 1.1, public/fonts/fusion-pixel-OFL.txt): sizes stay whole multiples of 10px so every
+         font pixel lands on whole screen pixels */
+      @font-face { font-family: "Fusion Pixel 10px"; src: url("/fonts/fusion-pixel-10px-proportional-zh_tw.woff2") format("woff2");
+        font-display: block; }
       :root { --ink: #f4eedd; }
       * { box-sizing: border-box; }
       html, body { margin: 0; height: 100%; background: #0b0a0e; overflow: hidden; color: var(--ink);
-        font: 600 15px/1.4 ui-monospace, "Cascadia Mono", Consolas, "Microsoft JhengHei", monospace; }
+        font: 400 20px/1.4 "Fusion Pixel 10px", monospace; -webkit-font-smoothing: none; -moz-osx-font-smoothing: grayscale;
+        font-synthesis: none; }
       #game { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); image-rendering: pixelated; }
       a.editor { position: absolute; top: 12px; right: 16px; color: var(--ink); opacity: .6; text-shadow: 2px 2px 0 #000; }
       #fade { position: absolute; inset: 0; background: #0b0a0e; opacity: 0; pointer-events: none; }
@@ -17,7 +22,7 @@
       #briefing .page[hidden] { display: none; }
       #briefing .station { position: absolute; transform: translateX(-50%); text-align: center; white-space: nowrap; }
       #briefing .station.side { transform: translateY(-50%); text-align: left; }
-      #briefing .how { display: block; margin-top: 6px; opacity: .8; font-size: 13px; }
+      #briefing .how { display: block; margin-top: 6px; opacity: .8; font-size: 20px; }
       #briefing kbd { display: inline-block; min-width: 2.4em; padding: 3px 10px 5px; font: inherit; color: #22160a;
         background: var(--ink); border-radius: 3px; box-shadow: inset 0 -3px 0 #b8a88a, 2px 2px 0 #000; text-shadow: none; }
       #briefing .start { position: absolute; left: 0; right: 0; bottom: 8%; text-align: center; opacity: .75;
@@ -28,8 +33,8 @@
       #ending[hidden] { display: none; }
       #ending span { opacity: 0; transition: opacity .9s ease-out; }
       #ending span.in { opacity: 1; }
-      #ending .escaped { font-size: 66px; letter-spacing: 9px; }
-      #ending .thanks { font-size: 27px; }
+      #ending .escaped { font-size: 60px; letter-spacing: 6px; }
+      #ending .thanks { font-size: 30px; }
     </style>
   </head>
   <body>

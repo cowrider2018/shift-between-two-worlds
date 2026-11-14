@@ -2,10 +2,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BLOCKS } from '../src/core/blocks';
-import { LevelGrid, castRay } from '../src/core/grid';
+import { LevelGrid, angleDiff, castRay } from '../src/core/grid';
 import { isOuterRock } from '../src/render/terrain';
 import { createEmptyLevel, parseLevel, serializeLevel, setCell, setProp, type Level } from '../src/core/level';
-import { NO_INPUT, Sim, TUNING, type SimInput } from '../src/core/sim';
+import { NO_INPUT, Sim, TUNING, type MonsterState, type SimInput } from '../src/core/sim';
 import { ORDER_FILE } from '../src/core/order';
 import { validateLevel } from '../src/core/validate';
 
@@ -186,6 +186,69 @@ describe('patrol blocked by a closed door', () => {
       run(sim, 12, (x) => (max = Math.max(max, x)));
       expect(max).toBeCloseTo(8.5, 5);
     }
+  });
+});
+
+describe('patrol as one continuous ring', () => {
+  /** An open 11×9 field; the hero waits far away in the other dimension. */
+  const field = (mode: 'pingpong' | 'loop', path: [number, number][], pause = 0.5) => {
+    const l = createEmptyLevel('t', 11, 9);
+    l.dimensions[0].monsters.push({ id: 'm', path, mode, speed: 2, pause, viewRadius: 1, viewAngle: 10, facing: 0 });
+    const sim = new Sim(l);
+    sim.dim = 1;
+    return sim;
+  };
+  const steps = (sim: Sim, seconds: number, each: (m: MonsterState) => void) => {
+    for (let i = 0; i < seconds * 60; i++) {
+      sim.update(NO_INPUT, 1 / 60);
+      each(sim.monsters[0]);
+    }
+  };
+
+  it('walks straight through nodes that do not change direction, without stopping or turning', () => {
+    const sim = field('pingpong', [[1, 4], [3, 4], [5, 4], [8, 4]]);
+    let still = 0;
+    let last = sim.monsters[0].x;
+    steps(sim, 3.5, (m) => {
+      if (m.x === last) still++;
+      last = m.x;
+      expect(Math.abs(angleDiff(m.angle, 0))).toBeLessThan(1e-9);
+    });
+    expect(still).toBe(0);
+    expect(sim.monsters[0].x).toBeCloseTo(8.5, 5);
+  });
+
+  it('stops once where a loop ends on the node it began on, not twice', () => {
+    const sim = field('loop', [[2, 2], [6, 2], [6, 6], [2, 6], [2, 2]], 0.5);
+    const lap = (4 * 4) / 2 + 4 * 0.5; // each corner's quarter turn fits inside its pause
+    steps(sim, lap + 0.3, () => {});
+    expect(sim.monsters[0].x).toBeGreaterThan(2.7); // already on its way along the top again (a second stop would hold it at 2.5)
+    expect(sim.monsters[0].y).toBeCloseTo(2.5, 5);
+  });
+
+  it('turns corners the short way and about-faces through the side that faces the map centre', () => {
+    for (const [y, sign] of [[1, 1], [7, -1]] as const) {
+      // along the top edge the centre lies to +y (clockwise on screen), along the bottom edge to -y
+      const sim = field('pingpong', [[2, y], [8, y]], 0);
+      let swept = 0;
+      let prev = sim.monsters[0].angle;
+      steps(sim, 3.8, (m) => {
+        const d = angleDiff(m.angle, prev);
+        if (Math.abs(d) > 1e-9) {
+          expect(Math.sign(d)).toBe(sign);
+          swept += Math.abs(d);
+        }
+        prev = m.angle;
+      });
+      expect(swept).toBeCloseTo(Math.PI, 5);
+    }
+    const sim = field('loop', [[2, 2], [6, 2], [6, 6]], 0);
+    let prev = sim.monsters[0].angle;
+    steps(sim, 2.5, (m) => {
+      expect(Math.abs(angleDiff(m.angle, prev))).toBeLessThanOrEqual(TUNING.monsterTurnSpeed / 60 + 1e-9);
+      prev = m.angle;
+    });
+    expect(sim.monsters[0].angle).toBeCloseTo(Math.PI / 2, 5); // a quarter turn right, not three quarters left
   });
 });
 

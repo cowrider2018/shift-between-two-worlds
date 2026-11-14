@@ -76,92 +76,154 @@ export class MonsterState {
   /** Left its patrol to chase the player down. */
   hunting = false;
   seeing = false;
-  private target = 1;
+  /** The patrol as one closed ring of cell centres (see `patrolRing`); fewer than two points means it stands still. */
+  private readonly ring: [number, number][];
+  private readonly segLen: number[] = [];
+  private readonly segUx: number[] = [];
+  private readonly segUy: number[] = [];
+  /** Where the direction of travel changes, i.e. where the monster stops to turn; straight-through nodes are not. */
+  private readonly corner: boolean[] = [];
+  /** On segment `seg` (ring[seg] → ring[seg + 1]) at distance `t` from its start, travelling with (+1) or against it. */
+  private seg = 0;
+  private t = 0;
   private dir = 1;
+  /** Standing at a turn: it turns on the spot and waits out its pause before walking on. */
+  private stopped = false;
   private pauseT = 0;
+  /** Which way to swing when the turn is a full about-face (both ways equally short). */
+  private turnSign = 1;
 
-  constructor(readonly def: MonsterDef, readonly home: DimIndex) {
+  constructor(readonly def: MonsterDef, readonly home: DimIndex, private readonly centre: [number, number] = [0, 0]) {
     this.dim = home;
     const [sx, sy] = def.path[0];
     this.x = sx + 0.5;
     this.y = sy + 0.5;
     this.angle = (def.facing * Math.PI) / 180;
-    if (def.path.length > 1) {
-      const [nx, ny] = def.path[1];
-      this.angle = Math.atan2(ny - sy, nx - sx);
+    this.ring = patrolRing(def);
+    const n = this.ring.length;
+    if (n < 2) return;
+    for (let i = 0; i < n; i++) {
+      const [ax, ay] = this.ring[i];
+      const [bx, by] = this.ring[(i + 1) % n];
+      const len = Math.hypot(bx - ax, by - ay);
+      this.segLen.push(len);
+      this.segUx.push((bx - ax) / len);
+      this.segUy.push((by - ay) / len);
     }
+    for (let i = 0; i < n; i++) {
+      const j = (i - 1 + n) % n;
+      this.corner.push(Math.abs(this.segUx[i] - this.segUx[j]) + Math.abs(this.segUy[i] - this.segUy[j]) > 1e-9);
+    }
+    this.angle = this.heading();
   }
 
   get halfAngle(): number {
     return ((this.def.viewAngle / 2) * Math.PI) / 180;
   }
 
-  /**
-   * Patrol one step. `blocked` reports cells it cannot walk into right now (walls, closed doors): on reaching one the
-   * monster stops at its edge, waits its pause and turns back, walking whatever part of the path it can reach to and
-   * fro. It checks afresh every time it comes back, so once the door is open it walks straight through.
-   */
-  update(dt: number, blocked: (cx: number, cy: number) => boolean = () => false): void {
-    const path = this.def.path;
-    if (!this.alive || this.risen || path.length < 2) return;
-    const [tx, ty] = path[this.target];
-    const gx = tx + 0.5;
-    const gy = ty + 0.5;
-    const dx = gx - this.x;
-    const dy = gy - this.y;
-    const dist = Math.hypot(dx, dy);
-    if (this.pauseT > 0) {
-      this.pauseT -= dt;
-      this.turnTowards(Math.atan2(dy, dx), dt);
+  /** The way it walks (or, standing at a turn, the way it is about to walk). */
+  private heading(): number {
+    return Math.atan2(this.segUy[this.seg] * this.dir, this.segUx[this.seg] * this.dir);
+  }
+
+  private place(): void {
+    const [ax, ay] = this.ring[this.seg];
+    this.x = ax + this.segUx[this.seg] * this.t;
+    this.y = ay + this.segUy[this.seg] * this.t;
+  }
+
+  /** Stop to turn towards `heading()`: the shorter way, or for an about-face the way that sweeps past the map centre. */
+  private stop(): void {
+    this.stopped = true;
+    this.pauseT = this.def.pause;
+    const d = angleDiff(this.heading(), this.angle);
+    if (Math.abs(d) < Math.PI - 1e-3) {
+      this.turnSign = Math.sign(d) || 1;
       return;
     }
-    const step = this.def.speed * dt;
-    if (dist > 1e-6) this.turnTowards(Math.atan2(dy, dx), dt);
-    if (dist > 1e-6) {
+    const cx = this.centre[0] - this.x;
+    const cy = this.centre[1] - this.y;
+    const cross = Math.cos(this.angle) * cy - Math.sin(this.angle) * cx;
+    this.turnSign = cross < 0 ? -1 : 1;
+  }
+
+  /**
+   * Patrol one step along the ring, at an even pace: straight through nodes that do not change direction, stopping only
+   * at turns. `blocked` reports cells it cannot walk into right now (walls, closed doors): on reaching one the monster
+   * stops at its edge, turns about and walks the ring the other way, so it paces whatever part it can reach to and fro.
+   * It checks afresh every time it comes back, so once the door is open it walks straight through.
+   */
+  update(dt: number, blocked: (cx: number, cy: number) => boolean = () => false): void {
+    const n = this.ring.length;
+    if (!this.alive || this.risen || n < 2) return;
+    if (this.stopped) {
+      this.pauseT -= dt;
+      const h = this.heading();
+      this.turnTowards(h, dt, this.turnSign);
+      if (this.pauseT > 0 || Math.abs(angleDiff(h, this.angle)) > 1e-6) return;
+      this.stopped = false;
+      return;
+    }
+    let left = this.def.speed * dt;
+    while (left > 1e-12) {
+      this.angle = this.heading();
+      const ux = this.segUx[this.seg] * this.dir;
+      const uy = this.segUy[this.seg] * this.dir;
+      const togo = this.dir > 0 ? this.segLen[this.seg] - this.t : this.t;
       // probe just ahead of the body: stepping into a blocked cell turns the monster round instead
-      const reach = Math.min(step, dist) + TUNING.monsterBumpReach;
-      const ax = Math.floor(this.x + (dx / dist) * reach);
-      const ay = Math.floor(this.y + (dy / dist) * reach);
+      const reach = Math.min(left, togo) + TUNING.monsterBumpReach;
+      const ax = Math.floor(this.x + ux * reach);
+      const ay = Math.floor(this.y + uy * reach);
       if ((ax !== Math.floor(this.x) || ay !== Math.floor(this.y)) && blocked(ax, ay)) {
-        this.bounce();
+        this.dir = -this.dir;
+        this.stop();
+        return;
+      }
+      if (left < togo) {
+        this.t += this.dir * left;
+        this.place();
+        return;
+      }
+      left -= togo;
+      let v: number;
+      if (this.dir > 0) {
+        v = (this.seg + 1) % n;
+        this.seg = v;
+        this.t = 0;
+      } else {
+        v = this.seg;
+        this.seg = (this.seg - 1 + n) % n;
+        this.t = this.segLen[this.seg];
+      }
+      this.place();
+      if (this.corner[v]) {
+        this.stop();
         return;
       }
     }
-    if (step >= dist) {
-      this.x = gx;
-      this.y = gy;
-      this.pauseT = this.def.pause;
-      this.advance();
-    } else {
-      this.x += (dx / dist) * step;
-      this.y += (dy / dist) * step;
-    }
   }
 
-  /** Bumped into a wall or closed door: wait, then head back to the waypoint it came from. */
-  private bounce(): void {
-    const n = this.def.path.length;
-    const from = this.target - this.dir;
-    this.target = this.def.mode === 'loop' ? (from + n) % n : from;
-    this.dir = -this.dir;
-    this.pauseT = this.def.pause;
-  }
-
-  private advance(): void {
-    const n = this.def.path.length;
-    if (this.def.mode === 'loop') {
-      this.target = (this.target + this.dir + n) % n;
-      return;
-    }
-    if (this.target + this.dir < 0 || this.target + this.dir >= n) this.dir = -this.dir;
-    this.target += this.dir;
-  }
-
-  turnTowards(a: number, dt: number): void {
-    const d = angleDiff(a, this.angle);
+  /** Turn towards `a` at the monster's turn speed, the shorter way; `tie` picks the way when it is an about-face. */
+  turnTowards(a: number, dt: number, tie = 1): void {
+    let d = angleDiff(a, this.angle);
+    if (Math.abs(d) > Math.PI - 1e-3) d = tie * Math.abs(d);
     const max = TUNING.monsterTurnSpeed * dt;
     this.angle += Math.abs(d) <= max ? d : Math.sign(d) * max;
   }
+}
+
+/**
+ * A patrol as one closed ring of cell centres. The nodes only shape the ring and set its direction: `loop` closes them
+ * in order, `pingpong` walks them out and back. Repeated nodes (a loop that ends where it began, say) are merged.
+ */
+export function patrolRing(def: MonsterDef): [number, number][] {
+  const pts = def.path.map(([x, y]): [number, number] => [x + 0.5, y + 0.5]);
+  const seq = def.mode === 'loop' ? pts : [...pts, ...pts.slice(1, -1).reverse()];
+  const same = (a: [number, number], b: [number, number]) => a[0] === b[0] && a[1] === b[1];
+  const ring: [number, number][] = [];
+  for (const p of seq) if (!ring.length || !same(ring[ring.length - 1], p)) ring.push(p);
+  while (ring.length > 1 && same(ring[0], ring[ring.length - 1])) ring.pop();
+  return ring;
 }
 
 export type SimStatus = 'playing' | 'caught' | 'won';
@@ -198,7 +260,7 @@ export class Sim {
       this.y = spawn.y + 0.5;
     }
     level.dimensions.forEach((d, di) => {
-      for (const m of d.monsters) if (m.path.length) this.monsters.push(new MonsterState(m, di as DimIndex));
+      for (const m of d.monsters) if (m.path.length) this.monsters.push(new MonsterState(m, di as DimIndex, [this.grid.w / 2, this.grid.h / 2]));
     });
   }
 

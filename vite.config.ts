@@ -1,8 +1,9 @@
-import { existsSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import { LEVEL_ID_RE, isSafeStem, sameStem } from './src/core/levelFile';
 import { ORDER_FILE, applyOrder, parseOrder, renameInOrder } from './src/core/order';
+import { zip } from './scripts/zip';
 
 const LEVELS_DIR = resolve(import.meta.dirname, 'levels');
 
@@ -116,11 +117,58 @@ function levelStore(): Plugin {
   };
 }
 
+const DIST = resolve(import.meta.dirname, 'dist');
+/** The game as itch.io serves it (from a sub-path, inside an iframe), and that folder zipped with index.html at the top:
+ *  the zip is what gets uploaded. */
+const ITCH_DIR = join(DIST, 'itch');
+const ITCH_ZIP = join(DIST, 'shift-itch.zip');
+
+/** Every file under `dir` (forward-slash paths), index.html first. */
+function walk(dir: string): string[] {
+  return readdirSync(dir, { recursive: true })
+    .map((f) => String(f).split(sep).join('/'))
+    .filter((f) => statSync(join(dir, f)).isFile())
+    .sort((a, b) => (a === 'index.html' ? -1 : b === 'index.html' ? 1 : a < b ? -1 : a > b ? 1 : 0));
+}
+
+/**
+ * npm run build → dist/itch/ and dist/shift-itch.zip. The bundle carries no licence comments, so three.js's MIT notice
+ * (which must travel with it) goes into licenses.txt; the font's OFL text already ships in fonts/.
+ */
+function itchPackage(): Plugin {
+  return {
+    name: 'shift-itch-package',
+    apply: 'build',
+    buildStart() {
+      // dist/ holds only this build's output: no leftovers from an older layout
+      rmSync(DIST, { recursive: true, force: true });
+    },
+    generateBundle() {
+      const three = readFileSync(resolve(import.meta.dirname, 'node_modules/three/LICENSE'), 'utf8');
+      this.emitFile({ type: 'asset', fileName: 'licenses.txt', source: `three.js (https://threejs.org)
+
+${three.trim()}
+` });
+    },
+    closeBundle() {
+      const files = walk(ITCH_DIR);
+      if (files[0] !== 'index.html') throw new Error('dist/itch has no index.html');
+      writeFileSync(ITCH_ZIP, zip(files.map((name) => ({ name, data: readFileSync(join(ITCH_DIR, name)) }))));
+      const mb = (n: number) => `${(n / (1 << 20)).toFixed(2)} MB`;
+      const total = files.reduce((s, f) => s + statSync(join(ITCH_DIR, f)).size, 0);
+      console.log(`dist/itch/          ${mb(total)}  ${files.length} files`);
+      console.log(`${relative(import.meta.dirname, ITCH_ZIP).split(sep).join('/')}  ${mb(statSync(ITCH_ZIP).size)}`);
+    },
+  };
+}
+
 export default defineConfig({
   base: './',
-  plugins: [levelStore()],
+  plugins: [levelStore(), itchPackage()],
   // the release build ships the game alone; the editor (editor.html) runs only under the dev server
   build: {
+    outDir: ITCH_DIR,
+    sourcemap: false,
     chunkSizeWarningLimit: 1500,
     rollupOptions: { input: { game: resolve(import.meta.dirname, 'index.html') } },
   },

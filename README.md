@@ -9,7 +9,7 @@ npm install
 npm run dev        # http://localhost:5173/ 遊戲、/editor.html 編輯器
 npm run check      # 型別檢查 + 單元測試 + 關卡驗證
 npm run validate   # 只驗證 levels/*.json（可帶檔名）
-npm run build      # 正式版 → dist/（只有遊戲，見下方「正式版」）
+npm run build      # 正式版 → dist/itch/ 與 dist/shift-itch.zip（見下方「正式版」）
 npm run models     # 用 Blender 重建角色模型（BLENDER=<blender.exe> 或專案旁的 blender-* 資料夾）
 ```
 
@@ -21,7 +21,21 @@ WASD 移動（以鏡頭為準）・滑鼠 / ←→ 轉鏡頭・**按住 Shift �
 
 ## 正式版
 
-`npm run build` 輸出 `dist/`：只有遊戲本體，鍵盤只認教學頁教的 WASD、Space、Shift（滑鼠轉鏡頭與滾輪縮放保留），沒有編輯器、試玩、跳關與 R 重來。`dist/` 要用 HTTP 伺服器開（例如 `npx vite preview`），直接雙擊 index.html 無法載入模型。
+`npm run build` 只打包遊戲本體：鍵盤只認教學頁教的 WASD、Space、Shift（滑鼠轉鏡頭與滾輪縮放保留），沒有編輯器、試玩、跳關與 R 重來。
+
+| 輸出 | 用途 |
+|---|---|
+| `dist/itch/` | 正式版的檔案；要用 HTTP 伺服器開（例如 `npx vite preview`），直接雙擊 index.html 載不到模型 |
+| `dist/shift-itch.zip` | `dist/itch/` 打成 zip，`index.html` 在最上層——上傳到 itch.io 的就是這一支 |
+
+打包出來的 JS 不含授權註解，three.js 的 MIT 授權原文放在 `licenses.txt`，字型的 OFL 授權在 `fonts/`，兩者都會跟著 zip 走。
+
+### 上傳到 itch.io
+
+1. **Kind of project** 選 **HTML**。
+2. **Uploads** 上傳 `dist/shift-itch.zip`，勾 **This file will be played in the browser**。
+3. **Embed options**：**Embed in page**，視窗 1280 × 720，勾 **Fullscreen button**。
+4. 玩家要先點一下遊戲畫面，鍵盤才會進到遊戲（iframe 拿到焦點），同時鎖定滑鼠轉鏡頭；Esc 放開滑鼠，再點一下重新鎖定。
 
 ## 製作關卡
 

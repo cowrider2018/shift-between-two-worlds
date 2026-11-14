@@ -13,12 +13,12 @@ export const TUNING = {
   playerHalfSize: 0.26,
   detectRise: 10,
   detectFall: 1,
-  /** Reach of the throat-cut takedown: the hero leaps from up to this far onto the monster's head. */
-  attackRange: 1.3,
+  /** Centre-to-centre reach of everything the hero acts on: pulling a lever (its cell centre) and the throat-cut
+   *  takedown (the monster's centre). */
+  interactRange: 0.5,
   /** Seconds the hero is busy with a takedown (leap on, ride out the troll's thrashing, cut, hop back off) and takes
    *  no input; matches the hero's `takedown` clip. */
   takedownTime: 1.8,
-  interactRange: 1.05,
   shiftCooldown: 0.25,
   monsterTurnSpeed: 5,
   /** Once spotted, the monster hunts the player down at this speed (faster than the player's 3.2). */
@@ -242,7 +242,7 @@ export class Sim {
   attackTarget(): MonsterState | null {
     if (this.hunter || this.takedownT > 0) return null;
     let best: MonsterState | null = null;
-    let bestD = TUNING.attackRange;
+    let bestD = TUNING.interactRange;
     for (const m of this.monsters) {
       if (!m.alive || m.dim !== 0 || this.dim !== 0 || m.seeing) continue;
       const d = Math.hypot(m.x - this.x, m.y - this.y);

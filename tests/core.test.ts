@@ -202,6 +202,7 @@ describe('paired levers', () => {
     const sim = new Sim(paired());
     const a = sim.grid.cell(0, 1, 1);
     const b = sim.grid.cell(1, 1, 1);
+    walkTo(sim, 1, 1); // onto the lever: it is pulled from within half a cell of its centre
     tap(sim, 'interact');
     expect([sim.leverOn(a), sim.leverOn(b)]).toEqual([true, true]);
     expect([sim.channelOn(1), sim.channelOn(2)]).toEqual([true, true]);
@@ -269,10 +270,13 @@ describe('simulation on level01', () => {
     l.dimensions[dim].monsters.push({ id: 'm', path: [[6, 2]], mode: 'pingpong', speed: 1, pause: 0, viewRadius: 4, viewAngle: 90, facing });
     return l;
   };
+  /** Step up to within the takedown reach, right behind the monster's back (it faces west, the hero is east of it). */
+  const closeIn = (sim: Sim) => { sim.x = sim.monsters[0].x + TUNING.interactRange - 0.05; };
 
   it('takes a monster down from behind in its own dimension, locking the hero for the whole takedown', () => {
-    const sim = new Sim(ambushLevel(7)); // one cell behind the monster's back
+    const sim = new Sim(ambushLevel(7));
     const m = sim.monsters[0];
+    closeIn(sim);
     sim.update(NO_INPUT, 1 / 60);
     expect(sim.attackTarget()).toBe(m);
     space(sim); // no lever in reach, so the action key is a takedown
@@ -290,8 +294,25 @@ describe('simulation on level01', () => {
     expect(sim.hunter).toBeNull();
   });
 
+  it('acts only within half a cell, centre to centre, of a lever or a monster', () => {
+    const sim = new Sim(ambushLevel(7));
+    const m = sim.monsters[0];
+    sim.x = m.x + TUNING.interactRange + 0.05;
+    sim.update(NO_INPUT, 1 / 60);
+    expect(sim.attackTarget()).toBeNull();
+    sim.x = m.x + TUNING.interactRange - 0.05;
+    expect(sim.attackTarget()).toBe(m);
+    setCell(sim.level, 0, 8, 2, 'L');
+    const lever = new Sim(sim.level);
+    lever.x = 8.5 + TUNING.interactRange + 0.05; lever.y = 2.5;
+    expect(lever.nearestLever()).toBeNull();
+    lever.x = 8.5 + TUNING.interactRange - 0.05;
+    expect(lever.nearestLever()).not.toBeNull();
+  });
+
   it('cannot take down a monster that sees the hero, nor one in the other dimension', () => {
     const facing = new Sim(ambushLevel(7, 0)); // the monster faces the hero
+    closeIn(facing);
     facing.update(NO_INPUT, 1 / 60);
     expect(facing.monsters[0].seeing).toBe(true);
     expect(facing.attackTarget()).toBeNull();
@@ -299,6 +320,7 @@ describe('simulation on level01', () => {
     expect(facing.monsters[0].alive).toBe(true);
 
     const other = new Sim(ambushLevel(7));
+    closeIn(other);
     tap(other, 'shift');
     expect(other.dim).toBe(1);
     expect(other.attackTarget()).toBeNull();
@@ -310,6 +332,7 @@ describe('simulation on level01', () => {
   it('cannot take down an underside monster, even from behind: they are ghosts', () => {
     const sim = new Sim(ambushLevel(7, 180, 1));
     const m = sim.monsters[0];
+    closeIn(sim);
     expect(sim.dim).toBe(1);
     sim.update(NO_INPUT, 1 / 60);
     expect(m.seeing).toBe(false);
@@ -322,6 +345,7 @@ describe('simulation on level01', () => {
   it('a slain surface monster rises as a ghost in the underside that watches from where it fell', () => {
     const sim = new Sim(ambushLevel(7));
     const m = sim.monsters[0];
+    closeIn(sim);
     sim.update(NO_INPUT, 1 / 60);
     const [x, y, angle] = [m.x, m.y, m.angle];
     tap(sim, 'attack');
@@ -515,7 +539,7 @@ describe('level03: one lever decides which half of the ring is lit', () => {
 
   it('after the lever the top arc is lit in both dimensions and the bottom arc only on the surface', () => {
     const sim = new Sim(level03());
-    sim.x = 5.5; sim.y = 3.5;
+    sim.x = 5.5; sim.y = 4.5; // on the lever
     tap(sim, 'interact');
     expect([lit(sim, 0, 3, 1), lit(sim, 1, 3, 1)]).toEqual([true, true]);
     expect([lit(sim, 0, 3, 7), lit(sim, 1, 3, 7)]).toEqual([true, false]);
@@ -523,7 +547,7 @@ describe('level03: one lever decides which half of the ring is lit', () => {
 
   it('is won by going round the top on the surface, pulling the lever, and coming back round the bottom in the underside', () => {
     const sim = new Sim(level03());
-    for (const [x, y] of [[1, 1], [5, 1], [5, 3]]) walkTo(sim, x, y);
+    for (const [x, y] of [[1, 1], [5, 1], [5, 4]]) walkTo(sim, x, y);
     tap(sim, 'interact');
     tap(sim, 'shift');
     expect(sim.dim).toBe(1);

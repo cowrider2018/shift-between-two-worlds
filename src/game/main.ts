@@ -132,9 +132,10 @@ function loop(now: number): void {
   requestAnimationFrame(loop);
 }
 
-/** Show the control pages; each key release or mouse press fades to the next, and past the last into the level. Waiting
- *  for the release lets a Shift tap finish here, so it does not shift dimension on the first frame; the actions
- *  pressed meanwhile are dropped. */
+/** Show the control pages; each key release fades to the next, and past the last into the level. Waiting for the release
+ *  lets a Shift tap finish here, so it does not shift dimension on the first frame; the actions pressed meanwhile are
+ *  dropped. A mouse press does not turn a page: on itch.io the first click only gives the game's iframe focus, and it
+ *  would otherwise skip the first page unseen. */
 function showBriefing(): void {
   const el = $('briefing');
   el.hidden = false;
@@ -148,7 +149,6 @@ function showBriefing(): void {
     input.take();
     if (b.next()) return;
     removeEventListener('keyup', turn);
-    removeEventListener('mousedown', turn);
     el.hidden = true;
     briefing = null;
     acc = 0;
@@ -157,7 +157,6 @@ function showBriefing(): void {
     if (!fade) fadeThrough(swap);
   };
   addEventListener('keyup', turn);
-  addEventListener('mousedown', turn);
 }
 
 /** Swap to the ending (at full black); the words fade in one under the other once it has faded back in. */

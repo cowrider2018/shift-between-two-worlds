@@ -1,8 +1,8 @@
 /**
  * Ending (DESIGN §2): after the last level, the hero runs toward the right of the screen, three-quarters to the
  * camera, over an endless plain of the surface's flagstones that fades into the dark, seen from 15° above the
- * ground. The hero, large and turned 60° toward the camera, runs a little right of centre; the words are
- * centred in the space to their left. The hero stays put and the
+ * ground. The hero, large and turned 60° toward the camera, runs a little right of centre; the words sit in the
+ * space to their left, at its golden section. The hero stays put and the
  * ground slides under them; the plane steps back by whole texture repeats, so the stones never jump.
  * The words are HTML (index.html #ending); this pins them beside the hero, main fades them in.
  */
@@ -30,8 +30,11 @@ const LOOK_Y = 0.4;
 const HERO_X = 0.2;
 /** The words are centred at the hero's mid-body height. */
 const WORDS_AT = new Vector3(HERO_X, 0.45, 0);
+/** Where across the gap between the screen's left edge and the hero the words are centred: at the golden section,
+ *  1.618 : 1 from the screen's edge to the hero. */
+const WORDS_SPLIT = 1.618 / 2.618;
 /** Seconds of running (more than one stride cycle) over which the hero's leftmost reach on screen is measured; the
- *  words are centred between it and the screen's left edge, and stay put once it is known. */
+ *  words are placed between it and the screen's left edge, and stay put once it is known. */
 const MEASURE_FOR = 1.5;
 
 export class Ending {
@@ -103,7 +106,7 @@ export class Ending {
     this.measureHero();
     const rect = this.pipeline.canvas.getBoundingClientRect();
     const edge = rect.left + (this.heroLeft * 0.5 + 0.5) * rect.width;
-    this.label.style.left = `${(rect.left + edge) / 2}px`;
+    this.label.style.left = `${rect.left + (edge - rect.left) * WORDS_SPLIT}px`;
     const p = this.at.copy(WORDS_AT).project(this.camera);
     this.label.style.top = `${rect.top + (0.5 - p.y * 0.5) * rect.height}px`;
   }

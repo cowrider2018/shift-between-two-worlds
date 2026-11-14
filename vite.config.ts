@@ -1,15 +1,15 @@
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
+import { LEVEL_ID_RE, isSafeStem, sameStem } from './src/core/levelFile';
 import { ORDER_FILE, applyOrder, parseOrder } from './src/core/order';
 
 const LEVELS_DIR = resolve(import.meta.dirname, 'levels');
-const ID_RE = /^[a-z0-9_-]+$/i;
 
 /**
  * Dev-only endpoints used by the editor:
- *   GET  /__editor/levels        → [{ id, text }] in play order
- *   POST /__editor/save?id=<id>  → writes levels/<id>.json (body = serialised level)
+ *   GET  /__editor/levels                    → [{ file, id, text }] in play order (file = stem without .json)
+ *   POST /__editor/save?file=<stem>&from=<old> → writes levels/<stem>.json and removes levels/<old>.json (a rename)
  *   POST /__editor/order         → writes levels/order.json (body = JSON array of ids)
  */
 function readOrder(): string[] {
@@ -29,7 +29,17 @@ function levelStore(): Plugin {
         const list = applyOrder(
           readdirSync(LEVELS_DIR)
             .filter((f) => f.endsWith('.json') && f !== ORDER_FILE)
-            .map((f) => ({ id: f.slice(0, -5), text: readFileSync(resolve(LEVELS_DIR, f), 'utf8') })),
+            .map((f) => {
+              const text = readFileSync(resolve(LEVELS_DIR, f), 'utf8');
+              let id = f.slice(0, -5);
+              try {
+                const raw = (JSON.parse(text) as { id?: unknown }).id;
+                if (typeof raw === 'string') id = raw;
+              } catch {
+                /* broken file: listed under its stem so it can still be opened */
+              }
+              return { file: f.slice(0, -5), id, text };
+            }),
           readOrder(),
         );
         res.setHeader('content-type', 'application/json');
@@ -46,7 +56,7 @@ function levelStore(): Plugin {
         req.on('end', () => {
           try {
             const ids = JSON.parse(body) as unknown;
-            if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string' && ID_RE.test(id))) throw new Error('expected an array of ids');
+            if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string' && LEVEL_ID_RE.test(id))) throw new Error('expected an array of ids');
             writeFileSync(resolve(LEVELS_DIR, ORDER_FILE), JSON.stringify(ids, null, 2) + '\n', 'utf8');
             res.end('ok');
           } catch (e) {
@@ -56,8 +66,10 @@ function levelStore(): Plugin {
         });
       });
       server.middlewares.use('/__editor/save', (req, res) => {
-        const id = new URL(req.url ?? '', 'http://x').searchParams.get('id') ?? '';
-        if (req.method !== 'POST' || !ID_RE.test(id)) {
+        const q = new URL(req.url ?? '', 'http://x').searchParams;
+        const file = q.get('file') ?? '';
+        const from = q.get('from') ?? '';
+        if (req.method !== 'POST' || !isSafeStem(file) || (from && !isSafeStem(from))) {
           res.statusCode = 400;
           res.end('bad request');
           return;
@@ -67,7 +79,12 @@ function levelStore(): Plugin {
         req.on('end', () => {
           try {
             JSON.parse(body);
-            writeFileSync(resolve(LEVELS_DIR, `${id}.json`), body, 'utf8');
+            const target = resolve(LEVELS_DIR, `${file}.json`);
+            const old = from && from !== file ? resolve(LEVELS_DIR, `${from}.json`) : null;
+            // a case-only rename must move the file first: on Windows, writing Fan.json would overwrite fan.json in place
+            if (old && sameStem(from, file) && existsSync(old)) renameSync(old, target);
+            writeFileSync(target, body, 'utf8');
+            if (old && !sameStem(from, file) && existsSync(old)) unlinkSync(old);
             res.end('ok');
           } catch (e) {
             res.statusCode = 400;

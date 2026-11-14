@@ -12,7 +12,13 @@ import { validateLevel } from '../src/core/validate';
 const levelsDir = resolve(import.meta.dirname, '..', 'levels');
 const levelFiles = readdirSync(levelsDir).filter((f) => f.endsWith('.json') && f !== ORDER_FILE);
 const load = (f: string) => readFileSync(join(levelsDir, f), 'utf8').replace(/\r\n/g, '\n');
-const level01 = () => parseLevel(JSON.parse(load('level01.json'))).level!;
+/** File names follow level names, so tests find a level by the id inside the JSON. */
+const loadById = (id: string): Level => {
+  const level = levelFiles.map((f) => parseLevel(JSON.parse(load(f))).level).find((l) => l?.id === id);
+  if (!level) throw new Error(`no level with id ${id}`);
+  return level;
+};
+const level01 = () => loadById('level01');
 
 /** Walk the player to a cell centre by stepping the sim (no pathfinding; straight line). */
 function walkTo(sim: Sim, x: number, y: number, extra: Partial<SimInput> = {}) {
@@ -472,7 +478,7 @@ describe('simulation on level01', () => {
 });
 
 describe('level02: the troll guards the lever with its ghost', () => {
-  const level02 = () => parseLevel(JSON.parse(load('level02.json'))).level!;
+  const level02 = () => loadById('level02');
   const walkX = (sim: Sim, x: number, extra: Partial<SimInput> = {}) => walkTo(sim, x - 0.5, 1, extra);
   /** Stand behind the troll (in A) until the B ghost has walked west past us and turned its back. */
   const waitForGhostWest = (sim: Sim) => {
@@ -522,7 +528,7 @@ describe('level02: the troll guards the lever with its ghost', () => {
 });
 
 describe('level03: one lever decides which half of the ring is lit', () => {
-  const level03 = () => parseLevel(JSON.parse(load('level03.json'))).level!;
+  const level03 = () => loadById('level03');
   /** Is a sneaking hero at (x, y) in `dim` seen by anyone? */
   const lit = (sim: Sim, dim: 0 | 1, x: number, y: number) => {
     const [px, py, pd, ps] = [sim.x, sim.y, sim.dim, sim.sneaking];

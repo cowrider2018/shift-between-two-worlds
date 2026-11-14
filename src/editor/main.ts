@@ -8,6 +8,7 @@ import {
   DIM_IDS, MONSTER_DEFAULTS, MONSTER_FIELDS, createEmptyLevel, getChar, nextMonsterId, parseLevel, resizeLevel,
   serializeLevel, setCell, setProp, type DimIndex, type Level, type MonsterDef,
 } from '../core/level';
+import { LEVEL_ID_RE, fileStemFor, sameStem } from '../core/levelFile';
 import { validateLevel, type Issue, type ValidationReport } from '../core/validate';
 import { storePlaytest } from '../game/playtest';
 import { LevelDoc } from './doc';
@@ -41,7 +42,9 @@ let brush = '#';
 let selection: Selection = null;
 let hover: { dim: DimIndex; x: number; y: number } | null = null;
 let stroke: { erase: boolean } | null = null;
-let serverLevels: { id: string; text: string }[] | null = null;
+/** levels/ as the dev server reports it, in play order (file = stem without .json, following the name). */
+let serverLevels: { file: string; id: string; name: string; text: string }[] | null = null;
+/** File stem the open level was loaded from (null: new or opened from disk). */
 let loadedFrom: string | null = null;
 /** Index of the level-list row being dragged, or -1. */
 let dragFrom = -1;
@@ -263,7 +266,7 @@ function renderInspector(): void {
   const hh = numberInput(l.size.h, 3, 64, 1, () => {});
   const apply = h('button', {}, '套用尺寸');
   apply.onclick = () => doc.edit((lv) => resizeLevel(lv, Number(w.value), Number(hh.value)));
-  $('level-props').replaceChildren(field('id（檔名）', id), field('名稱', name), h('div', { className: 'row' }, field('寬', w), field('高', hh), apply));
+  $('level-props').replaceChildren(field('ID', id), field('名稱（＝檔名）', name), h('div', { className: 'row' }, field('寬', w), field('高', hh), apply));
 
   // selection
   const sel = $('selection');
@@ -378,8 +381,10 @@ function render(): void {
   renderInspector();
   renderIssues();
   document.title = `${doc.dirty ? '● ' : ''}${doc.level.id} — SHIFT 編輯器`;
-  $('file-name').textContent = `${doc.level.id}.json${doc.dirty ? ' ●' : ''}`;
-  for (const [i, li] of [...$('level-list').querySelectorAll('li:not(.head)')].entries()) li.classList.toggle('current', serverLevels?.[i]?.id === loadedFrom);
+  const target = targetFile();
+  const renamed = loadedFrom && loadedFrom !== target ? `${loadedFrom}.json → ` : '';
+  $('file-name').textContent = `${renamed}${target}.json${doc.dirty ? ' ●' : ''}`;
+  for (const [i, li] of [...$('level-list').querySelectorAll('li:not(.head)')].entries()) li.classList.toggle('current', serverLevels?.[i]?.file === loadedFrom);
 }
 
 doc.onChange(() => {
@@ -401,7 +406,8 @@ async function refreshServerLevels(): Promise<void> {
   try {
     const res = await fetch('./__editor/levels');
     if (!res.ok) throw new Error(String(res.status));
-    serverLevels = await res.json();
+    const list = (await res.json()) as { file: string; id: string; text: string }[];
+    serverLevels = list.map((l) => ({ ...l, name: levelName(l.text) }));
   } catch {
     serverLevels = null;
   }
@@ -426,16 +432,16 @@ function renderLevelList(): void {
   }
   const head = h('li', { className: 'head' }, h('span', { className: 'num', textContent: '#' }), h('span', { textContent: 'ID' }), h('span', { textContent: '名稱' }));
   const rows = serverLevels.map((l, i) => {
-    const name = levelName(l.text);
+    const { name } = l;
     const li = h(
       'li',
-      { draggable: true, title: `${l.id}　${name}`, className: l.id === loadedFrom ? 'current' : '' },
+      { draggable: true, title: `${l.id}　${name}`, className: l.file === loadedFrom ? 'current' : '' },
       h('span', { className: 'num', textContent: String(i + 1) }),
       h('span', { className: 'id', textContent: l.id }),
       h('span', { textContent: name }),
     );
     li.onclick = () => {
-      if (l.id !== loadedFrom && confirmDiscard()) loadText(l.text, l.id);
+      if (l.file !== loadedFrom && confirmDiscard()) loadText(l.text, l.file);
     };
     li.ondragstart = (e) => {
       dragFrom = i;
@@ -500,24 +506,36 @@ function confirmDiscard(): boolean {
   return !doc.dirty || confirm('目前的修改尚未存檔，確定要放棄？');
 }
 
+/** The file stem the open level saves to: its name, made file-safe. */
+function targetFile(): string {
+  return fileStemFor(doc.level.name, doc.level.id);
+}
+
 async function save(): Promise<void> {
+  const { id, name } = doc.level;
+  if (!LEVEL_ID_RE.test(id)) return toast('ID 只能用英數字、_ 與 -');
   const errors = report.issues.filter((i) => i.severity === 'error').length;
   if (errors && !confirm(`這個關卡有 ${errors} 個錯誤（遊戲可能無法通關），仍要存檔？`)) return;
-  const text = serializeLevel(doc.level);
-  const id = doc.level.id;
   if (!serverLevels) return download();
-  if (id !== loadedFrom && serverLevels.some((l) => l.id === id) && !confirm(`levels/${id}.json 已存在，要覆蓋嗎？`)) return;
-  const res = await fetch(`./__editor/save?id=${encodeURIComponent(id)}`, { method: 'POST', body: text });
+  const file = targetFile();
+  const others = serverLevels.filter((l) => l.file !== loadedFrom);
+  const idClash = others.find((l) => l.id === id);
+  if (idClash) return toast(`ID「${id}」已被「${idClash.name}」使用`);
+  const nameClash = others.find((l) => sameStem(l.file, file));
+  if (nameClash) return toast(`名稱與「${nameClash.name}」撞檔名（${nameClash.file}.json），請改名`);
+  const q = new URLSearchParams({ file, ...(loadedFrom ? { from: loadedFrom } : {}) });
+  const res = await fetch(`./__editor/save?${q}`, { method: 'POST', body: serializeLevel(doc.level) });
   if (!res.ok) return toast(`存檔失敗：${await res.text()}`);
-  loadedFrom = id;
+  const renamed = loadedFrom && loadedFrom !== file ? `（由 ${loadedFrom}.json 改名）` : '';
+  loadedFrom = file;
   doc.dirty = false;
   await refreshServerLevels();
   render();
-  toast(`已存檔 levels/${id}.json`);
+  toast(`已存檔 levels/${file}.json${renamed}「${name}」`);
 }
 
 function download(): void {
-  const a = h('a', { href: URL.createObjectURL(new Blob([serializeLevel(doc.level)], { type: 'application/json' })), download: `${doc.level.id}.json` });
+  const a = h('a', { href: URL.createObjectURL(new Blob([serializeLevel(doc.level)], { type: 'application/json' })), download: `${targetFile()}.json` });
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -529,12 +547,15 @@ function playtest(): void {
 
 function newLevel(): void {
   if (!confirmDiscard()) return;
-  const used = new Set((serverLevels ?? []).map((l) => l.id));
+  const ids = new Set((serverLevels ?? []).map((l) => l.id));
+  const files = (serverLevels ?? []).map((l) => l.file);
   let n = 1;
-  while (used.has(`level${String(n).padStart(2, '0')}`)) n++;
+  while (ids.has(`level${String(n).padStart(2, '0')}`)) n++;
+  const level = createEmptyLevel(`level${String(n).padStart(2, '0')}`);
+  for (let k = 2; files.some((f) => sameStem(f, fileStemFor(level.name, level.id))); k++) level.name = `新關卡${k}`;
   loadedFrom = null;
   selection = null;
-  doc.load(createEmptyLevel(`level${String(n).padStart(2, '0')}`));
+  doc.load(level);
   doc.dirty = true;
   render();
 }
@@ -612,7 +633,7 @@ async function boot(): Promise<void> {
   }
   if (!restored) {
     const first = serverLevels?.[0];
-    if (!(first && loadText(first.text, first.id))) render();
+    if (!(first && loadText(first.text, first.file))) render();
   }
   render();
 }

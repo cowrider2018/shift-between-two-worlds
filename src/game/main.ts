@@ -132,10 +132,10 @@ function loop(now: number): void {
   requestAnimationFrame(loop);
 }
 
-/** Show the control pages; each key release fades to the next, and past the last into the level. Waiting for the release
- *  lets a Shift tap finish here, so it does not shift dimension on the first frame; the actions pressed meanwhile are
- *  dropped. A mouse press does not turn a page: on itch.io the first click only gives the game's iframe focus, and it
- *  would otherwise skip the first page unseen. */
+/** Show the control pages; each key or mouse-button release fades to the next, and past the last into the level. Waiting
+ *  for the release lets a Shift tap finish here, so it does not shift dimension on the first frame; the actions pressed
+ *  meanwhile are dropped. A click only counts when the game already had focus as it was pressed: on itch.io the first
+ *  click just gives the game's iframe focus, and it would otherwise skip the first page unseen. */
 function showBriefing(): void {
   const el = $('briefing');
   el.hidden = false;
@@ -149,6 +149,8 @@ function showBriefing(): void {
     input.take();
     if (b.next()) return;
     removeEventListener('keyup', turn);
+    removeEventListener('mousedown', press);
+    removeEventListener('mouseup', release);
     el.hidden = true;
     briefing = null;
     acc = 0;
@@ -156,7 +158,18 @@ function showBriefing(): void {
   const turn = () => {
     if (!fade) fadeThrough(swap);
   };
+  // focus moves as the press's default action, so a press that is giving the game focus still sees it unfocused
+  let armed = false;
+  const press = () => {
+    armed = document.hasFocus();
+  };
+  const release = () => {
+    if (armed) turn();
+    armed = false;
+  };
   addEventListener('keyup', turn);
+  addEventListener('mousedown', press);
+  addEventListener('mouseup', release);
 }
 
 /** Swap to the ending (at full black); the words fade in one under the other once it has faded back in. */

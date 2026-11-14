@@ -220,7 +220,7 @@ function leverGlow(cell: Cell): LeverGlow {
   pool.renderOrder = 2;
   // the slot the arm swings in, along x on top of the base
   const slotMat = new MeshBasicMaterial({ color: LEVER_GLOW, transparent: true, depthWrite: false, blending: AdditiveBlending });
-  const slot = m(new BoxGeometry(SLOT_LEN, 0.006, 0.06), slotMat, 0, 0.143, 0, false);
+  const slot = m(new BoxGeometry(SLOT_LEN, 0.006, 0.03), slotMat, 0, 0.143, 0, false);
   // a short shaft of light out of the slot, widening and thinning away, round a brighter core
   const additive = (map: CanvasTexture) => new MeshBasicMaterial({
     color: LEVER_GLOW, map, transparent: true, depthWrite: false, blending: AdditiveBlending, side: DoubleSide,
@@ -228,11 +228,11 @@ function leverGlow(cell: Cell): LeverGlow {
   const shaftMat = additive(shaftTexture('shaft', [[0, 0.7], [0.25, 0.35], [1, 0]]));
   const shaft = new Mesh(new CylinderGeometry(0.24, 0.16, SHAFT_H, 20, 1, true), shaftMat);
   shaft.position.y = 0.14 + SHAFT_H / 2;
-  shaft.scale.set(SLOT_LEN / 0.32, 1, 0.55); // as long as the slot, flattened across it
+  shaft.scale.set(SLOT_LEN / 0.32, 1, 0.275); // as long as the slot, flattened across it
   const coreMat = additive(shaftTexture('core', [[0, 0.9], [0.15, 0.4], [0.6, 0]]));
   const core = new Mesh(new CylinderGeometry(0.12, 0.13, SHAFT_H * 0.7, 16, 1, true), coreMat);
   core.position.y = 0.14 + SHAFT_H * 0.35;
-  core.scale.set(SLOT_LEN / 0.32, 1, 0.4);
+  core.scale.set(SLOT_LEN / 0.32, 1, 0.2);
   for (const o of [shaft, core]) o.renderOrder = 3;
   const phase = (cell.x * 1.7 + cell.y * 2.3) % 6.28;
   return {

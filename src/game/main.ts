@@ -1,6 +1,7 @@
 import type { Level } from '../core/level';
 import { Sim, type SimEvent } from '../core/sim';
 import { Briefing } from '../render/briefing';
+import { Ending } from '../render/ending';
 import { CAMERA } from '../render/followCamera';
 import { loadModels } from '../render/models';
 import { GameView } from '../render/view';
@@ -34,6 +35,11 @@ const FADE_IN = 0.6;
 let fade: { t: number; atBlack: (() => void) | null } | null = null;
 /** The controls screen shown once before the first level (not when playtesting from the editor); null once dismissed. */
 let briefing: Briefing | null = null;
+/** The ending, once the last level is won; it runs until the page is closed. */
+let ending: Ending | null = null;
+/** Seconds after the ending has faded in before ESCAPED fades in, and then before "thanks for playing" does. */
+const ESCAPED_AT = 1.2;
+const THANKS_AFTER = 0.5;
 
 function start(index: number): void {
   levelIndex = index;
@@ -68,19 +74,27 @@ function stepFade(dt: number): number {
 function handle(events: SimEvent[]): void {
   // the restart countdown waits until the monster has bonked the hero (view.catchFinished)
   if (events.some((e) => e.type === 'caught')) caughtT = 0;
-  // the last level has no transition: an ending sequence will go here
-  if (events.some((e) => e.type === 'won') && levelIndex + 1 < levels.length) fadeThrough(() => start(levelIndex + 1));
+  // the last level fades into the ending, except when playtesting a single level from the editor
+  if (events.some((e) => e.type === 'won')) {
+    if (levelIndex + 1 < levels.length) fadeThrough(() => start(levelIndex + 1));
+    else if (!playtest) fadeThrough(showEnding);
+  }
   view.onEvents(events);
 }
 
 input.onKey.set('KeyR', () => {
-  if (!fade && !briefing) start(levelIndex);
+  if (!fade && !briefing && !ending) start(levelIndex);
 });
 
 function loop(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   $('fade').style.opacity = String(stepFade(dt));
+  if (ending) {
+    ending.frame(dt);
+    requestAnimationFrame(loop);
+    return;
+  }
   if (briefing) {
     briefing.frame(dt);
     requestAnimationFrame(loop);
@@ -138,6 +152,16 @@ function showBriefing(): void {
   };
   addEventListener('keyup', turn);
   addEventListener('mousedown', turn);
+}
+
+/** Swap to the ending (at full black); the words fade in from the right once it has faded back in. */
+function showEnding(): void {
+  ending = new Ending(view.pipeline);
+  const el = $('ending');
+  el.hidden = false;
+  const reveal = (cls: string, at: number) => setTimeout(() => el.querySelector(cls)?.classList.add('in'), at * 1000);
+  reveal('.escaped', FADE_IN + ESCAPED_AT);
+  reveal('.thanks', FADE_IN + ESCAPED_AT + THANKS_AFTER);
 }
 
 window.addEventListener('resize', () => view.resize());

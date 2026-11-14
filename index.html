@@ -23,6 +23,13 @@
       #briefing .start { position: absolute; left: 0; right: 0; bottom: 8%; text-align: center; opacity: .75;
         animation: blink 1.2s steps(2, jump-none) infinite; }
       @keyframes blink { 50% { opacity: .25; } }
+      #ending { position: absolute; left: 52%; top: 38%; display: flex; align-items: baseline; gap: 28px;
+        pointer-events: none; text-shadow: 3px 3px 0 #000; white-space: nowrap; }
+      #ending[hidden] { display: none; }
+      #ending span { opacity: 0; transform: translateX(32px); transition: opacity .9s ease-out, transform .9s ease-out; }
+      #ending span.in { opacity: 1; transform: none; }
+      #ending .escaped { font-size: 44px; letter-spacing: 6px; }
+      #ending .thanks { font-size: 18px; }
     </style>
   </head>
   <body>
@@ -40,6 +47,7 @@
       </div>
       <div class="start">按任意鍵繼續</div>
     </div>
+    <div id="ending" hidden><span class="escaped">ESCAPED</span><span class="thanks">thanks for playing</span></div>
     <div id="fade"></div>
     <script type="module" src="/src/game/main.ts"></script>
   </body>

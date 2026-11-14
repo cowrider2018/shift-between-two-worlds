@@ -271,7 +271,7 @@ describe('simulation on level01', () => {
     return l;
   };
   /** Step up to within the takedown reach, right behind the monster's back (it faces west, the hero is east of it). */
-  const closeIn = (sim: Sim) => { sim.x = sim.monsters[0].x + TUNING.interactRange - 0.05; };
+  const closeIn = (sim: Sim) => { sim.x = sim.monsters[0].x + TUNING.attackRange - 0.05; };
 
   it('takes a monster down from behind in its own dimension, locking the hero for the whole takedown', () => {
     const sim = new Sim(ambushLevel(7));
@@ -294,13 +294,13 @@ describe('simulation on level01', () => {
     expect(sim.hunter).toBeNull();
   });
 
-  it('acts only within half a cell, centre to centre, of a lever or a monster', () => {
+  it('pulls a lever only within interactRange and takes a monster down only within attackRange, centre to centre', () => {
     const sim = new Sim(ambushLevel(7));
     const m = sim.monsters[0];
-    sim.x = m.x + TUNING.interactRange + 0.05;
+    sim.x = m.x + TUNING.attackRange + 0.05;
     sim.update(NO_INPUT, 1 / 60);
     expect(sim.attackTarget()).toBeNull();
-    sim.x = m.x + TUNING.interactRange - 0.05;
+    sim.x = m.x + TUNING.attackRange - 0.05;
     expect(sim.attackTarget()).toBe(m);
     setCell(sim.level, 0, 8, 2, 'L');
     const lever = new Sim(sim.level);

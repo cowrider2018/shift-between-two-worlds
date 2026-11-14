@@ -3,7 +3,7 @@
  * camera, over an endless plain of the surface's flagstones that fades into the dark. Framed like the first control
  * page: the hero in the middle at the same size, the words centred under their feet. The hero stays put and the
  * ground slides under them; the plane steps back by whole texture repeats, so the stones never jump.
- * The words are HTML (index.html #ending); this pins them under the hero, main fades them in.
+ * The words are HTML (index.html #ending); this pins them beside the hero, main fades them in.
  */
 import { BufferAttribute, Color, DirectionalLight, Vector3, Fog, HemisphereLight, Mesh, PerspectiveCamera, PlaneGeometry, Scene } from 'three';
 import { TUNING } from '../core/sim';
@@ -14,14 +14,26 @@ import { THEMES } from './palette';
 import type { PixelPipeline } from './pixelPipeline';
 import { renderStandalone } from './standalone';
 
-/** The plane's extent; the fog swallows its edges well before them. */
-const PLANE = { w: 60, d: 30 };
-/** The words hang from this point just in front of the hero's feet. */
-const LABEL_AT = new Vector3(0, 0, 0.2);
+/** The plane's extent: past the camera's far plane every way, so it is cut off there, at the same depth as the empty
+ *  background, and the post pass sees no edge to outline at the horizon (the fog has long since swallowed it). */
+const PLANE = { w: 200, d: 200 };
+/** Near and far planes kept tight: with the usual 0.1 near plane the depth far off is too coarse, and the post pass
+ *  outlines its noise as a bright band along the horizon. The fog is solid well before FAR. */
+const NEAR = 1;
+const FAR = 20;
+/** Camera: as far from the hero as the first control page has them look (about a third of the screen's height),
+ *  15° above the ground. */
+const CAMERA_DIST = 3.4;
+const CAMERA_PITCH = (15 * Math.PI) / 180;
+const LOOK_Y = 0.4;
+/** The words weigh less than the hero, so the hero runs a little left of centre to balance them. */
+const HERO_X = -0.4;
+/** The hero's right-hand edge at mid-body: the words are centred in the screen to the right of it. */
+const HERO_RIGHT = new Vector3(HERO_X + 0.35, 0.45, 0);
 
 export class Ending {
   readonly scene = new Scene();
-  readonly camera = new PerspectiveCamera(40, 1, 0.1, 60);
+  readonly camera = new PerspectiveCamera(40, 1, NEAR, FAR);
   private readonly sun = new DirectionalLight();
   private readonly hero = new CharacterInstance('hero', 'normal', 'plain');
   private readonly floor: Mesh;
@@ -35,8 +47,8 @@ export class Ending {
     this.scene.add(new HemisphereLight(th.hemiSky, th.hemiGround, 1.5));
     this.sun.color.set(th.sun);
     this.sun.intensity = 1.8;
-    this.sun.position.set(-6, 14, 5);
-    this.sun.target.position.set(0, 0, 0);
+    this.sun.position.set(HERO_X - 6, 14, 5);
+    this.sun.target.position.set(HERO_X, 0, 0);
     this.sun.castShadow = true;
     this.sun.shadow.bias = -0.0015;
     this.sun.shadow.normalBias = 0.04;
@@ -45,16 +57,15 @@ export class Ending {
     this.floor = this.plain();
     this.scene.add(this.sun, this.sun.target, this.floor);
 
-    // running to the screen's right, turned a little toward the camera
-    this.hero.root.rotation.y = -0.45;
+    // running to the screen's right, turned 45° toward the camera
+    this.hero.root.rotation.y = -Math.PI / 4;
+    this.hero.root.position.x = HERO_X;
     this.hero.root.traverse((o) => (o.castShadow = true));
     this.hero.play('run', 0);
     this.scene.add(this.hero.root);
 
-    // as near as the first control page has the hero (about a third of the screen's height), and pitched down far
-    // enough that the top of the screen is still ground: the plane's far edge never shows
-    this.camera.position.set(0, 2.2, 2.9);
-    this.camera.lookAt(0, 0.35, 0);
+    this.camera.position.set(0, LOOK_Y + CAMERA_DIST * Math.sin(CAMERA_PITCH), CAMERA_DIST * Math.cos(CAMERA_PITCH));
+    this.camera.lookAt(0, LOOK_Y, 0);
   }
 
   /** A wide plane of flagstones, tiled at the same scale as the floor in play. */
@@ -82,8 +93,9 @@ export class Ending {
     this.camera.updateProjectionMatrix();
     renderStandalone(this.pipeline, this.scene, this.camera, this.sun, this.t);
     const rect = this.pipeline.canvas.getBoundingClientRect();
-    const p = this.at.copy(LABEL_AT).project(this.camera);
-    this.label.style.left = `${rect.left + (p.x * 0.5 + 0.5) * rect.width}px`;
+    const p = this.at.copy(HERO_RIGHT).project(this.camera);
+    const edge = rect.left + (p.x * 0.5 + 0.5) * rect.width;
+    this.label.style.left = `${(edge + rect.right) / 2}px`;
     this.label.style.top = `${rect.top + (0.5 - p.y * 0.5) * rect.height}px`;
   }
 }

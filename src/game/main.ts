@@ -4,7 +4,7 @@ import { Briefing } from '../render/briefing';
 import { Ending } from '../render/ending';
 import { CAMERA } from '../render/followCamera';
 import { loadModels } from '../render/models';
-import { GameView, TAKEDOWN } from '../render/view';
+import { CATCH, GameView, TAKEDOWN } from '../render/view';
 import { Sfx } from './audio';
 import { Input } from './input';
 import { BUILTIN_LEVELS } from './levels';
@@ -92,6 +92,7 @@ function playEvents(events: SimEvent[]): void {
       sfx.play('spotted');
     } else if (e.type === 'caught') {
       sfx.cancelPending();
+      sfx.play('break', CATCH.impact);
     }
   }
 }

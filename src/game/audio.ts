@@ -9,6 +9,7 @@ const FILES = {
   ambush1: 'ambush1.m4a',
   ambush2: 'ambush2.m4a',
   wailing: 'wailing.m4a',
+  break: 'break.m4a',
   wailing2: 'wailing2.m4a',
   spotted: 'spotted.m4a',
   door: 'door.m4a',
@@ -23,6 +24,7 @@ export type SfxName = keyof typeof FILES;
 const GAIN: Record<SfxName, number> = {
   ambush1: 0.4,
   ambush2: 0.4,
+  break: 1,
   wailing: 0.9,
   wailing2: 0.9,
   spotted: 0.9,

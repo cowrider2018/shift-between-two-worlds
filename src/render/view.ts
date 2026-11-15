@@ -114,7 +114,7 @@ const hover = (t: number, phase: number) => 0.15 + Math.sin(t * 2 + phase) * 0.0
 const WALK_HOLD = 0.12;
 
 /** Caught sequence: the hunter has run the hero down (sim) and bonks them with its lantern. */
-const CATCH = {
+export const CATCH = {
   /** Seconds into the troll's `attack` clip at which the lantern lands (frame 10 at 24 fps). */
   impact: 9 / 24,
   /** Seconds from the swing starting until the sequence counts as finished. */

@@ -137,6 +137,7 @@
 | 割喉：落到山怪背上（`TAKEDOWN.perch`） | `ambush1` + `wailing` |
 | 割喉：插刀（`TAKEDOWN.cut`） | `ambush2` + `wailing2`（`wailing` 若還沒播完，在此中斷） |
 | 怪物發現主角（偵測值滿） | `spotted` |
+| 怪物追到主角、提燈敲下（`CATCH.impact`） | `break` |
 
 `spotted` 是怪物吼聲降 7 個半音（連帶放慢）。`wailing`、`wailing2` 是同一聲保持音高加速、音高一路滑動：`wailing` 是原始錄音的 1.3 倍速（約 0.8 秒），從降 7 個半音滑到降 5 個半音，後半段漸弱到無聲；`wailing2` 是 1.5 倍速（約 0.7 秒），反過來從降 5 滑到降 7。
 

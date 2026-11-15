@@ -21,15 +21,15 @@ export type SfxName = keyof typeof FILES;
 
 /** Per-sound gain, levelling the recordings against each other (walk was recorded far quieter than the rest). */
 const GAIN: Record<SfxName, number> = {
-  ambush1: 0.8,
-  ambush2: 0.8,
+  ambush1: 0.4,
+  ambush2: 0.4,
   wailing: 0.9,
   wailing2: 0.9,
   spotted: 0.9,
   door: 1.6,
   lever: 1.2,
   squat: 1.4,
-  walk: 0.5,
+  walk: 1,
 };
 
 /** Seconds the walk loop takes to fade in or out: short enough to act as a switch, long enough not to click. */

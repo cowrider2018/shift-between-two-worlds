@@ -1,6 +1,6 @@
 # Release notes
 
-How the release build, the itch.io page, the cover and the models are produced. For playing and level editing, see the [README](../README.md).
+How the release build, the itch.io page, the cover and the models are produced. For playing, see the [README](../README.md); for the dev build and the level editor, see [development.md](development.md).
 
 ## Asset commands
 

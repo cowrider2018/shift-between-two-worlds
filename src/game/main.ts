@@ -84,8 +84,10 @@ function playEvents(events: SimEvent[]): void {
     } else if (e.type === 'kill') {
       sfx.play('ambush1', TAKEDOWN.jump);
       sfx.play('ambush1', TAKEDOWN.perch);
-      sfx.play('wailing', TAKEDOWN.perch);
+      // the troll wails as the hero lands on it and again at the cut; the second wail cuts off the first
+      sfx.play('wailing', TAKEDOWN.perch, TAKEDOWN.cut);
       sfx.play('ambush2', TAKEDOWN.cut);
+      sfx.play('wailing2', TAKEDOWN.cut);
     } else if (e.type === 'spotted') {
       sfx.play('spotted');
     } else if (e.type === 'caught') {

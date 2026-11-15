@@ -72,8 +72,8 @@ function doorState(): string {
     .join('');
 }
 
-/** Sounds for this step's events: the lever and any door it moved; the takedown's leap, landing on the troll's back
- *  (with its wail) and cut, timed to the choreography and called off if another monster catches the hero first. */
+/** Sounds for this step's events: the lever and any door it moved; the takedown's leap, the troll's wail as the hero
+ *  lands on its back, and the cut, timed to the choreography and called off if another monster catches the hero first. */
 function playEvents(events: SimEvent[]): void {
   for (const e of events) {
     if (e.type === 'lever') {
@@ -83,7 +83,6 @@ function playEvents(events: SimEvent[]): void {
       doorsOpen = doors;
     } else if (e.type === 'kill') {
       sfx.play('ambush1', TAKEDOWN.jump);
-      sfx.play('ambush1', TAKEDOWN.perch);
       // the troll wails as the hero lands on it and again at the cut; the second wail cuts off the first
       sfx.play('wailing', TAKEDOWN.perch, TAKEDOWN.cut);
       sfx.play('ambush2', TAKEDOWN.cut);

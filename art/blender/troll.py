@@ -191,24 +191,26 @@ def build_props():
     return out
 
 
-HEM_HANG = 0.6
+# the loincloth's two flaps: bones from the belt down to the hem, front and back; their fixed length is the cloth's
+CLOTH_F = ((0.235, 0, 0.57), (0.25, 0, 0.37))
+CLOTH_B = ((-0.175, 0, 0.57), (-0.19, 0, 0.42))
+CLOTH = ("cloth.F", "cloth.B")
 
 
 def skin_loincloth(obj, rig):
-    """The belt line rides the hips; the hem's front half follows the thighs (left / right by side, shared in the
-    middle) and its back the hips, so the cloth drapes over the lap when the knees come up instead of standing out
-    stiff."""
-    groups = {b: obj.vertex_groups.new(name=b) for b in ("hips", "spine", "thigh.L", "thigh.R")}
+    """The belt line rides the hips; the hem hangs from the two flap bones, blended front to back round the skirt.
+    The flaps are rigid, so the cloth always keeps its length below the belt (the crotch stays covered) and only
+    stretches sideways between them; a clip that rolls the pelvis turns the flaps back to hang (see sit)."""
+    groups = {b: obj.vertex_groups.new(name=b) for b in ("hips",) + CLOTH}
     for v in obj.data.vertices:
         x, y, z = v.co
-        hem = z < 0.56
-        front = max(0.0, (x - 0.03) / 0.22) ** 0.7 * 0.9 if hem else 0.0
-        left = min(1.0, max(0.0, 0.5 + y / 0.15))
-        # the rest of the hem hangs from the waist rather than standing out with the pelvis when it rolls back
-        hang = (1 - front) * HEM_HANG if hem else 0.0
-        for b, w in (("hips", 1 - front - hang), ("spine", hang), ("thigh.L", front * left), ("thigh.R", front * (1 - left))):
-            if w > 0:
-                groups[b].add([v.index], w, "REPLACE")
+        if z > 0.56:
+            groups["hips"].add([v.index], 1.0, "REPLACE")
+            continue
+        t = math.atan2(y, x - 0.03)
+        f = min(1.0, max(0.0, 0.5 + 0.7 * math.cos(t)))
+        groups["cloth.F"].add([v.index], f, "REPLACE")
+        groups["cloth.B"].add([v.index], 1 - f, "REPLACE")
     obj.parent = rig
     obj.modifiers.new("armature", "ARMATURE").object = rig
 
@@ -221,6 +223,8 @@ def build_rig():
         ("chest", J["chest"], J["neck"], "spine"),
         ("neck", J["neck"], tuple(hp((0.15, 0, 1.08))), "chest"),
         ("head", tuple(hp((0.15, 0, 1.08))), tuple(hp((0.30, 0, 1.24))), "neck"),
+        ("cloth.F", *CLOTH_F, "hips"),
+        ("cloth.B", *CLOTH_B, "hips"),
     ]
     for s, side in ((1, "L"), (-1, "R")):
         P = lambda n: tuple(L(n, s))
@@ -325,6 +329,8 @@ def build_actions(rig):
             "hand.L": [(Y, 40)],
             "ear.L": [(X, 8 + 3 * b)], "ear.R": [(X, -8 - 3 * b)],
             "_lift": LIFT - 0.004 * b,
+            # the loincloth hangs straight down from the belt however far the pelvis has rolled
+            "cloth.F": [(Y, HIP)], "cloth.B": [(Y, HIP)],
         }
 
     lib.action(rig, "sit", {f: sit_pose((f - 1) / 72) for f in range(1, 74, 8)})
@@ -420,7 +426,12 @@ def build(out_glb, out_preview):
     body = build_body()
     props = build_props()
     rig = build_rig()
+    # the flaps move the loincloth only: keep them out of the body's automatic weights
+    for b in CLOTH:
+        rig.data.bones[b].use_deform = False
     lib.skin(body, rig)
+    for b in CLOTH:
+        rig.data.bones[b].use_deform = True
     for obj, bone in props.values():
         if bone:
             lib.attach(obj, rig, bone)

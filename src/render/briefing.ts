@@ -27,6 +27,12 @@ const FOV = 6;
 const VIEW_H = 2.6;
 /** The rock canvas sits this far behind the figures. */
 const BACK_Z = -1.5;
+/** Screen height (CSS px) at and above which the labels show at full size; below it they shrink in proportion, as the
+ *  picture does. The tightest fit is page 2, where the station (~72px) and "Press to Continue" (~28px) share the
+ *  15% of the screen height between the Space anchor and the bottom 8%. */
+const LABEL_REF_H = 760;
+/** Labels keep at least this far (CSS px) from the screen's sides. */
+const LABEL_MARGIN = 16;
 
 interface Page {
   root: Group;
@@ -177,13 +183,23 @@ export class Briefing {
     this.placeLabels(page);
   }
 
-  /** Pin each label of the page to its anchor, in CSS pixels (the label's CSS decides which of its points). */
+  /** Pin each label of the page to its anchor, in CSS pixels (the label's CSS decides which of its points), and set
+   *  the scale --k all the labels share: in proportion to the screen height below LABEL_REF_H, and smaller still if a
+   *  label would run off the side. */
   private placeLabels(page: Page): void {
     const rect = this.pipeline.canvas.getBoundingClientRect();
+    let k = Math.min(1, rect.height / LABEL_REF_H);
     this.labels[this.index].forEach((el, i) => {
       const p = this.at.copy(page.anchors[i]).project(this.camera);
-      el.style.left = `${rect.left + (p.x * 0.5 + 0.5) * rect.width}px`;
+      const x = rect.left + (p.x * 0.5 + 0.5) * rect.width;
+      el.style.left = `${x}px`;
       el.style.top = `${rect.top + (0.5 - p.y * 0.5) * rect.height}px`;
+      // offsetWidth is the unscaled width
+      const room = el.classList.contains('side')
+        ? rect.right - LABEL_MARGIN - x
+        : 2 * Math.min(x - rect.left - LABEL_MARGIN, rect.right - LABEL_MARGIN - x);
+      if (el.offsetWidth > 0) k = Math.min(k, Math.max(0, room) / el.offsetWidth);
     });
+    this.pageEls[0].parentElement?.style.setProperty('--k', `${k}`);
   }
 }

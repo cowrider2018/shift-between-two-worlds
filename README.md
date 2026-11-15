@@ -1,5 +1,7 @@
 # SHIFT
 
+![SHIFT：上半是表次元，主角蹲在巡邏的山怪後方；下半是裏次元的倒影，幽靈山怪的光錐照向主角](docs/cover.png)
+
 兩個重疊次元的潛行探索遊戲 + 關卡編輯器。設計規則見 [DESIGN.md](DESIGN.md)（遊戲與引擎的唯一準則）。
 
 ## 執行
@@ -11,6 +13,7 @@ npm run check      # 型別檢查 + 單元測試 + 關卡驗證
 npm run validate   # 只驗證 levels/*.json（可帶檔名）
 npm run build      # 正式版 → dist/itch/ 與 dist/shift-itch.zip（見下方「正式版」）
 npm run models     # 用 Blender 重建角色模型（BLENDER=<blender.exe> 或專案旁的 blender-* 資料夾）
+npm run cover      # 重拍封面 → docs/（要 Chrome，見下方「上傳到 itch.io」）
 ```
 
 ## 操作
@@ -35,7 +38,8 @@ WASD 移動（以鏡頭為準）・滑鼠 / ←→ 轉鏡頭・**按住 Shift �
 1. **Kind of project** 選 **HTML**。
 2. **Uploads** 上傳 `dist/shift-itch.zip`，勾 **This file will be played in the browser**。
 3. **Embed options**：**Embed in page**，視窗 1280 × 720，勾 **Fullscreen button**。
-4. 玩家要先點一下遊戲畫面，鍵盤才會進到遊戲（iframe 拿到焦點），同時鎖定滑鼠轉鏡頭；Esc 放開滑鼠，再點一下重新鎖定。
+4. **Cover image** 上傳 `docs/cover-itch.png`（630 × 500，itch 建議的大小）；`docs/cover.png` 是同一張放大兩倍，放在這份 README 開頭；`docs/cover-wide.png`（1920 × 1080）是 16:9 版。三張都由 `npm run cover`（`scripts/cover.ts`）拍：開發伺服器上的攝影棚 `cover.html`（`src/cover/main.ts`）用遊戲自己的 GameView 拍一個封面專用的小關卡，表、裏各拍一半再上下拼起來（裏次元上下翻轉），一個美術像素放大成整數倍的螢幕像素。重跑會覆寫這三個檔，結果逐位元組相同。Chrome 不在預設位置時用 `CHROME=<chrome.exe>` 指定。
+5. 玩家要先點一下遊戲畫面，鍵盤才會進到遊戲（iframe 拿到焦點），同時鎖定滑鼠轉鏡頭；Esc 放開滑鼠，再點一下重新鎖定。
 
 ## 製作關卡
 

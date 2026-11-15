@@ -12,9 +12,11 @@
  *
  * Each half is a frame of one hand-made level (not in levels/, so it is never played), rendered one screen pixel per
  * art pixel and cropped to place the hero; the halves, the title and the scale-up are composed on a 2D canvas.
+ * The icon ('icon') is a second little level: the troll's face straight on, shot once in each dimension from the same
+ * camera, the underside's left half beside the surface's right half.
  * window.cover.shoot(layout, scale) returns the finished PNG as a data URL.
  */
-import { Vector3 } from 'three';
+import { Vector3, type Object3D } from 'three';
 import { parseLevel, type DimIndex, type Level } from '../core/level';
 import { Sim } from '../core/sim';
 import { loadModels } from '../render/models';
@@ -122,12 +124,43 @@ const LAYOUTS: Record<string, Layout> = {
   },
 };
 
+/** The icon's stage, both dimensions alike: one troll standing in the middle of a bare room, facing +y, where the
+ *  camera stands; the hero crouches in a far corner, out of the picture. */
+const ICON_TROLL: [number, number] = [4.5, 5.5];
+const ICON_HERO: [number, number] = [1.5, 1.5];
+const ICON_ROWS = ['#########', '#.......#', '#.......#', '#.......#', '#.......#', '#.......#', '#.......#', '#.......#', '#.......#', '#########'];
+const ICON_LEVEL = {
+  format: 1,
+  id: 'icon',
+  name: 'icon',
+  size: { w: 9, h: 10 },
+  // two path points keep each troll on its feet (one would seat it)
+  dimensions: ([0, 1] as const).map((d) => ({
+    rows: d === 0 ? ICON_ROWS.map((r, y) => (y === 1 ? '#S' + r.slice(2) : r)) : ICON_ROWS,
+    props: {},
+    monsters: [{ id: `t${d}`, path: [[4, 5], [4, 6]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: 5, viewAngle: 70, facing: 90 }],
+  })),
+};
+
+/** The icon: the troll's face straight on, the left half from the underside (B), the right half from the surface (A),
+ *  shot from the same camera so the two halves meet at the bridge of the nose. */
+const ICON = {
+  /** Art pixels, square. */
+  size: 128,
+  /** Camera distance in front of the face; its height and where it aims, relative to the head bone (metres, up): a
+   *  little below, looking up into the face the hunched troll holds low. */
+  dist: 1.3,
+  eye: -0.1,
+  lift: -0.03,
+};
+
 const STEP = 1 / 60;
 /** Frames run before a shot, for the animations to settle. */
 const FRAMES = 150;
 
 let view: GameView;
 let level: Level;
+let iconLevel: Level;
 
 /** Render one half: a fresh sim with the hero and monsters placed, run FRAMES frames, copy the crop out. */
 function half(h: Half, w: number, hh: number, at: [number, number]): HTMLCanvasElement {
@@ -167,6 +200,58 @@ function half(h: Half, w: number, hh: number, at: [number, number]): HTMLCanvasE
   if (x < 0 || y < 0 || x + w > h.frame[0] || y + hh > h.frame[1]) throw new Error(`frame ${h.frame} too small for the crop`);
   out.getContext('2d')!.drawImage(view.pipeline.canvas, -x, -y);
   return out;
+}
+
+/** One dimension of the icon, full frame: the troll's face centred, the camera following its head bone (a ghost bobs). */
+function iconHalf(dim: DimIndex): HTMLCanvasElement {
+  const sim = new Sim(iconLevel);
+  sim.dim = dim;
+  [sim.x, sim.y] = ICON_HERO;
+  sim.sneaking = true;
+  sim.moving = false;
+  for (const m of sim.monsters) {
+    [m.x, m.y] = ICON_TROLL;
+    m.angle = (m.def.facing * Math.PI) / 180;
+  }
+  view.setSim(sim);
+  view.pipeline.pixelSize = 1;
+  const size = view.pipeline.resize(ICON.size, ICON.size);
+  const follow = view.follow;
+  follow.setViewport(size.w, size.h);
+  follow.distance = ICON.dist;
+  const mv = (view as unknown as { monsters: { state: { home: DimIndex }; body: { root: Object3D } }[] }).monsters.find((v) => v.state.home === dim)!;
+  const head = mv.body.root.getObjectByName('head') ?? mv.body.root;
+  const at = new Vector3();
+  follow.update = () => {
+    head.updateWorldMatrix(true, false);
+    head.getWorldPosition(at);
+    // straight on: only the height follows the head, so both halves share one face line
+    follow.camera.position.set(ICON_TROLL[0], at.y + ICON.eye, ICON_TROLL[1] + ICON.dist);
+    follow.camera.lookAt(ICON_TROLL[0], at.y + ICON.lift, ICON_TROLL[1]);
+    follow.camera.updateMatrixWorld();
+    follow.subpixel.x = follow.subpixel.y = 0;
+  };
+  for (let i = 0; i < FRAMES; i++) view.frame(STEP);
+  const out = document.createElement('canvas');
+  out.width = out.height = ICON.size;
+  out.getContext('2d')!.drawImage(view.pipeline.canvas, 0, 0);
+  return out;
+}
+
+/** The icon, `scale` screen pixels per art pixel: underside on the left, surface on the right. */
+function icon(scale: number): string {
+  const n = ICON.size;
+  const art = document.createElement('canvas');
+  art.width = art.height = n;
+  const ctx = art.getContext('2d')!;
+  ctx.drawImage(iconHalf(1), 0, 0, n / 2, n, 0, 0, n / 2, n);
+  ctx.drawImage(iconHalf(0), n / 2, 0, n / 2, n, n / 2, 0, n / 2, n);
+  const out = document.createElement('canvas');
+  out.width = out.height = n * scale;
+  const o = out.getContext('2d')!;
+  o.imageSmoothingEnabled = false;
+  o.drawImage(art, 0, 0, out.width, out.height);
+  return out.toDataURL('image/png');
 }
 
 /** Text with a one-pixel drop shadow, every pixel fully on or off (the font's own pixels, no smoothing). */
@@ -217,9 +302,12 @@ async function boot(): Promise<void> {
   const parsed = parseLevel(LEVEL);
   if (!parsed.level) throw new Error(`cover level: ${parsed.errors.join('; ')}`);
   level = parsed.level;
+  const parsedIcon = parseLevel(ICON_LEVEL);
+  if (!parsedIcon.level) throw new Error(`icon level: ${parsedIcon.errors.join('; ')}`);
+  iconLevel = parsedIcon.level;
   await Promise.all([loadModels('/models/'), document.fonts.load('10px "Fusion Pixel 10px"')]);
   view = new GameView(document.getElementById('gl') as HTMLCanvasElement);
-  (window as unknown as { cover: unknown }).cover = { layouts: Object.keys(LAYOUTS), shoot };
+  (window as unknown as { cover: unknown }).cover = { layouts: [...Object.keys(LAYOUTS), 'icon'], shoot: (name: string, scale: number) => (name === 'icon' ? icon(scale) : shoot(name, scale)) };
 }
 
 void boot();

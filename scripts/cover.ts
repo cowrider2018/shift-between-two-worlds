@@ -4,6 +4,7 @@
  *   docs/cover-itch.png  630×500   itch.io's cover image
  *   docs/cover.png       1260×1000 the same picture twice the size, at the top of the README
  *   docs/cover-wide.png  1920×1080 a 16:9 layout of the same scene
+ *   docs/icon.png        512×512   the troll's face, left half underside, right half surface
  * Every art pixel is a whole square of screen pixels (×1, ×2, ×3), so nothing is smoothed; the itch picture and the
  * wide one have the same art pixels per unit at the hero, so the hero is drawn the same in all three. Needs Chrome
  * (CHROME=/path/to/chrome if it is not in a usual place). `npm run cover -- itch` shoots only the named layouts.
@@ -20,6 +21,7 @@ const SHOTS: [string, string, number][] = [
   ['cover-itch.png', 'itch', 1],
   ['cover.png', 'itch', 2],
   ['cover-wide.png', 'wide', 3],
+  ['icon.png', 'icon', 4],
 ];
 
 const only = process.argv.slice(2);

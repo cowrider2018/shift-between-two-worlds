@@ -12,14 +12,20 @@
  *
  * Each half is a frame of one hand-made level (not in levels/, so it is never played), rendered one screen pixel per
  * art pixel and cropped to place the hero; the halves, the title and the scale-up are composed on a 2D canvas.
- * The icon ('icon') is a second little level: the troll's face straight on, shot once in each dimension from the same
- * camera, the underside's left half beside the surface's right half.
+ * The icon ('icon') is shot like the control pages instead (src/render/briefing.ts): the troll's face straight on, flat,
+ * against a canvas of rock, once in each dimension, the underside's left half beside the surface's right half.
  * window.cover.shoot(layout, scale) returns the finished PNG as a data URL.
  */
-import { Vector3, type Object3D } from 'three';
+import {
+  BufferAttribute, Color, DirectionalLight, HemisphereLight, Mesh, PerspectiveCamera, PlaneGeometry, Scene, Vector3,
+} from 'three';
 import { parseLevel, type DimIndex, type Level } from '../core/level';
 import { Sim } from '../core/sim';
-import { loadModels } from '../render/models';
+import { COBBLE_SPAN } from '../render/cobbleTexture';
+import { cobble } from '../render/materials';
+import { CharacterInstance, loadModels } from '../render/models';
+import { THEMES } from '../render/palette';
+import { renderStandalone } from '../render/standalone';
 import { GameView } from '../render/view';
 
 /** The stage, both dimensions the same size: an open room, so the cones lie across bare floor. The hero stands at
@@ -124,34 +130,21 @@ const LAYOUTS: Record<string, Layout> = {
   },
 };
 
-/** The icon's stage, both dimensions alike: one troll standing in the middle of a bare room, facing +y, where the
- *  camera stands; the hero crouches in a far corner, out of the picture. */
-const ICON_TROLL: [number, number] = [4.5, 5.5];
-const ICON_HERO: [number, number] = [1.5, 1.5];
-const ICON_ROWS = ['#########', '#.......#', '#.......#', '#.......#', '#.......#', '#.......#', '#.......#', '#.......#', '#.......#', '#########'];
-const ICON_LEVEL = {
-  format: 1,
-  id: 'icon',
-  name: 'icon',
-  size: { w: 9, h: 10 },
-  // two path points keep each troll on its feet (one would seat it)
-  dimensions: ([0, 1] as const).map((d) => ({
-    rows: d === 0 ? ICON_ROWS.map((r, y) => (y === 1 ? '#S' + r.slice(2) : r)) : ICON_ROWS,
-    props: {},
-    monsters: [{ id: `t${d}`, path: [[4, 5], [4, 6]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: 5, viewAngle: 70, facing: 90 }],
-  })),
-};
-
-/** The icon: the troll's face straight on, the left half from the underside (B), the right half from the surface (A),
- *  shot from the same camera so the two halves meet at the bridge of the nose. */
+/** The icon: the troll's face straight on, the left half from the underside (B, its ghost), the right half from the
+ *  surface (A), in the control pages' flat look: a very narrow field of view from far off, so nothing recedes, and a
+ *  flat canvas of rock behind instead of a room. */
 const ICON = {
   /** Art pixels, square. */
   size: 128,
-  /** Camera distance in front of the face; its height and where it aims, relative to the head bone (metres, up): a
-   *  little below, looking up into the face the hunched troll holds low. */
-  dist: 1.3,
-  eye: -0.1,
-  lift: -0.03,
+  /** World units shown top to bottom, and how far above the head bone's root the picture centres. */
+  viewH: 1.3,
+  lift: 0.0,
+  /** Field of view (degrees) and the rock canvas's distance behind the troll. */
+  fov: 6,
+  back: 1.5,
+  /** World units one cobble tile spans on the canvas: the floor's own size, which in a picture only half the control
+   *  pages' height shows each stone twice as large there, big and quiet behind the see-through ghost. */
+  span: COBBLE_SPAN,
 };
 
 const STEP = 1 / 60;
@@ -160,7 +153,6 @@ const FRAMES = 150;
 
 let view: GameView;
 let level: Level;
-let iconLevel: Level;
 
 /** Render one half: a fresh sim with the hero and monsters placed, run FRAMES frames, copy the crop out. */
 function half(h: Half, w: number, hh: number, at: [number, number]): HTMLCanvasElement {
@@ -202,39 +194,51 @@ function half(h: Half, w: number, hh: number, at: [number, number]): HTMLCanvasE
   return out;
 }
 
-/** One dimension of the icon, full frame: the troll's face centred, the camera following its head bone (a ghost bobs). */
+/** One dimension of the icon, full frame: that dimension's troll (the underside's a ghost) facing us in front of a
+ *  canvas of its rock, in its light. Both are posed the same, at the same moment of the same clip. */
 function iconHalf(dim: DimIndex): HTMLCanvasElement {
-  const sim = new Sim(iconLevel);
-  sim.dim = dim;
-  [sim.x, sim.y] = ICON_HERO;
-  sim.sneaking = true;
-  sim.moving = false;
-  for (const m of sim.monsters) {
-    [m.x, m.y] = ICON_TROLL;
-    m.angle = (m.def.facing * Math.PI) / 180;
+  const th = THEMES[dim];
+  const scene = new Scene();
+  scene.background = new Color(th.background);
+  scene.add(new HemisphereLight(th.hemiSky, th.hemiGround, 1.5));
+  const sun = new DirectionalLight(th.sun, 1.8);
+  // from the front, high and to the left, as on the control pages
+  sun.position.set(-4, 6, 8);
+  scene.add(sun, sun.target);
+  const w = 20;
+  const g = new PlaneGeometry(w, w);
+  g.translate(0, 0, -ICON.back);
+  const pos = g.getAttribute('position');
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = pos.getX(i) / ICON.span;
+    uv[i * 2 + 1] = pos.getY(i) / ICON.span;
   }
-  view.setSim(sim);
-  view.pipeline.pixelSize = 1;
-  const size = view.pipeline.resize(ICON.size, ICON.size);
-  const follow = view.follow;
-  follow.setViewport(size.w, size.h);
-  follow.distance = ICON.dist;
-  const mv = (view as unknown as { monsters: { state: { home: DimIndex }; body: { root: Object3D } }[] }).monsters.find((v) => v.state.home === dim)!;
-  const head = mv.body.root.getObjectByName('head') ?? mv.body.root;
-  const at = new Vector3();
-  follow.update = () => {
-    head.updateWorldMatrix(true, false);
-    head.getWorldPosition(at);
-    // straight on: only the height follows the head, so both halves share one face line
-    follow.camera.position.set(ICON_TROLL[0], at.y + ICON.eye, ICON_TROLL[1] + ICON.dist);
-    follow.camera.lookAt(ICON_TROLL[0], at.y + ICON.lift, ICON_TROLL[1]);
-    follow.camera.updateMatrixWorld();
-    follow.subpixel.x = follow.subpixel.y = 0;
-  };
-  for (let i = 0; i < FRAMES; i++) view.frame(STEP);
+  g.setAttribute('uv', new BufferAttribute(uv, 2));
+  scene.add(new Mesh(g, cobble(th.floor[0])));
+  const troll = new CharacterInstance('troll', dim === 1 ? 'ghost' : 'normal');
+  troll.root.rotation.y = -Math.PI / 2; // facing the camera
+  troll.play('idle', 0);
+  scene.add(troll.root);
+  for (let i = 0; i < FRAMES; i++) troll.update(STEP);
+  troll.root.updateMatrixWorld(true);
+  const head = (troll.root.getObjectByName('head') ?? troll.root).getWorldPosition(new Vector3());
+  const y = head.y + ICON.lift;
+
+  const pipeline = view.pipeline;
+  pipeline.pixelSize = 1;
+  const size = pipeline.resize(ICON.size, ICON.size);
+  const camera = new PerspectiveCamera(ICON.fov, size.w / size.h, 1, 100);
+  const dist = ICON.viewH / 2 / Math.tan((ICON.fov * Math.PI) / 360);
+  camera.position.set(0, y, dist);
+  camera.near = dist - 5;
+  camera.far = dist + 5;
+  camera.updateProjectionMatrix();
+  camera.lookAt(0, y, 0);
+  renderStandalone(pipeline, scene, camera, sun, FRAMES * STEP);
   const out = document.createElement('canvas');
   out.width = out.height = ICON.size;
-  out.getContext('2d')!.drawImage(view.pipeline.canvas, 0, 0);
+  out.getContext('2d')!.drawImage(pipeline.canvas, 0, 0);
   return out;
 }
 
@@ -302,9 +306,6 @@ async function boot(): Promise<void> {
   const parsed = parseLevel(LEVEL);
   if (!parsed.level) throw new Error(`cover level: ${parsed.errors.join('; ')}`);
   level = parsed.level;
-  const parsedIcon = parseLevel(ICON_LEVEL);
-  if (!parsedIcon.level) throw new Error(`icon level: ${parsedIcon.errors.join('; ')}`);
-  iconLevel = parsedIcon.level;
   await Promise.all([loadModels('/models/'), document.fonts.load('10px "Fusion Pixel 10px"')]);
   view = new GameView(document.getElementById('gl') as HTMLCanvasElement);
   (window as unknown as { cover: unknown }).cover = { layouts: [...Object.keys(LAYOUTS), 'icon'], shoot: (name: string, scale: number) => (name === 'icon' ? icon(scale) : shoot(name, scale)) };

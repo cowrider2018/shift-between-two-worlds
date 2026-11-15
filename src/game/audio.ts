@@ -34,8 +34,18 @@ const GAIN: Record<SfxName, number> = {
 
 /** Seconds the walk loop takes to fade in or out: short enough to act as a switch, long enough not to click. */
 const WALK_FADE = 0.02;
-/** Seconds into walk.wav just before its first footfall (at 0.12 s). */
-const WALK_FIRST_STEP = 0.1;
+/** A sound starts where it first rises above this share of its loudest sample, less ONSET_LEAD seconds: the
+ *  recordings open with up to 0.2 s of near silence, which would be heard as lag. */
+const ONSET_SHARE = 0.1;
+const ONSET_LEAD = 0.003;
+
+/** Seconds into `samples` (one channel at `rate` Hz) at which playing should start: just before its first peak. */
+export function firstPeak(samples: Float32Array, rate: number): number {
+  let max = 0;
+  for (const v of samples) max = Math.max(max, Math.abs(v));
+  const i = samples.findIndex((v) => Math.abs(v) > max * ONSET_SHARE);
+  return i < 0 ? 0 : Math.max(0, i / rate - ONSET_LEAD);
+}
 /** Walking again within this many seconds of stopping picks the loop up where it stopped, so tapping a key does not
  *  restart the first step over and over; after a longer stop it starts from the first step. It is the longest gap
  *  between two footfalls in the loop (0.297 s), rounded up. */
@@ -44,6 +54,8 @@ const WALK_RESUME = 0.3;
 export class Sfx {
   private readonly ctx = new AudioContext();
   private readonly buffers = new Map<SfxName, AudioBuffer>();
+  /** Seconds into each sound at which it is played from (firstPeak). */
+  private readonly starts = new Map<SfxName, number>();
   /** Sounds scheduled ahead (a takedown's), so they can be called off. */
   private pending = new Set<AudioBufferSourceNode>();
   private walkSrc: AudioBufferSourceNode | null = null;
@@ -51,7 +63,7 @@ export class Sfx {
   private walkLevel = 0;
   /** Where the loop is (seconds into walk.wav) at context time `walkAt`: while playing, where it was when started;
    *  once stopped, where it stopped. */
-  private walkPos = WALK_FIRST_STEP;
+  private walkPos = 0;
   private walkAt = -Infinity;
 
   constructor(target: Window = window) {
@@ -68,7 +80,9 @@ export class Sfx {
       (Object.keys(FILES) as SfxName[]).map(async (name) => {
         try {
           const res = await fetch(base + FILES[name]);
-          this.buffers.set(name, await this.ctx.decodeAudioData(await res.arrayBuffer()));
+          const buffer = await this.ctx.decodeAudioData(await res.arrayBuffer());
+          this.buffers.set(name, buffer);
+          this.starts.set(name, firstPeak(buffer.getChannelData(0), buffer.sampleRate));
         } catch (e) {
           console.warn(`sfx ${name} did not load`, e);
         }
@@ -86,7 +100,7 @@ export class Sfx {
     const gain = this.ctx.createGain();
     gain.gain.value = GAIN[name];
     src.connect(gain).connect(this.ctx.destination);
-    src.start(this.ctx.currentTime + delay);
+    src.start(this.ctx.currentTime + delay, this.starts.get(name));
     if (until !== undefined) src.stop(this.ctx.currentTime + until);
     if (delay > 0) {
       this.pending.add(src);
@@ -130,7 +144,7 @@ export class Sfx {
       const gain = this.ctx.createGain();
       gain.gain.value = 0;
       src.connect(gain).connect(this.ctx.destination);
-      if (now - this.walkAt > WALK_RESUME) this.walkPos = WALK_FIRST_STEP;
+      if (now - this.walkAt > WALK_RESUME) this.walkPos = this.starts.get('walk') ?? 0;
       src.start(now, this.walkPos);
       this.walkAt = now;
       this.walkSrc = src;

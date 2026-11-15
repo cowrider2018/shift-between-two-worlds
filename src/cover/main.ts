@@ -14,10 +14,10 @@
  * art pixel and cropped to place the hero; the halves, the title and the scale-up are composed on a 2D canvas.
  * window.cover.shoot(layout, scale) returns the finished PNG as a data URL.
  */
-import { PropertyBinding, Quaternion, Vector3, type Object3D } from 'three';
+import { Vector3 } from 'three';
 import { parseLevel, type DimIndex, type Level } from '../core/level';
 import { Sim } from '../core/sim';
-import { loadModels, type CharacterInstance } from '../render/models';
+import { loadModels } from '../render/models';
 import { GameView } from '../render/view';
 
 /** The stage, both dimensions the same size: an open room, so the cones lie across bare floor. The hero stands at
@@ -46,7 +46,8 @@ const LEVEL = {
         '###################',
       ],
       props: {},
-      // sitting on the floor with its back to the hero's pillar, looking off to the right, legs out ahead of it
+      // sitting on the floor with its back to the hero's pillar, looking off to the right (a single-point path: the
+      // game seats a troll that never walks)
       monsters: [{ id: 'a', path: [[13, 6]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: 5, viewAngle: 70, facing: 10 }],
     },
     {
@@ -65,8 +66,8 @@ const LEVEL = {
         '###################',
       ],
       props: {},
-      // a ghost standing at the hero's pillar, looking out toward us, over the hero
-      monsters: [{ id: 'b', path: [[13, 6]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: 5, viewAngle: 70, facing: 100 }],
+      // a ghost standing at the hero's pillar, looking out toward us, over the hero (two path points keep it on its feet)
+      monsters: [{ id: 'b', path: [[13, 6], [13, 7]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: 5, viewAngle: 70, facing: 100 }],
     },
   ],
 };
@@ -74,47 +75,6 @@ const LEVEL = {
 /** Where each monster stands, off the cell centres its path allows: right up against the pillar (whose right face is
  *  x = 13). */
 const MONSTER_AT: Record<string, [number, number]> = { a: [13.4, 6.5], b: [13.45, 6.5] };
-
-/** The troll has no sitting clip: SIT poses it over its idle, every frame after the mixer. The body drops by `drop`;
- *  each thigh swings forward and each shin back (radians, about the troll's own left-right axis). */
-const SIT = { who: 'a', drop: 0, thigh: 0.75, shin: 0.5 };
-const _q = new Quaternion();
-const _p = new Quaternion();
-const _axis = new Vector3();
-
-/** Turn a bone about a world axis, keeping its parent where it is. */
-function turnBone(bone: Object3D, axis: Vector3, angle: number): void {
-  bone.parent!.getWorldQuaternion(_p);
-  _q.setFromAxisAngle(axis, angle);
-  // local' = parent⁻¹ · q · parent · local
-  bone.quaternion.premultiply(_p.clone().invert().multiply(_q).multiply(_p));
-  bone.updateMatrixWorld(true);
-}
-
-/** Seat a troll: after its own update each frame, lower it and fold its legs. The idle clip does not move the legs,
- *  so they are put back to their rest pose first; otherwise the turns would pile up frame on frame. */
-function seat(body: CharacterInstance): void {
-  const root = body.root;
-  // the loader drops the dots from Blender's bone names (thigh.L -> thighL)
-  const bone = (name: string) => root.getObjectByName(PropertyBinding.sanitizeNodeName(name))!;
-  const legs = ['L', 'R'].map((side) => ({ thigh: bone(`thigh.${side}`), shin: bone(`shin.${side}`) }));
-  const rest = legs.map((l) => [l.thigh.quaternion.clone(), l.shin.quaternion.clone()]);
-  const update = body.update.bind(body);
-  body.update = (dt: number) => {
-    update(dt);
-    root.position.y -= SIT.drop;
-    root.updateMatrixWorld(true);
-    // the model faces +x, so its left-right axis is its z
-    _axis.set(0, 0, 1).applyQuaternion(root.getWorldQuaternion(new Quaternion()));
-    legs.forEach((l, i) => {
-      l.thigh.quaternion.copy(rest[i][0]);
-      l.shin.quaternion.copy(rest[i][1]);
-      l.thigh.updateMatrixWorld(true);
-      turnBone(l.thigh, _axis, SIT.thigh);
-      turnBone(l.shin, _axis, SIT.shin);
-    });
-  };
-}
 
 /** One half of the picture: which dimension, the camera, and where in the rendered frame the half is cut from. */
 interface Half {
@@ -178,8 +138,6 @@ function half(h: Half, w: number, hh: number, at: [number, number]): HTMLCanvasE
   sim.facing = HERO_FACING;
   for (const m of sim.monsters) [m.x, m.y] = MONSTER_AT[m.def.id] ?? [m.x, m.y];
   view.setSim(sim);
-  for (const mv of (view as unknown as { monsters: { state: { def: { id: string } }; body: CharacterInstance }[] }).monsters)
-    if (mv.state.def.id === SIT.who) seat(mv.body);
   view.pipeline.pixelSize = 1;
   const size = view.pipeline.resize(h.frame[0], h.frame[1]);
   const follow = view.follow;

@@ -29,7 +29,7 @@ const GAIN: Record<SfxName, number> = {
   door: 1.6,
   lever: 1.2,
   squat: 1.4,
-  walk: 12,
+  walk: 2,
 };
 
 /** Seconds the walk loop takes to fade in or out: short enough to act as a switch, long enough not to click. */

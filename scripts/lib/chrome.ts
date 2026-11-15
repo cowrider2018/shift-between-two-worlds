@@ -53,14 +53,18 @@ export async function launchChrome(windowSize = '800,600'): Promise<Chrome> {
     }
   };
 
+  // older Chrome listens on 127.0.0.1, newer (157 on) only on ::1
   for (let i = 0; i < 100 && !ws; i++) {
-    try {
-      const port = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split(/\r?\n/)[0];
-      const list = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
-      const page = list.find((t) => t.type === 'page');
-      if (page) ws = new WebSocket(page.webSocketDebuggerUrl);
-    } catch {
-      /* not up yet */
+    for (const host of ['127.0.0.1', '[::1]']) {
+      try {
+        const port = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split(/\r?\n/)[0];
+        const list = (await (await fetch(`http://${host}:${port}/json`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
+        const page = list.find((t) => t.type === 'page');
+        if (page) ws = new WebSocket(page.webSocketDebuggerUrl);
+        break;
+      } catch {
+        /* not up yet, or not on this address */
+      }
     }
     if (!ws) await sleep(200);
   }

@@ -2,45 +2,36 @@
 
 ![SHIFT: Between Two Worlds — the top half is the surface dimension, with the hero hiding in front of a pillar and a troll sitting to its right; the bottom half is the underside's reflection, with a ghost troll standing to the pillar's left](docs/cover.png)
 
-A stealth exploration game across two overlapping dimensions, plus a level editor. The design rules live in [DESIGN.md](DESIGN.md) (the single source of truth for the game and the engine).
+*Two worlds lie on top of each other. Only you can step between them.*
 
-## Running
+Trolls with lanterns patrol the surface. Below lies its reflection, where the dead keep watch as ghosts. The two worlds are bound together, and every troll you kill on the surface rises below as a ghost that cannot die.
+
+A short stealth puzzle game about sneaking past the light, striking from behind, and crossing between worlds. Each level has one way out. Find it.
+
+Made for [GitHub Game Off 2026](https://itch.io/jam/game-off-2026) (theme: SHIFT). The game runs in the browser, built with TypeScript and three.js, and comes with its own level editor.
+
+## Controls
+
+| Key | Action |
+|---|---|
+| WASD | Move (relative to the camera) |
+| Mouse / wheel | Turn the camera / zoom |
+| **Hold Shift** | Sneak: every monster's sight radius is halved |
+| **Tap Shift** | Shift to the other dimension |
+| Space | Pull a lever, or take down a surface troll from behind (a lever in range comes first; the ghosts of the underside cannot be killed) |
+
+Click the game once to give it focus; the same click locks the mouse. Esc releases it.
+
+## Running from source
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173/ for the game, /editor.html for the editor
 npm run check      # type check + unit tests + level validation
-npm run validate   # validate levels/*.json only (optionally pass file names)
-npm run build      # release build → dist/itch/ and dist/shift-itch.zip (see "Release build" below)
-npm run models     # rebuild the character models with Blender (BLENDER=<blender.exe>, or a blender-* folder next to the project)
-npm run cover      # re-shoot the cover → docs/ and the icon → public/ (needs Chrome; see "Uploading to itch.io" below)
+npm run build      # release build → dist/itch/
 ```
 
-## Controls
-
-WASD to move (relative to the camera) · mouse to turn the camera · wheel to zoom · **hold Shift to sneak** (monsters' sight radius is halved) · **tap Shift to shift dimension** · Space to pull a lever or take down a monster (a lever in range takes priority; a takedown means reaching a surface monster from behind — the ghosts of the underside cannot be killed)
-
-The dev build (`npm run dev`) also has: R to restart · ←→ to turn the camera · +/− to zoom · `?level=<id>` to jump to a level · an editor link in the top-right corner.
-
-## Release build
-
-`npm run build` packages the game alone: the keyboard only answers to the WASD, Space and Shift taught on the tutorial pages (mouse camera turning and wheel zoom stay), and there is no editor, playtest, level jumping or R to restart.
-
-| Output | Purpose |
-|---|---|
-| `dist/itch/` | The release files; serve them over HTTP (e.g. `npx vite preview`) — double-clicking index.html cannot load the models |
-| `dist/shift-itch.zip` | `dist/itch/` zipped with `index.html` at the top level — this is what gets uploaded to itch.io |
-
-The bundled JS carries no license comments; the three.js MIT license text is in `licenses.txt` and the font's OFL license is in `fonts/`, and both travel with the zip.
-
-### Uploading to itch.io
-
-1. **Kind of project**: **HTML**.
-2. **Uploads**: upload `dist/shift-itch.zip` and tick **This file will be played in the browser**.
-3. **Embed options**: **Embed in page**, viewport 1280 × 720, tick **Fullscreen button**.
-4. **Cover image**: upload `docs/cover-itch.png` (630 × 500, itch's recommended size). `docs/cover.png` is the same image at twice the size (in the itch one, one art pixel is one screen pixel, so the hero's pixels are as large as in the 16:9 version) and heads this README; `docs/cover-wide.png` (1920 × 1080) is the 16:9 version; `public/icon.png` (512 × 512, transparent background) is the icon, also used as the favicon of the game and the editor: one camera shoots the troll's face head-on, the left half the underside's ghost and the right half the surface troll.
-   All of these are shot by `npm run cover` (`scripts/cover.ts`): the studio page `cover.html` (`src/cover/main.ts`) on the dev server uses the game's own GameView to shoot a small cover-only level with a level camera (the ground perfectly horizontal), shooting the surface and the underside half each and stacking them (the underside flipped upside down), with each art pixel scaled up to a whole number of screen pixels. The icon is shot the way the tutorial pages are: a very narrow field of view, flat on the troll's face (at the moment in its idle animation when it has just turned back to face forward), once in each dimension, taking half of each side by side, with the background cut out to transparency (the ghost is filled with its colour against the underside's background, so the background never shows through). Re-running overwrites these files with byte-identical results. If Chrome is not in its default location, set `CHROME=<chrome.exe>`.
-5. Players must click the game once before the keyboard reaches it (the iframe takes focus); the same click locks the mouse for camera turning. Esc releases the mouse; click again to lock it.
+The dev build also has R to restart, ←→ to turn the camera, +/− to zoom, `?level=<id>` to jump to a level and an editor link in the top-right corner. The design rules live in [DESIGN.md](DESIGN.md) (in Chinese), the single source of truth for the game and the engine; release and asset notes are in [docs/release.md](docs/release.md).
 
 ## Making levels
 

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SHIFT cover studio</title>
+    <!-- npm run cover drives this page (scripts/cover.ts); dev server only, never in the release build -->
+    <style>
+      @font-face { font-family: "Fusion Pixel 10px"; src: url("/fonts/fusion-pixel-10px-proportional-zh_tw.woff2") format("woff2"); }
+      html, body { margin: 0; background: #0b0a0e; }
+      canvas { display: block; image-rendering: pixelated; }
+    </style>
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <script type="module" src="/src/cover/main.ts"></script>
+  </body>
+</html>

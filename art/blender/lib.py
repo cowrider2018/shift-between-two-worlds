@@ -501,12 +501,14 @@ def set_pose(arm_obj, pose, lift_bone="root"):
         pb.scale = (HIDDEN_SCALE,) * 3 if pb.name in hidden else (scaled.get(pb.name, 1),) * 3
 
 
-def action(arm_obj, name, keys, lift_bone="root", stepped_scale=True):
+def action(arm_obj, name, keys, lift_bone="root", stepped_scale=True, settle=None):
     """
     keys: {frame: pose} (see set_pose). "_hide" shrinks the listed bones, and everything parented to them, to nothing:
     a prop swapping from one bone to another (a sword drawn from the back) is two copies, one hidden at a time. The
     scale steps (constant interpolation) on the key where it changes, unless `stepped_scale` is off ("_scale" growing a
     part smoothly).
+    `settle(arm_obj)`, if given, runs on each key after the pose is set and may adjust further bones (cloth draped
+    over the posed body).
     Every bone is keyed on every key frame so actions never leak into each other.
     """
     arm_obj.animation_data_create()
@@ -517,6 +519,8 @@ def action(arm_obj, name, keys, lift_bone="root", stepped_scale=True):
     interp = prefs.keyframe_new_interpolation_type
     for frame, pose in sorted(keys.items()):
         set_pose(arm_obj, pose, lift_bone)
+        if settle:
+            settle(arm_obj)
         for pb in arm_obj.pose.bones:
             pb.keyframe_insert("rotation_quaternion", frame=frame)
             pb.keyframe_insert("location", frame=frame)

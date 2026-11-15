@@ -5,7 +5,10 @@ Faces +X, feet on z = 0, ~1.4 tiles tall.
 """
 import math
 
-from mathutils import Quaternion, Vector
+import bpy
+from mathutils.bvhtree import BVHTree
+
+from mathutils import Matrix, Quaternion, Vector
 
 import lib
 from lib import X, Y, Z
@@ -144,28 +147,19 @@ def build_body():
 
 
 def build_props():
-    """Eyes, fangs, loincloth, rope belt, lantern (low-poly pieces, rigid on one bone; the loincloth is skinned instead,
-    see skin_loincloth)."""
+    """Eyes, fangs, loincloth, rope belt, lantern (low-poly pieces, rigid on one bone; the loincloth hangs from its own
+    bone chains instead, see skin_loincloth)."""
     out = {}
     for s, side in ((1, "L"), (-1, "R")):
         k = HEAD_SCALE
         out[f"eye.{side}"] = (lib.ico(f"eye.{side}", hp((0.287, 0.055 * s, 1.133)), 0.022 * k, "troll_eye", 1), "head")
         out[f"fang.{side}"] = (lib.cone(f"fang.{side}", hp((0.33, 0.042 * s, 1.022)), hp((0.338, 0.046 * s, 1.07)), 0.011 * k, "troll_tooth", 4), "head")
 
-    # loincloth: a ragged skirt hanging from the belt, longer at the front
-    n = 16
-    top, verts, faces = [], [], []
-    for i in range(n):
-        t = i / n * 2 * math.pi
-        rx, ry = 0.205, 0.215
-        x, y = math.cos(t) * rx + 0.03, math.sin(t) * ry
-        front = max(0.0, math.cos(t))
-        drop = 0.13 + 0.07 * front + (0.025 if i % 2 else 0.0)
-        verts.append((x, y, 0.57))
-        verts.append((x * 1.08 + 0.01, y * 1.08, 0.57 - drop))
-    for i in range(n):
-        j = (i + 1) % n
-        faces.append((2 * i, 2 * j, 2 * j + 1, 2 * i + 1))
+    # loincloth: a ragged skirt hanging from the belt, longer at the front, one column per skirt bone chain
+    rings = skirt_rings()
+    verts = [p for ring in rings for p in ring]
+    faces = [(k * SKIRT_N + i, k * SKIRT_N + (i + 1) % SKIRT_N, (k + 1) * SKIRT_N + (i + 1) % SKIRT_N, (k + 1) * SKIRT_N + i)
+             for k in range(SKIRT_K) for i in range(SKIRT_N)]
     out["loincloth"] = (lib.mesh_from("loincloth", verts, faces, "cloth"), None)
 
     # rope belt: a low-poly ring
@@ -191,28 +185,86 @@ def build_props():
     return out
 
 
-# the loincloth's two flaps: bones from the belt down to the hem, front and back; their fixed length is the cloth's
-CLOTH_F = ((0.235, 0, 0.57), (0.25, 0, 0.37))
-CLOTH_B = ((-0.175, 0, 0.57), (-0.19, 0, 0.42))
-CLOTH = ("cloth.F", "cloth.B")
+# The loincloth is cut into SKIRT_N columns round the belt, each a chain of SKIRT_K bones from the belt to the hem
+# (the usual game-cloth rig). The chains are not animated by hand: drape_skirt() hangs them on every key of every clip,
+# so the cloth always lies on the posed body under its own weight.
+SKIRT_N, SKIRT_K = 16, 3
+BELT_Z = 0.57
+
+
+def skirt_rings():
+    """The loincloth's vertex rings at rest, belt first: SKIRT_K + 1 rings of SKIRT_N points."""
+    rings = []
+    for k in range(SKIRT_K + 1):
+        f = k / SKIRT_K
+        ring = []
+        for i in range(SKIRT_N):
+            t = i / SKIRT_N * 2 * math.pi
+            x, y = math.cos(t) * 0.205 + 0.03, math.sin(t) * 0.215
+            drop = 0.13 + 0.07 * max(0.0, math.cos(t)) + (0.025 if i % 2 else 0.0)  # longer at the front, ragged
+            flare = 1 + 0.08 * f
+            ring.append((x * flare + 0.01 * f, y * flare, BELT_Z - drop * f))
+        rings.append(ring)
+    return rings
+
+
+def skirt_bone(i, k):
+    return f"skirt{i:02d}_{k}"
+
+
+SKIRT_BONES = tuple(skirt_bone(i, k) for i in range(SKIRT_N) for k in range(1, SKIRT_K + 1))
 
 
 def skin_loincloth(obj, rig):
-    """The belt line rides the hips; the hem hangs from the two flap bones, blended front to back round the skirt.
-    The flaps are rigid, so the cloth always keeps its length below the belt (the crotch stays covered) and only
-    stretches sideways between them; a clip that rolls the pelvis turns the flaps back to hang (see sit)."""
-    groups = {b: obj.vertex_groups.new(name=b) for b in ("hips",) + CLOTH}
+    """The belt ring rides the hips; every lower vertex sits at the tail of its column's bone for that ring."""
+    groups = {}
     for v in obj.data.vertices:
-        x, y, z = v.co
-        if z > 0.56:
-            groups["hips"].add([v.index], 1.0, "REPLACE")
-            continue
-        t = math.atan2(y, x - 0.03)
-        f = min(1.0, max(0.0, 0.5 + 0.7 * math.cos(t)))
-        groups["cloth.F"].add([v.index], f, "REPLACE")
-        groups["cloth.B"].add([v.index], 1 - f, "REPLACE")
+        k, i = divmod(v.index, SKIRT_N)
+        name = "hips" if k == 0 else skirt_bone(i, k)
+        if name not in groups:
+            groups[name] = obj.vertex_groups.new(name=name)
+        groups[name].add([v.index], 1.0, "REPLACE")
     obj.parent = rig
     obj.modifiers.new("armature", "ARMATURE").object = rig
+
+
+# drape: how far the cloth keeps off the skin and the floor, and how much each column is drawn in toward the hips as it
+# falls (the belt's pull, which keeps it hanging on the body rather than standing off it)
+SKIN_GAP, FLOOR_Z, CLING = 0.012, 0.01, 0.3
+
+
+def drape_skirt(rig, body):
+    """Hang each column of the loincloth from the belt of the posed body: every link falls straight down under its
+    own weight, is pushed back out where it would sink into the body or the floor, and keeps its length. The cloth
+    therefore lies over the belly, thighs and lap whatever the pose, and never stretches or shrinks."""
+    vl = bpy.context.view_layer
+    vl.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    bvh = BVHTree.FromObject(body.evaluated_get(dg), dg)
+    to_body = body.matrix_world.inverted()
+    from_body = body.matrix_world
+    centre = rig.pose.bones["hips"].head.copy()
+    down = Vector((0, 0, -1))
+    for i in range(SKIRT_N):
+        prev = rig.pose.bones[skirt_bone(i, 1)].head.copy()
+        out = Vector((prev.x - centre.x, prev.y - centre.y, 0))
+        out = out.normalized() if out.length > 1e-6 else Vector((1, 0, 0))
+        for k in range(1, SKIRT_K + 1):
+            pb = rig.pose.bones[skirt_bone(i, k)]
+            length = pb.bone.length
+            p = prev + (down - out * CLING).normalized() * length
+            for _ in range(6):
+                q = to_body @ p
+                loc, nrm, _, _ = bvh.find_nearest(q)
+                if loc is not None and (q - loc).dot(nrm) < SKIN_GAP:
+                    p = from_body @ (loc + nrm * SKIN_GAP)
+                p.z = max(p.z, FLOOR_Z)
+                p = prev + (p - prev).normalized() * length
+            head = pb.head.copy()
+            turn = (pb.tail - head).rotation_difference(p - head).to_matrix().to_4x4()
+            pb.matrix = Matrix.Translation(head) @ turn @ Matrix.Translation(-head) @ pb.matrix
+            vl.update()
+            prev = p
 
 
 def build_rig():
@@ -223,9 +275,11 @@ def build_rig():
         ("chest", J["chest"], J["neck"], "spine"),
         ("neck", J["neck"], tuple(hp((0.15, 0, 1.08))), "chest"),
         ("head", tuple(hp((0.15, 0, 1.08))), tuple(hp((0.30, 0, 1.24))), "neck"),
-        ("cloth.F", *CLOTH_F, "hips"),
-        ("cloth.B", *CLOTH_B, "hips"),
     ]
+    rings = skirt_rings()
+    for i in range(SKIRT_N):
+        for k in range(1, SKIRT_K + 1):
+            b.append((skirt_bone(i, k), rings[k - 1][i], rings[k][i], "hips" if k == 1 else skirt_bone(i, k - 1)))
     for s, side in ((1, "L"), (-1, "R")):
         P = lambda n: tuple(L(n, s))
         b += [
@@ -240,7 +294,7 @@ def build_rig():
     return lib.armature("troll_rig", b)
 
 
-def build_actions(rig):
+def build_actions(rig, settle=None):
     """idle (2 s), sit (3 s, slumped on the floor), walk (1 s heavy stomping waddle), alert (head up, ears perk),
     attack (overhead lantern bonk), death."""
     tau = 2 * math.pi
@@ -280,7 +334,7 @@ def build_actions(rig):
         })
         return pose
 
-    lib.action(rig, "walk", {f: walk_pose((f - 1) / 24) for f in range(1, 26, 2)})
+    lib.action(rig, "walk", {f: walk_pose((f - 1) / 24) for f in range(1, 26, 2)}, settle=settle)
 
     def idle_pose(phase):
         b = math.sin(phase * 2 * math.pi)
@@ -293,14 +347,14 @@ def build_actions(rig):
             "_lift": -0.006 * b,
         }
 
-    lib.action(rig, "idle", {f: idle_pose((f - 1) / 48) for f in range(1, 50, 6)})
+    lib.action(rig, "idle", {f: idle_pose((f - 1) / 48) for f in range(1, 50, 6)}, settle=settle)
 
     # sit (3 s loop): a monster that never walks slumps on the floor, leaning back. The lantern-side knee is drawn up
     # with the forearm draped over it, the lantern dangling past the knee; the other leg lies splayed with its hand
     # resting on that knee. Slow breathing, a lazy head loll, the lantern swaying a little.
-    # HIP: how far the pelvis rolls back, taking the thighs (and the loincloth) up with it so the legs have room on
-    # the floor; the spine bends forward over the legs to a LEAN past upright
-    HIP, LEAN, LIFT = 60, 4, -0.375
+    # HIP: how far the pelvis rolls back to give the legs room on the floor (only partly: more lifts the belly with it;
+    # the thighs bend the rest); the spine bends forward over the legs to a LEAN past upright
+    HIP, LEAN, LIFT = 30, 4, -0.375
 
     def sit_pose(phase):
         b = math.sin(phase * tau)
@@ -329,11 +383,9 @@ def build_actions(rig):
             "hand.L": [(Y, 40)],
             "ear.L": [(X, 8 + 3 * b)], "ear.R": [(X, -8 - 3 * b)],
             "_lift": LIFT - 0.004 * b,
-            # the loincloth hangs straight down from the belt however far the pelvis has rolled
-            "cloth.F": [(Y, HIP)], "cloth.B": [(Y, HIP)],
         }
 
-    lib.action(rig, "sit", {f: sit_pose((f - 1) / 72) for f in range(1, 74, 8)})
+    lib.action(rig, "sit", {f: sit_pose((f - 1) / 72) for f in range(1, 74, 8)}, settle=settle)
 
     alert = {
         "chest": [(Y, -6)], "neck": [(Y, -8)], "head": [(Y, -10)],
@@ -342,7 +394,7 @@ def build_actions(rig):
         "forearm.L": [(Y, -25)], "forearm.R": [(Y, -25)],
         "thigh.L": [(Y, -6)], "thigh.R": [(Y, -6)], "shin.L": [(Y, 10)], "shin.R": [(Y, 10)],
     }
-    lib.action(rig, "alert", {1: alert, 13: alert})
+    lib.action(rig, "alert", {1: alert, 13: alert}, settle=settle)
 
     # attack: raise the lantern overhead with the elbow cocked behind the head, then slam it down in front
     # (impact on frame 10, 0.375 s in), let the torso follow through and settle. The free arm braces.
@@ -369,7 +421,7 @@ def build_actions(rig):
               "upper_arm.R": [(Y, -40), (X, 6)], "forearm.R": [(Y, -6)], "hand.R": [(Y, -10)],
               "upper_arm.L": [(Y, 28), (X, 22)], "forearm.L": [(Y, -22)],
               "ear.L": [(X, 8)], "ear.R": [(X, -8)], "_lift": -0.045}
-    lib.action(rig, "attack", {1: rest, 7: wind, 10: strike, 13: follow, 22: rest})
+    lib.action(rig, "attack", {1: rest, 7: wind, 10: strike, 13: follow, 22: rest}, settle=settle)
 
     # death (2.04 s, starts with the hero's takedown): the hero lands on its head (frame 9) with a blade at its throat;
     # the troll ducks and clamps both hands over its throat, thrashing left and right to shake the hero off (the
@@ -418,7 +470,7 @@ def build_actions(rig):
         31: clutch(0, 4, -10, 0, -30),
         33: topple(0, -0.04, 10, 40, 85, -5), 36: topple(20, -0.08, 20, 80, 75, 15), 39: topple(55, -0.06, 10, 130, 65, 8),
         42: topple(84, 0.0, 0, 160, 60, 0), 45: topple(76, 0.04, 0, 155, 60, 0), 50: topple(82, 0.01, 0, 160, 60, 0),
-    })
+    }, settle=settle)
 
 
 def build(out_glb, out_preview):
@@ -426,17 +478,17 @@ def build(out_glb, out_preview):
     body = build_body()
     props = build_props()
     rig = build_rig()
-    # the flaps move the loincloth only: keep them out of the body's automatic weights
-    for b in CLOTH:
+    # the skirt chains move the loincloth only: keep them out of the body's automatic weights
+    for b in SKIRT_BONES:
         rig.data.bones[b].use_deform = False
     lib.skin(body, rig)
-    for b in CLOTH:
+    for b in SKIRT_BONES:
         rig.data.bones[b].use_deform = True
     for obj, bone in props.values():
         if bone:
             lib.attach(obj, rig, bone)
     skin_loincloth(props["loincloth"][0], rig)
-    build_actions(rig)
+    build_actions(rig, settle=lambda r: drape_skirt(r, body))
     objs = [rig, body] + [o for o, _ in props.values()]
     lib.export_glb(out_glb, objs)
     lib.previews(out_preview, HEIGHT, head=hp((0.22, 0, 1.12)))

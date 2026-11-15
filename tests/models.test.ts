@@ -42,7 +42,7 @@ function floats(g: Gltf, bin: Buffer, index: number): number[] {
 
 const SPEC: Record<string, { animations: string[]; bones: string[]; maxTris: number }> = {
   troll: {
-    animations: ['idle', 'walk', 'alert', 'attack', 'death'],
+    animations: ['idle', 'sit', 'walk', 'alert', 'attack', 'death'],
     bones: ['root', 'hips', 'head', 'ear.L', 'ear.R', 'hand.L', 'hand.R', 'foot.L', 'foot.R'],
     maxTris: 8000,
   },

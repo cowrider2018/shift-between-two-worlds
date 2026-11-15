@@ -113,6 +113,9 @@ const hover = (t: number, phase: number) => 0.15 + Math.sin(t * 2 + phase) * 0.0
  *  high-refresh screens, and a per-frame check would flicker walk/idle and restart the walk every frame. */
 const WALK_HOLD = 0.12;
 
+/** Seconds a sitting monster takes to get up (a plain cross-fade out of `sit`, also into the death clip). */
+const SIT_RISE = 0.25;
+
 /** Caught sequence: the hunter has run the hero down (sim) and bonks them with its lantern. */
 export const CATCH = {
   /** Seconds into the troll's `attack` clip at which the lantern lands (frame 10 at 24 fps). */
@@ -292,7 +295,7 @@ export class GameView {
         if (mv) {
           this.takedown = { mv, t: 0, x: this.sim.x, y: this.sim.y, cut: false };
           this.hero.trigger('takedown');
-          mv.body.trigger('death');
+          mv.body.trigger('death', mv.body.clip === 'sit' ? SIT_RISE : undefined);
         }
       } else if (e.type === 'caught') {
         this.takedown = null; // spotted by another monster mid-takedown: the hero is back on the ground for the bonk
@@ -563,10 +566,12 @@ export class GameView {
       c.root.rotation.y = -Math.atan2(sim.y - m.y, sim.x - m.x);
       return;
     }
-    // a hunter runs flat out after the hero
-    const anim = m.hunting ? 'walk' : m.detect > 0.3 ? 'alert' : moved ? 'walk' : 'idle';
+    // a hunter runs flat out after the hero; a monster that never walks sits on the floor until it notices the hero,
+    // and the cross-fade out of `sit` is its quick stand-up
+    const rest = m.def.path.length === 1 ? 'sit' : 'idle';
+    const anim = m.hunting ? 'walk' : m.detect > 0.3 ? 'alert' : moved ? 'walk' : rest;
     c.root.rotation.y = -m.angle;
-    c.play(anim, 0.2, m.hunting ? TUNING.huntSpeed / 1.4 : anim === 'walk' ? m.def.speed / 1.4 : 1);
+    c.play(anim, c.clip === 'sit' ? SIT_RISE : 0.2, m.hunting ? TUNING.huntSpeed / 1.4 : anim === 'walk' ? m.def.speed / 1.4 : 1);
   }
 
   private applyTheme(dim: DimIndex): void {

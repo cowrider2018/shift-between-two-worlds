@@ -115,6 +115,11 @@ export class CharacterInstance {
     });
   }
 
+  /** Name of the clip playing now ('' before any has played). */
+  get clip(): string {
+    return this.current?.getClip().name ?? '';
+  }
+
   /** True while a one-shot clip (e.g. attack) is still playing; looping clips must not cut it off. */
   private busy(): boolean {
     const c = this.current;

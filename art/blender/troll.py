@@ -214,7 +214,8 @@ def build_rig():
 
 
 def build_actions(rig):
-    """idle (2 s), walk (1 s heavy stomping waddle), alert (head up, ears perk), attack (overhead lantern bonk)."""
+    """idle (2 s), sit (3 s, slumped on the floor), walk (1 s heavy stomping waddle), alert (head up, ears perk),
+    attack (overhead lantern bonk), death."""
     tau = 2 * math.pi
 
     def leg(side, p):
@@ -266,6 +267,40 @@ def build_actions(rig):
         }
 
     lib.action(rig, "idle", {f: idle_pose((f - 1) / 48) for f in range(1, 50, 6)})
+
+    # sit (3 s loop): a monster that never walks slumps on the floor, leaning back. The lantern-side knee is drawn up
+    # with the forearm draped over it, the lantern dangling past the knee; the other leg lies splayed with its hand
+    # resting on that knee. Slow breathing, a lazy head loll, the lantern swaying a little.
+    def sit_pose(phase):
+        b = math.sin(phase * tau)
+        sway = math.sin(phase * tau + 0.8)
+        return {
+            "hips": [(Y, -26)],
+            "spine": [(Y, 4 + 1.5 * b)],
+            "chest": [(Y, 8 + 2 * b)],
+            "neck": [(Y, -4)],
+            "head": [(Y, -6 - 2 * b), (X, 6), (Z, 12 + 3 * sway)],
+            # lantern side: knee up, foot flat in front
+            "thigh.R": [(Y, -116)],
+            "shin.R": [(Y, 100)],
+            "foot.R": [(Y, 40)],
+            # free side: knee lower, falling outwards
+            "thigh.L": [(Y, -86), (Z, 20)],
+            "shin.L": [(Y, 60)],
+            "foot.L": [(Y, 30), (X, 25)],
+            # forearm over the knee, the hand drooping so the lantern hangs past it
+            "upper_arm.R": [(X, 18), (Y, -44 - 1.5 * b)],
+            "forearm.R": [(Y, -42)],
+            "hand.R": [(Y, 75 + 6 * sway)],
+            # free hand resting on its knee
+            "upper_arm.L": [(X, -14), (Y, -40 - 1.5 * b)],
+            "forearm.L": [(Y, -34)],
+            "hand.L": [(Y, 40)],
+            "ear.L": [(X, 8 + 3 * b)], "ear.R": [(X, -8 - 3 * b)],
+            "_lift": -0.40 - 0.004 * b,
+        }
+
+    lib.action(rig, "sit", {f: sit_pose((f - 1) / 72) for f in range(1, 74, 8)})
 
     alert = {
         "chest": [(Y, -6)], "neck": [(Y, -8)], "head": [(Y, -10)],
@@ -366,7 +401,7 @@ def build(out_glb, out_preview):
     lib.export_glb(out_glb, objs)
     lib.previews(out_preview, HEIGHT, head=hp((0.22, 0, 1.12)))
     lib.pose_sheet(rig, out_preview.replace(".png", "_poses.png"), HEIGHT,
-                   [("idle", 1), ("alert", 1)] + [("walk", f) for f in range(1, 24, 3)]
+                   [("idle", 1), ("sit", 1), ("alert", 1)] + [("walk", f) for f in range(1, 24, 3)]
                    + [("attack", f) for f in (7, 10, 13)]
                    + [("death", f) for f in (9, 12, 15, 19, 29, 31, 33, 36, 39, 42)], cols=5)
     print(f"troll: {lib.tri_count(body)} body tris, {sum(lib.tri_count(o) for o, _ in props.values())} prop tris")

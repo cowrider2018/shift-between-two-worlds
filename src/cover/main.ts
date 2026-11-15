@@ -104,12 +104,14 @@ interface Layout {
 }
 
 const LAYOUTS: Record<string, Layout> = {
+  // the same density as wide (art pixels per unit at the hero), so the hero's face, eyes and all, is drawn the same:
+  // the frame is 500/360 as tall, so the camera stands 500/360 as far off
   itch: {
-    w: 315, h: 250, seam: 125, hero: [205, 125],
-    top: { dim: 0, eye: 0, dist: 2.8, frame: [460, 250] },
-    bottom: { dim: 1, eye: 0, dist: 2.8, frame: [460, 250] },
-    title: { size: 40, x: 78, y: 140 },
-    sub: { size: 10, x: 78, y: 152 },
+    w: 630, h: 500, seam: 250, hero: [395, 250],
+    top: { dim: 0, eye: 0, dist: (2.4 * 500) / 360, frame: [800, 500] },
+    bottom: { dim: 1, eye: 0, dist: (2.4 * 500) / 360, frame: [800, 500] },
+    title: { size: 60, x: 175, y: 272 },
+    sub: { size: 20, x: 175, y: 292 },
   },
   wide: {
     w: 640, h: 360, seam: 180, hero: [400, 180],

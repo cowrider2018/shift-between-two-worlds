@@ -271,33 +271,37 @@ def build_actions(rig):
     # sit (3 s loop): a monster that never walks slumps on the floor, leaning back. The lantern-side knee is drawn up
     # with the forearm draped over it, the lantern dangling past the knee; the other leg lies splayed with its hand
     # resting on that knee. Slow breathing, a lazy head loll, the lantern swaying a little.
+    # HIP: how far the pelvis rolls back, taking the thighs (and the loincloth) up with it so the legs have room on
+    # the floor; the spine bends forward over the legs to a LEAN past upright
+    HIP, LEAN, LIFT = 60, 4, -0.375
+
     def sit_pose(phase):
         b = math.sin(phase * tau)
         sway = math.sin(phase * tau + 0.8)
         return {
-            "hips": [(Y, -26)],
-            "spine": [(Y, 4 + 1.5 * b)],
-            "chest": [(Y, 8 + 2 * b)],
-            "neck": [(Y, -4)],
-            "head": [(Y, -6 - 2 * b), (X, 6), (Z, 12 + 3 * sway)],
+            "hips": [(Y, -HIP)],
+            "spine": [(Y, 0.45 * (HIP + LEAN) + 1.5 * b)],
+            "chest": [(Y, 0.55 * (HIP + LEAN) + 2 * b)],
+            "neck": [(Y, -14)],
+            "head": [(Y, -16 - 2 * b), (X, 6), (Z, 12 + 3 * sway)],
             # lantern side: knee up, foot flat in front
-            "thigh.R": [(Y, -116)],
+            "thigh.R": [(Y, HIP - 148)],
             "shin.R": [(Y, 100)],
             "foot.R": [(Y, 40)],
             # free side: knee lower, falling outwards
-            "thigh.L": [(Y, -86), (Z, 20)],
+            "thigh.L": [(Y, HIP - 118), (Z, 20)],
             "shin.L": [(Y, 60)],
             "foot.L": [(Y, 30), (X, 25)],
             # forearm over the knee, the hand drooping so the lantern hangs past it
-            "upper_arm.R": [(X, 18), (Y, -44 - 1.5 * b)],
+            "upper_arm.R": [(X, 18), (Y, -58 - LEAN - 1.5 * b)],
             "forearm.R": [(Y, -42)],
             "hand.R": [(Y, 75 + 6 * sway)],
             # free hand resting on its knee
-            "upper_arm.L": [(X, -14), (Y, -40 - 1.5 * b)],
+            "upper_arm.L": [(X, -14), (Y, -54 - LEAN - 1.5 * b)],
             "forearm.L": [(Y, -34)],
             "hand.L": [(Y, 40)],
             "ear.L": [(X, 8 + 3 * b)], "ear.R": [(X, -8 - 3 * b)],
-            "_lift": -0.40 - 0.004 * b,
+            "_lift": LIFT - 0.004 * b,
         }
 
     lib.action(rig, "sit", {f: sit_pose((f - 1) / 72) for f in range(1, 74, 8)})

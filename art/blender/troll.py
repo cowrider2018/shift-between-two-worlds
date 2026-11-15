@@ -144,7 +144,8 @@ def build_body():
 
 
 def build_props():
-    """Eyes, fangs, loincloth, rope belt, lantern (rigid low-poly pieces)."""
+    """Eyes, fangs, loincloth, rope belt, lantern (low-poly pieces, rigid on one bone; the loincloth is skinned instead,
+    see skin_loincloth)."""
     out = {}
     for s, side in ((1, "L"), (-1, "R")):
         k = HEAD_SCALE
@@ -165,7 +166,7 @@ def build_props():
     for i in range(n):
         j = (i + 1) % n
         faces.append((2 * i, 2 * j, 2 * j + 1, 2 * i + 1))
-    out["loincloth"] = (lib.mesh_from("loincloth", verts, faces, "cloth"), "hips")
+    out["loincloth"] = (lib.mesh_from("loincloth", verts, faces, "cloth"), None)
 
     # rope belt: a low-poly ring
     ring_v, ring_f, m, k = [], [], 12, 4
@@ -188,6 +189,28 @@ def build_props():
     out["lantern_glow"] = (lib.box("lantern_glow", h, (0.038, 0.048, 0.045), "lantern"), "hand.R")
     out["lantern_handle"] = (lib.box("lantern_handle", h + Vector((0, 0, 0.08)), (0.006, 0.006, 0.03), "metal"), "hand.R")
     return out
+
+
+HEM_HANG = 0.6
+
+
+def skin_loincloth(obj, rig):
+    """The belt line rides the hips; the hem's front half follows the thighs (left / right by side, shared in the
+    middle) and its back the hips, so the cloth drapes over the lap when the knees come up instead of standing out
+    stiff."""
+    groups = {b: obj.vertex_groups.new(name=b) for b in ("hips", "spine", "thigh.L", "thigh.R")}
+    for v in obj.data.vertices:
+        x, y, z = v.co
+        hem = z < 0.56
+        front = max(0.0, (x - 0.03) / 0.22) ** 0.7 * 0.9 if hem else 0.0
+        left = min(1.0, max(0.0, 0.5 + y / 0.15))
+        # the rest of the hem hangs from the waist rather than standing out with the pelvis when it rolls back
+        hang = (1 - front) * HEM_HANG if hem else 0.0
+        for b, w in (("hips", 1 - front - hang), ("spine", hang), ("thigh.L", front * left), ("thigh.R", front * (1 - left))):
+            if w > 0:
+                groups[b].add([v.index], w, "REPLACE")
+    obj.parent = rig
+    obj.modifiers.new("armature", "ARMATURE").object = rig
 
 
 def build_rig():
@@ -399,7 +422,9 @@ def build(out_glb, out_preview):
     rig = build_rig()
     lib.skin(body, rig)
     for obj, bone in props.values():
-        lib.attach(obj, rig, bone)
+        if bone:
+            lib.attach(obj, rig, bone)
+    skin_loincloth(props["loincloth"][0], rig)
     build_actions(rig)
     objs = [rig, body] + [o for o, _ in props.values()]
     lib.export_glb(out_glb, objs)

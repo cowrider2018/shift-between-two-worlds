@@ -66,15 +66,15 @@ const LEVEL = {
         '###################',
       ],
       props: {},
-      // a ghost standing at the hero's pillar, looking out toward us, over the hero (two path points keep it on its feet)
-      monsters: [{ id: 'b', path: [[13, 6], [13, 7]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: 5, viewAngle: 70, facing: 100 }],
+      // a ghost standing at the left of the hero's pillar, looking away to the left (two path points keep it on its feet)
+      monsters: [{ id: 'b', path: [[11, 6], [11, 7]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: 5, viewAngle: 70, facing: 180 }],
     },
   ],
 };
 
 /** Where each monster stands, off the cell centres its path allows: right up against the pillar (whose right face is
  *  x = 13). */
-const MONSTER_AT: Record<string, [number, number]> = { a: [13.4, 6.5], b: [13.45, 6.5] };
+const MONSTER_AT: Record<string, [number, number]> = { a: [13.4, 6.5], b: [11.65, 6.5] };
 
 /** One half of the picture: which dimension, the camera, and where in the rendered frame the half is cut from. */
 interface Half {
@@ -105,14 +105,14 @@ interface Layout {
 
 const LAYOUTS: Record<string, Layout> = {
   itch: {
-    w: 315, h: 250, seam: 125, hero: [165, 125],
-    top: { dim: 0, eye: 0, dist: 2.4, frame: [460, 250] },
-    bottom: { dim: 1, eye: 0, dist: 2.4, frame: [460, 250] },
-    title: { size: 40, x: 82, y: 140 },
-    sub: { size: 10, x: 82, y: 152 },
+    w: 315, h: 250, seam: 125, hero: [205, 125],
+    top: { dim: 0, eye: 0, dist: 2.8, frame: [460, 250] },
+    bottom: { dim: 1, eye: 0, dist: 2.8, frame: [460, 250] },
+    title: { size: 40, x: 78, y: 140 },
+    sub: { size: 10, x: 78, y: 152 },
   },
   wide: {
-    w: 640, h: 360, seam: 180, hero: [360, 180],
+    w: 640, h: 360, seam: 180, hero: [400, 180],
     top: { dim: 0, eye: 0, dist: 2.4, frame: [840, 360] },
     bottom: { dim: 1, eye: 0, dist: 2.4, frame: [840, 360] },
     title: { size: 60, x: 190, y: 202 },
@@ -136,7 +136,11 @@ function half(h: Half, w: number, hh: number, at: [number, number]): HTMLCanvasE
   // crouched still against the pillar, out of sight
   sim.moving = false;
   sim.facing = HERO_FACING;
-  for (const m of sim.monsters) [m.x, m.y] = MONSTER_AT[m.def.id] ?? [m.x, m.y];
+  for (const m of sim.monsters) {
+    [m.x, m.y] = MONSTER_AT[m.def.id] ?? [m.x, m.y];
+    // a patrol faces along its path; these stand still, facing where the level says
+    m.angle = (m.def.facing * Math.PI) / 180;
+  }
   view.setSim(sim);
   view.pipeline.pixelSize = 1;
   const size = view.pipeline.resize(h.frame[0], h.frame[1]);

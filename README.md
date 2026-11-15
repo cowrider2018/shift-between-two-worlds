@@ -1,6 +1,6 @@
-# SHIFT
+# SHIFT: Between Two Worlds
 
-![SHIFT: the top half is the surface dimension, with the hero hiding in front of a pillar and a troll sitting to its right; the bottom half is the underside's reflection, with a ghost troll standing to the pillar's left](docs/cover.png)
+![SHIFT: Between Two Worlds — the top half is the surface dimension, with the hero hiding in front of a pillar and a troll sitting to its right; the bottom half is the underside's reflection, with a ghost troll standing to the pillar's left](docs/cover.png)
 
 A stealth exploration game across two overlapping dimensions, plus a level editor. The design rules live in [DESIGN.md](DESIGN.md) (the single source of truth for the game and the engine).
 

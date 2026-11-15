@@ -11,7 +11,7 @@
     "models": "tsx scripts/build-models.ts",
     "cover": "tsx scripts/cover.ts"
   },
-  "description": "SHIFT - a two-dimension stealth exploration game with a level editor",
+  "description": "SHIFT: Between Two Worlds - a two-dimension stealth exploration game with a level editor",
   "dependencies": {
     "three": "^0.187.0"
   },

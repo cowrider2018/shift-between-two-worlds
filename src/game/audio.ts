@@ -20,7 +20,9 @@ const FILES = {
 
 export type SfxName = keyof typeof FILES;
 
-/** Per-sound gain, levelling the recordings against each other (walk was recorded far quieter than the rest). */
+/** Per-sound gain, levelling the recordings against each other (walk was recorded far quieter than the rest).
+ *  door and lever peak at the loudest monster cry (spotted: -9.66 dB × 0.9 = -10.58 dBFS); their recordings peak at
+ *  -14.46 and -10.37 dB. */
 const GAIN: Record<SfxName, number> = {
   ambush1: 0.4,
   ambush2: 0.4,
@@ -28,8 +30,8 @@ const GAIN: Record<SfxName, number> = {
   wailing: 0.9,
   wailing2: 0.9,
   spotted: 0.9,
-  door: 1.6,
-  lever: 1.2,
+  door: 1.56,
+  lever: 0.98,
   squat: 1.4,
   walk: 1,
 };

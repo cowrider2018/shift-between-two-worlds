@@ -12,17 +12,15 @@
  *
  * Each half is a frame of one hand-made level (not in levels/, so it is never played), rendered one screen pixel per
  * art pixel and cropped to place the hero; the halves, the title and the scale-up are composed on a 2D canvas.
- * The icon ('icon') is shot like the control pages instead (src/render/briefing.ts): the troll's face straight on, flat,
- * against a canvas of rock, once in each dimension, the underside's left half beside the surface's right half.
+ * The icon ('icon') is shot like the control pages instead (src/render/briefing.ts): the troll's face dead straight on,
+ * flat, once in each dimension, the underside's left half beside the surface's right half, cut out on transparency.
  * window.cover.shoot(layout, scale) returns the finished PNG as a data URL.
  */
 import {
-  BufferAttribute, Color, DirectionalLight, HemisphereLight, Mesh, PerspectiveCamera, PlaneGeometry, Scene, Vector3,
+  Color, DirectionalLight, HemisphereLight, PerspectiveCamera, Scene, Vector3,
 } from 'three';
 import { parseLevel, type DimIndex, type Level } from '../core/level';
 import { Sim } from '../core/sim';
-import { COBBLE_SPAN } from '../render/cobbleTexture';
-import { cobble } from '../render/materials';
 import { CharacterInstance, loadModels } from '../render/models';
 import { THEMES } from '../render/palette';
 import { renderStandalone } from '../render/standalone';
@@ -130,21 +128,23 @@ const LAYOUTS: Record<string, Layout> = {
   },
 };
 
-/** The icon: the troll's face straight on, the left half from the underside (B, its ghost), the right half from the
- *  surface (A), in the control pages' flat look: a very narrow field of view from far off, so nothing recedes, and a
- *  flat canvas of rock behind instead of a room. */
+/** The icon: the troll's face dead straight on, the left half from the underside (B, its ghost), the right half from
+ *  the surface (A), in the control pages' flat look (a very narrow field of view from far off, so nothing recedes), cut
+ *  out on a transparent background. */
 const ICON = {
   /** Art pixels, square. */
   size: 128,
   /** World units shown top to bottom, and how far above the head bone's root the picture centres. */
   viewH: 1.3,
   lift: 0.0,
-  /** Field of view (degrees) and the rock canvas's distance behind the troll. */
+  /** Field of view (degrees). */
   fov: 6,
-  back: 1.5,
-  /** World units one cobble tile spans on the canvas: the floor's own size, which in a picture only half the control
-   *  pages' height shows each stone twice as large there, big and quiet behind the see-through ghost. */
-  span: COBBLE_SPAN,
+  /** Seconds into the 2 s idle at which the head's slow turn (4° sin(pi t / 2 + 1), art/blender/troll.py) passes
+   *  through zero, so the face looks dead ahead. */
+  at: 2 * (1 - 1 / Math.PI),
+  /** A pixel whose colour moves less than this share of the way between a black and a white background is part of the
+   *  troll (the ghost lets the background through, so it moves some of the way). */
+  solid: 0.75,
 };
 
 const STEP = 1 / 60;
@@ -194,33 +194,22 @@ function half(h: Half, w: number, hh: number, at: [number, number]): HTMLCanvasE
   return out;
 }
 
-/** One dimension of the icon, full frame: that dimension's troll (the underside's a ghost) facing us in front of a
- *  canvas of its rock, in its light. Both are posed the same, at the same moment of the same clip. */
-function iconHalf(dim: DimIndex): HTMLCanvasElement {
+/** One dimension of the icon, full frame: that dimension's troll (the underside's a ghost) facing us in its light,
+ *  over a plain background of colour `bg`. Both are posed alike, at the same moment of the same clip. */
+function iconShot(dim: DimIndex, bg: string): ImageData {
   const th = THEMES[dim];
   const scene = new Scene();
-  scene.background = new Color(th.background);
+  scene.background = new Color(bg);
   scene.add(new HemisphereLight(th.hemiSky, th.hemiGround, 1.5));
   const sun = new DirectionalLight(th.sun, 1.8);
   // from the front, high and to the left, as on the control pages
   sun.position.set(-4, 6, 8);
   scene.add(sun, sun.target);
-  const w = 20;
-  const g = new PlaneGeometry(w, w);
-  g.translate(0, 0, -ICON.back);
-  const pos = g.getAttribute('position');
-  const uv = new Float32Array(pos.count * 2);
-  for (let i = 0; i < pos.count; i++) {
-    uv[i * 2] = pos.getX(i) / ICON.span;
-    uv[i * 2 + 1] = pos.getY(i) / ICON.span;
-  }
-  g.setAttribute('uv', new BufferAttribute(uv, 2));
-  scene.add(new Mesh(g, cobble(th.floor[0])));
   const troll = new CharacterInstance('troll', dim === 1 ? 'ghost' : 'normal');
   troll.root.rotation.y = -Math.PI / 2; // facing the camera
   troll.play('idle', 0);
   scene.add(troll.root);
-  for (let i = 0; i < FRAMES; i++) troll.update(STEP);
+  troll.update(ICON.at);
   troll.root.updateMatrixWorld(true);
   const head = (troll.root.getObjectByName('head') ?? troll.root).getWorldPosition(new Vector3());
   const y = head.y + ICON.lift;
@@ -235,21 +224,37 @@ function iconHalf(dim: DimIndex): HTMLCanvasElement {
   camera.far = dist + 5;
   camera.updateProjectionMatrix();
   camera.lookAt(0, y, 0);
-  renderStandalone(pipeline, scene, camera, sun, FRAMES * STEP);
-  const out = document.createElement('canvas');
-  out.width = out.height = ICON.size;
-  out.getContext('2d')!.drawImage(pipeline.canvas, 0, 0);
-  return out;
+  renderStandalone(pipeline, scene, camera, sun, ICON.at);
+  const c = document.createElement('canvas');
+  c.width = c.height = ICON.size;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(pipeline.canvas, 0, 0);
+  return ctx.getImageData(0, 0, ICON.size, ICON.size);
 }
 
-/** The icon, `scale` screen pixels per art pixel: underside on the left, surface on the right. */
+/** One dimension of the icon cut out: shot over black and over white, the pixels the background barely moves are the
+ *  troll, fully opaque, in the colours it has over its own dimension's background (the ghost as it looks in play);
+ *  everything else is transparent. */
+function iconHalf(dim: DimIndex): ImageData {
+  const black = iconShot(dim, '#000000').data;
+  const white = iconShot(dim, '#ffffff').data;
+  const own = iconShot(dim, THEMES[dim].background);
+  const d = own.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const moved = Math.max(white[i] - black[i], white[i + 1] - black[i + 1], white[i + 2] - black[i + 2]) / 255;
+    d[i + 3] = moved < ICON.solid ? 255 : 0;
+  }
+  return own;
+}
+
+/** The icon, `scale` screen pixels per art pixel: underside on the left, surface on the right, on transparency. */
 function icon(scale: number): string {
   const n = ICON.size;
   const art = document.createElement('canvas');
   art.width = art.height = n;
   const ctx = art.getContext('2d')!;
-  ctx.drawImage(iconHalf(1), 0, 0, n / 2, n, 0, 0, n / 2, n);
-  ctx.drawImage(iconHalf(0), n / 2, 0, n / 2, n, n / 2, 0, n / 2, n);
+  ctx.putImageData(iconHalf(1), 0, 0, 0, 0, n / 2, n);
+  ctx.putImageData(iconHalf(0), 0, 0, n / 2, 0, n / 2, n);
   const out = document.createElement('canvas');
   out.width = out.height = n * scale;
   const o = out.getContext('2d')!;

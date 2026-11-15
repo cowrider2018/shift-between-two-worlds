@@ -1,80 +1,81 @@
 # SHIFT
 
-![SHIFT：上半是表次元，主角躲在柱子前，山怪坐在柱子右側；下半是裏次元的倒影，幽靈山怪站在柱子左側](docs/cover.png)
+![SHIFT: the top half is the surface dimension, with the hero hiding in front of a pillar and a troll sitting to its right; the bottom half is the underside's reflection, with a ghost troll standing to the pillar's left](docs/cover.png)
 
-兩個重疊次元的潛行探索遊戲 + 關卡編輯器。設計規則見 [DESIGN.md](DESIGN.md)（遊戲與引擎的唯一準則）。
+A stealth exploration game across two overlapping dimensions, plus a level editor. The design rules live in [DESIGN.md](DESIGN.md) (the single source of truth for the game and the engine).
 
-## 執行
+## Running
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173/ 遊戲、/editor.html 編輯器
-npm run check      # 型別檢查 + 單元測試 + 關卡驗證
-npm run validate   # 只驗證 levels/*.json（可帶檔名）
-npm run build      # 正式版 → dist/itch/ 與 dist/shift-itch.zip（見下方「正式版」）
-npm run models     # 用 Blender 重建角色模型（BLENDER=<blender.exe> 或專案旁的 blender-* 資料夾）
-npm run cover      # 重拍封面 → docs/、圖示 → public/（要 Chrome，見下方「上傳到 itch.io」）
+npm run dev        # http://localhost:5173/ for the game, /editor.html for the editor
+npm run check      # type check + unit tests + level validation
+npm run validate   # validate levels/*.json only (optionally pass file names)
+npm run build      # release build → dist/itch/ and dist/shift-itch.zip (see "Release build" below)
+npm run models     # rebuild the character models with Blender (BLENDER=<blender.exe>, or a blender-* folder next to the project)
+npm run cover      # re-shoot the cover → docs/ and the icon → public/ (needs Chrome; see "Uploading to itch.io" below)
 ```
 
-## 操作
+## Controls
 
-WASD 移動（以鏡頭為準）・滑鼠 / ←→ 轉鏡頭・**按住 Shift 潛行**（怪物視野半徑減半）・**輕點 Shift 轉移次元**（兩側腳下都是空塊時）・Space 拉桿或割喉（拉桿在範圍內時優先拉桿；割喉要從背後摸到表次元的怪物，裏次元的幽靈殺不死）
+WASD to move (relative to the camera) · mouse / ←→ to turn the camera · **hold Shift to sneak** (monsters' sight radius is halved) · **tap Shift to shift dimension** · Space to pull a lever or take down a monster (a lever in range takes priority; a takedown means reaching a surface monster from behind — the ghosts of the underside cannot be killed)
 
-開發模式（`npm run dev`）另有：R 重來・←→ 轉鏡頭・+/− 縮放・`?level=<id>` 直接跳關・右上角編輯器連結。
+The dev build (`npm run dev`) also has: R to restart · ←→ to turn the camera · +/− to zoom · `?level=<id>` to jump to a level · an editor link in the top-right corner.
 
-## 正式版
+## Release build
 
-`npm run build` 只打包遊戲本體：鍵盤只認教學頁教的 WASD、Space、Shift（滑鼠轉鏡頭與滾輪縮放保留），沒有編輯器、試玩、跳關與 R 重來。
+`npm run build` packages the game alone: the keyboard only answers to the WASD, Space and Shift taught on the tutorial pages (mouse camera turning and wheel zoom stay), and there is no editor, playtest, level jumping or R to restart.
 
-| 輸出 | 用途 |
+| Output | Purpose |
 |---|---|
-| `dist/itch/` | 正式版的檔案；要用 HTTP 伺服器開（例如 `npx vite preview`），直接雙擊 index.html 載不到模型 |
-| `dist/shift-itch.zip` | `dist/itch/` 打成 zip，`index.html` 在最上層——上傳到 itch.io 的就是這一支 |
+| `dist/itch/` | The release files; serve them over HTTP (e.g. `npx vite preview`) — double-clicking index.html cannot load the models |
+| `dist/shift-itch.zip` | `dist/itch/` zipped with `index.html` at the top level — this is what gets uploaded to itch.io |
 
-打包出來的 JS 不含授權註解，three.js 的 MIT 授權原文放在 `licenses.txt`，字型的 OFL 授權在 `fonts/`，兩者都會跟著 zip 走。
+The bundled JS carries no license comments; the three.js MIT license text is in `licenses.txt` and the font's OFL license is in `fonts/`, and both travel with the zip.
 
-### 上傳到 itch.io
+### Uploading to itch.io
 
-1. **Kind of project** 選 **HTML**。
-2. **Uploads** 上傳 `dist/shift-itch.zip`，勾 **This file will be played in the browser**。
-3. **Embed options**：**Embed in page**，視窗 1280 × 720，勾 **Fullscreen button**。
-4. **Cover image** 上傳 `docs/cover-itch.png`（630 × 500，itch 建議的大小）；`docs/cover.png` 是同一張放大兩倍（itch 那張一個美術像素就是一個螢幕像素，主角的像素和 16:9 版一樣大），放在這份 README 開頭；`docs/cover-wide.png`（1920 × 1080）是 16:9 版；`public/icon.png`（512 × 512，透明背景）是圖示，遊戲和編輯器的網頁圖示（favicon）就用它：同一個機位正面拍巨魔的臉，左半是裏次元的幽靈、右半是表次元的本體。這幾張都由 `npm run cover`（`scripts/cover.ts`）拍：開發伺服器上的攝影棚 `cover.html`（`src/cover/main.ts`）用遊戲自己的 GameView 拍一個封面專用的小關卡，用平視的鏡頭（地面完全水平）表、裏各拍一半再上下拼起來（裏次元上下翻轉），一個美術像素放大成整數倍的螢幕像素。圖示則照教學頁的拍法：極窄視角平拍巨魔的正臉（取待機動作裡頭剛好轉回正前方的那一刻），表、裏各拍一次再左右各取一半，背景去掉成透明（幽靈填成牠在裏次元背景上的顏色，不透出背景）。重跑會覆寫這幾個檔，結果逐位元組相同。Chrome 不在預設位置時用 `CHROME=<chrome.exe>` 指定。
-5. 玩家要先點一下遊戲畫面，鍵盤才會進到遊戲（iframe 拿到焦點），同時鎖定滑鼠轉鏡頭；Esc 放開滑鼠，再點一下重新鎖定。
+1. **Kind of project**: **HTML**.
+2. **Uploads**: upload `dist/shift-itch.zip` and tick **This file will be played in the browser**.
+3. **Embed options**: **Embed in page**, viewport 1280 × 720, tick **Fullscreen button**.
+4. **Cover image**: upload `docs/cover-itch.png` (630 × 500, itch's recommended size). `docs/cover.png` is the same image at twice the size (in the itch one, one art pixel is one screen pixel, so the hero's pixels are as large as in the 16:9 version) and heads this README; `docs/cover-wide.png` (1920 × 1080) is the 16:9 version; `public/icon.png` (512 × 512, transparent background) is the icon, also used as the favicon of the game and the editor: one camera shoots the troll's face head-on, the left half the underside's ghost and the right half the surface troll.
+   All of these are shot by `npm run cover` (`scripts/cover.ts`): the studio page `cover.html` (`src/cover/main.ts`) on the dev server uses the game's own GameView to shoot a small cover-only level with a level camera (the ground perfectly horizontal), shooting the surface and the underside half each and stacking them (the underside flipped upside down), with each art pixel scaled up to a whole number of screen pixels. The icon is shot the way the tutorial pages are: a very narrow field of view, flat on the troll's face (at the moment in its idle animation when it has just turned back to face forward), once in each dimension, taking half of each side by side, with the background cut out to transparency (the ghost is filled with its colour against the underside's background, so the background never shows through). Re-running overwrites these files with byte-identical results. If Chrome is not in its default location, set `CHROME=<chrome.exe>`.
+5. Players must click the game once before the keyboard reaches it (the iframe takes focus); the same click locks the mouse for camera turning. Esc releases the mouse; click again to lock it.
 
-## 製作關卡
+## Making levels
 
-1. `npm run dev`，開 `/editor.html`。
-2. 上方「新增」或從下拉選單開啟既有關卡。左右（或上下）兩個面板分別是次元 A、B，完全獨立。
-3. 工具：**畫筆 B**（右鍵擦）・**選取 V**（編參數）・**怪物 M**（放置後自動切到路徑）・**路徑 P**（加巡邏點，右鍵刪最後一點）。數字鍵 1-8 切換方塊。
-4. 顯示選項：另一側怪物路徑（遊戲中看不見，只供設計對照）、視野預覽。
-5. 右側驗證即時更新：結構、頻道連結、怪物路徑、**可解性求解**（不計怪物）。點問題可跳到該格。
-6. **Ctrl+Enter 試玩**，**Ctrl+S 存檔**到 `levels/<名稱>.json`；改名稱後存檔會一併改檔名（檔名只為好看）。關卡身分是 JSON 內的 `id`，遊戲依 `levels/order.json`（以 id 記錄）的順序載入關卡（在編輯器左側關卡列表拖曳即可排序；未列入的關卡按 id 排在最後）。
-7. 提交前跑 `npm run check`。
+1. `npm run dev` and open `/editor.html`.
+2. Use **New** at the top, or open an existing level from the dropdown. The two panels (side by side or stacked) are dimensions A and B, fully independent.
+3. Tools: **Brush B** (right-click erases) · **Select V** (edit parameters) · **Monster M** (switches to Path after placing) · **Path P** (add patrol points; right-click removes the last). Number keys 1–8 switch block.
+4. View options: the other side's monster paths (invisible in game, for design reference only) and a sight preview.
+5. Validation on the right updates live: structure, channel links, monster paths and a **solvability solver** (ignoring monsters). Click an issue to jump to its cell.
+6. **Ctrl+Enter to playtest**, **Ctrl+S to save** to `levels/<name>.json`; renaming a level and saving renames the file too (the file name is cosmetic). A level's identity is the `id` inside its JSON; the game loads levels in the order of `levels/order.json` (recorded by id — drag levels in the editor's left-hand list to reorder; unlisted levels go last, by id).
+7. Run `npm run check` before committing.
 
-關卡 JSON 一列一行，方便 diff；格式見 DESIGN.md §5。
+Level JSON keeps one row per line for readable diffs; the format is in DESIGN.md §5.
 
-## 架構
+## Architecture
 
 ```
-src/core/     純邏輯（無 three.js / DOM，可在 Node 測試）
-  blocks.ts     方塊 registry — 唯一真相來源
-  level.ts      關卡資料模型、解析、正規化序列化
-  grid.ts       查詢層：實心/遮擋、轉移點、射線、碰撞
-  sim.ts        確定性遊戲模擬
-  solver.ts     可解性 BFS
-  validate.ts   驗證器（CLI、測試、編輯器共用）
-src/render/   three.js 畫面：像素管線、角色、方塊模型 registry、GameView
-src/game/     輸入、主迴圈、HUD、關卡清單
-src/editor/   關卡編輯器
-levels/       關卡檔
-tests/        單元測試（含 level01 依設計路線、怪物開啟狀態下的完整通關）
+src/core/     pure logic (no three.js / DOM, testable in Node)
+  blocks.ts     block registry — the single source of truth
+  level.ts      level data model, parsing, normalised serialisation
+  grid.ts       query layer: solid/opaque, shift points, rays, collision
+  sim.ts        deterministic game simulation
+  solver.ts     solvability BFS
+  validate.ts   validator (shared by the CLI, the tests and the editor)
+src/render/   three.js view: pixel pipeline, characters, block model registry, GameView
+src/game/     input, main loop, HUD, level list
+src/editor/   level editor
+levels/       level files
+tests/        unit tests (including a full clear of level01 along its designed route, with monsters active)
 ```
 
-### 新增一種方塊
+### Adding a block
 
-1. `src/core/blocks.ts` 加一筆（字元、名稱、顏色、參數 schema、solid/opaque、behavior）。
-2. `src/render/blockModels.ts` 加同 id 的模型工廠。
-3. 需要新行為時，在 `sim.ts`（遊戲）與 `solver.ts`（可解性）處理該 behavior。
-4. `npm run check` — 測試會檢查字元唯一、每個方塊都有模型。
+1. Add an entry in `src/core/blocks.ts` (character, name, colour, parameter schema, solid/opaque, behaviour).
+2. Add a model factory with the same id in `src/render/blockModels.ts`.
+3. If it needs new behaviour, handle that behaviour in `sim.ts` (the game) and `solver.ts` (solvability).
+4. `npm run check` — the tests check that characters are unique and every block has a model.
 
-編輯器的調色盤、參數面板、驗證器會自動跟上。
+The editor's palette, parameter panel and validator follow automatically.

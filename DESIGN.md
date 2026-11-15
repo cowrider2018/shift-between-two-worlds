@@ -136,6 +136,9 @@
 | 割喉：起跳（`TAKEDOWN.jump`） | `ambush1` |
 | 割喉：落到山怪背上（`TAKEDOWN.perch`） | `ambush1` + `wailing` |
 | 割喉：插刀（`TAKEDOWN.cut`） | `ambush2` |
+| 怪物發現主角（偵測值滿） | `spotted` |
+
+`spotted` 是怪物吼聲降 7 個半音（連帶放慢）；`wailing` 是同一聲降 5 個半音後，再保持音高加速 1.2 倍，比較短促。
 
 割喉途中被別隻怪物抓到、或關卡重來時，還沒播的割喉音效一律取消。`walk.wav` 是六步等響度的無縫循環，存成 WAV 是因為 AAC 解碼會在開頭多一段靜音，循環時會有空隙。
 

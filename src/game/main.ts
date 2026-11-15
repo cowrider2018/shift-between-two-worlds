@@ -83,6 +83,8 @@ function playEvents(events: SimEvent[]): void {
       sfx.play('ambush1', TAKEDOWN.perch);
       sfx.play('wailing', TAKEDOWN.perch);
       sfx.play('ambush2', TAKEDOWN.cut);
+    } else if (e.type === 'spotted') {
+      sfx.play('spotted');
     } else if (e.type === 'caught') {
       sfx.cancelPending();
     }

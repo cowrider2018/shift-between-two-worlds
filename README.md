@@ -18,7 +18,7 @@ npm run cover      # re-shoot the cover → docs/ and the icon → public/ (need
 
 ## Controls
 
-WASD to move (relative to the camera) · mouse / ←→ to turn the camera · **hold Shift to sneak** (monsters' sight radius is halved) · **tap Shift to shift dimension** · Space to pull a lever or take down a monster (a lever in range takes priority; a takedown means reaching a surface monster from behind — the ghosts of the underside cannot be killed)
+WASD to move (relative to the camera) · mouse to turn the camera · wheel to zoom · **hold Shift to sneak** (monsters' sight radius is halved) · **tap Shift to shift dimension** · Space to pull a lever or take down a monster (a lever in range takes priority; a takedown means reaching a surface monster from behind — the ghosts of the underside cannot be killed)
 
 The dev build (`npm run dev`) also has: R to restart · ←→ to turn the camera · +/− to zoom · `?level=<id>` to jump to a level · an editor link in the top-right corner.
 

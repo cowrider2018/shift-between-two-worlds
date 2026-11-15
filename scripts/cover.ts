@@ -4,24 +4,24 @@
  *   docs/cover-itch.png  630×500   itch.io's cover image
  *   docs/cover.png       1260×1000 the same picture twice the size, at the top of the README
  *   docs/cover-wide.png  1920×1080 a 16:9 layout of the same scene
- *   docs/icon.png        512×512   the troll's face, left half underside, right half surface
+ *   public/icon.png      512×512   the troll's face, left half underside, right half surface, on transparency: the
+ *                                  game's and the editor's page icon
  * Every art pixel is a whole square of screen pixels (×1, ×2, ×3), so nothing is smoothed; the itch picture and the
  * wide one have the same art pixels per unit at the hero, so the hero is drawn the same in all three. Needs Chrome
  * (CHROME=/path/to/chrome if it is not in a usual place). `npm run cover -- itch` shoots only the named layouts.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createServer } from 'vite';
 import { launchChrome } from './lib/chrome';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const OUT = join(ROOT, 'docs');
-/** [file, layout, scale] */
+/** [file under the project, layout, scale] */
 const SHOTS: [string, string, number][] = [
-  ['cover-itch.png', 'itch', 1],
-  ['cover.png', 'itch', 2],
-  ['cover-wide.png', 'wide', 3],
-  ['icon.png', 'icon', 4],
+  ['docs/cover-itch.png', 'itch', 1],
+  ['docs/cover.png', 'itch', 2],
+  ['docs/cover-wide.png', 'wide', 3],
+  ['public/icon.png', 'icon', 4],
 ];
 
 const only = process.argv.slice(2);
@@ -50,7 +50,6 @@ try {
     if (!layouts) await sleep(200);
   }
   if (!layouts) throw new Error('cover studio did not come up');
-  mkdirSync(OUT, { recursive: true });
   for (const [file, layout, scale] of SHOTS) {
     if (only.length && !only.includes(layout)) continue;
     if (!layouts.includes(layout)) {
@@ -59,8 +58,9 @@ try {
     }
     const url = await chrome.evaluate<string>(`window.cover.shoot(${JSON.stringify(layout)}, ${scale})`);
     const png = Buffer.from(url.slice(url.indexOf(',') + 1), 'base64');
-    writeFileSync(join(OUT, file), png);
-    console.log(`docs/${file}  ${(png.length / 1024).toFixed(0)} KB`);
+    mkdirSync(dirname(join(ROOT, file)), { recursive: true });
+    writeFileSync(join(ROOT, file), png);
+    console.log(`${file}  ${(png.length / 1024).toFixed(0)} KB`);
   }
 } catch (e) {
   console.error((e as Error).message);

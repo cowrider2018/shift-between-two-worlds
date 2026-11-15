@@ -4,7 +4,8 @@ import { Briefing } from '../render/briefing';
 import { Ending } from '../render/ending';
 import { CAMERA } from '../render/followCamera';
 import { loadModels } from '../render/models';
-import { GameView } from '../render/view';
+import { GameView, TAKEDOWN } from '../render/view';
+import { Sfx } from './audio';
 import { Input } from './input';
 import { BUILTIN_LEVELS } from './levels';
 import { loadPlaytest } from './playtest';
@@ -23,7 +24,12 @@ let levelIndex = DEV ? Math.max(0, levels.findIndex((l) => l.id === params.get('
 const view = new GameView($<HTMLCanvasElement>('game'));
 const input = new Input(window, { devKeys: DEV });
 input.bindPointerLock($<HTMLCanvasElement>('game'));
+const sfx = new Sfx();
+/** Sneaking only muffles the footsteps (the loop's level), so the steps keep their sound. */
+const SNEAK_STEPS = 0.45;
 let sim: Sim;
+/** Which door cells are open, so a lever pull knows whether it moved a door. */
+let doorsOpen = '';
 let acc = 0;
 let last = performance.now();
 /** Seconds to hold on the scene, after the monster's bonk has played out, before restarting. */
@@ -51,6 +57,36 @@ function start(index: number): void {
   sim = new Sim(level);
   view.setSim(sim);
   caughtT = -1;
+  sfx.cancelPending();
+  doorsOpen = doorState();
+}
+
+function doorState(): string {
+  return sim.grid
+    .all()
+    .filter((c) => c.def.behavior === 'door')
+    .map((c) => (sim.doorOpen(c) ? 1 : 0))
+    .join('');
+}
+
+/** Sounds for this step's events: the lever and any door it moved; the takedown's leap, landing on the troll's back
+ *  (with its wail) and cut, timed to the choreography and called off if another monster catches the hero first. */
+function playEvents(events: SimEvent[]): void {
+  for (const e of events) {
+    if (e.type === 'lever') {
+      sfx.play('lever');
+      const doors = doorState();
+      if (doors !== doorsOpen) sfx.play('door');
+      doorsOpen = doors;
+    } else if (e.type === 'kill') {
+      sfx.play('ambush1', TAKEDOWN.jump);
+      sfx.play('ambush1', TAKEDOWN.perch);
+      sfx.play('wailing', TAKEDOWN.perch);
+      sfx.play('ambush2', TAKEDOWN.cut);
+    } else if (e.type === 'caught') {
+      sfx.cancelPending();
+    }
+  }
 }
 
 /** Fade to black, run `atBlack` there, and fade back in (ignored while another fade is running). */
@@ -82,7 +118,15 @@ function handle(events: SimEvent[]): void {
     if (levelIndex + 1 < levels.length) fadeThrough(() => start(levelIndex + 1));
     else if (!playtest) fadeThrough(showEnding);
   }
+  playEvents(events);
   view.onEvents(events);
+}
+
+// every Shift press crouches (held or tapped), in a level only
+for (const code of ['ShiftLeft', 'ShiftRight']) {
+  input.onKey.set(code, () => {
+    if (!briefing && !ending) sfx.play('squat');
+  });
 }
 
 if (DEV) {
@@ -100,6 +144,7 @@ function loop(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   $('fade').style.opacity = String(stepFade(dt));
+  sfx.walk(!briefing && !ending && sim.status === 'playing' && sim.moving ? (sim.sneaking ? SNEAK_STEPS : 1) : 0);
   if (ending) {
     ending.frame(dt);
     requestAnimationFrame(loop);
@@ -185,7 +230,7 @@ function showEnding(): void {
 window.addEventListener('resize', () => view.resize());
 async function boot(): Promise<void> {
   if (levels.length === 0) return;
-  await loadModels();
+  await Promise.all([loadModels(), sfx.load()]);
   if (!playtest) showBriefing();
   start(levelIndex);
   last = performance.now();

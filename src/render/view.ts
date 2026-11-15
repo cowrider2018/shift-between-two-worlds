@@ -126,7 +126,7 @@ const CATCH = {
 
 /** Takedown choreography, in seconds from the kill, matched to the hero's `takedown` clip (24 fps, art/blender/hero.py)
  *  and the troll's `death` clip. The clips pose the bodies; this moves the hero's root along the leap. */
-const TAKEDOWN = {
+export const TAKEDOWN = {
   /** Feet leave the ground (frame 5), land on the troll's back (frame 10). */
   jump: 4 / 24,
   perch: 9 / 24,

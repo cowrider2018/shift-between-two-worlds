@@ -27,13 +27,17 @@ const GAIN: Record<SfxName, number> = {
   door: 1.6,
   lever: 1.2,
   squat: 1.4,
-  walk: 4,
+  walk: 12,
 };
 
-/** Seconds the walk loop takes to fade in or out, so starting and stopping never clicks. */
-const WALK_FADE = 0.05;
+/** Seconds the walk loop takes to fade in or out: short enough to act as a switch, long enough not to click. */
+const WALK_FADE = 0.02;
 /** Seconds into walk.wav just before its first footfall (at 0.12 s). */
 const WALK_FIRST_STEP = 0.1;
+/** Walking again within this many seconds of stopping picks the loop up where it stopped, so tapping a key does not
+ *  restart the first step over and over; after a longer stop it starts from the first step. It is the longest gap
+ *  between two footfalls in the loop (0.297 s), rounded up. */
+const WALK_RESUME = 0.3;
 
 export class Sfx {
   private readonly ctx = new AudioContext();
@@ -43,6 +47,10 @@ export class Sfx {
   private walkSrc: AudioBufferSourceNode | null = null;
   private walkGain: GainNode | null = null;
   private walkLevel = 0;
+  /** Where the loop is (seconds into walk.wav) at context time `walkAt`: while playing, where it was when started;
+   *  once stopped, where it stopped. */
+  private walkPos = WALK_FIRST_STEP;
+  private walkAt = -Infinity;
 
   constructor(target: Window = window) {
     const resume = () => {
@@ -66,8 +74,9 @@ export class Sfx {
     );
   }
 
-  /** Play `name` once, `delay` seconds from now. Delayed sounds can be called off with cancelPending. */
-  play(name: SfxName, delay = 0): void {
+  /** Play `name` once, `delay` seconds from now, cut off `until` seconds from now if given. Delayed sounds can be
+   *  called off with cancelPending. */
+  play(name: SfxName, delay = 0, until?: number): void {
     const buffer = this.buffers.get(name);
     if (!buffer || this.ctx.state !== 'running') return;
     const src = this.ctx.createBufferSource();
@@ -76,6 +85,7 @@ export class Sfx {
     gain.gain.value = GAIN[name];
     src.connect(gain).connect(this.ctx.destination);
     src.start(this.ctx.currentTime + delay);
+    if (until !== undefined) src.stop(this.ctx.currentTime + until);
     if (delay > 0) {
       this.pending.add(src);
       src.onended = () => this.pending.delete(src);
@@ -88,8 +98,9 @@ export class Sfx {
     this.pending.clear();
   }
 
-  /** Set the walk loop's level: 0 stops it, 1 is full. Call every frame; it only acts on a change. Each start of
-   *  walking restarts the loop just before its first step, so the first footfall comes at once. */
+  /** Set the walk loop's level: 0 stops it, 1 is full. Call every frame; it only acts on a change. Walking again soon
+   *  after stopping (WALK_RESUME) carries on from where the loop stopped; otherwise it starts just before the first
+   *  step, so the first footfall comes at once. */
   walk(level: number): void {
     if (level === this.walkLevel) return;
     const now = this.ctx.currentTime;
@@ -97,7 +108,13 @@ export class Sfx {
       this.walkLevel = 0;
       this.walkGain?.gain.cancelScheduledValues(now);
       this.walkGain?.gain.setTargetAtTime(0, now, WALK_FADE / 3);
-      this.walkSrc?.stop(now + WALK_FADE);
+      if (this.walkSrc) {
+        const end = now + WALK_FADE;
+        this.walkSrc.stop(end);
+        const len = this.walkSrc.buffer?.duration ?? 1;
+        this.walkPos = (this.walkPos + end - this.walkAt) % len;
+        this.walkAt = end;
+      }
       this.walkSrc = null;
       this.walkGain = null;
       return;
@@ -111,7 +128,9 @@ export class Sfx {
       const gain = this.ctx.createGain();
       gain.gain.value = 0;
       src.connect(gain).connect(this.ctx.destination);
-      src.start(now, WALK_FIRST_STEP);
+      if (now - this.walkAt > WALK_RESUME) this.walkPos = WALK_FIRST_STEP;
+      src.start(now, this.walkPos);
+      this.walkAt = now;
       this.walkSrc = src;
       this.walkGain = gain;
     }

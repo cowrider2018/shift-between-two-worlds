@@ -27,6 +27,9 @@ input.bindPointerLock($<HTMLCanvasElement>('game'));
 const sfx = new Sfx();
 /** Sneaking only muffles the footsteps (the loop's level), so the steps keep their sound. */
 const SNEAK_STEPS = 0.45;
+/** The walk loop's level last frame, and the level carried through a won level's fade (null when none is running). */
+let walkLevel = 0;
+let walkCarry: number | null = null;
 let sim: Sim;
 /** Which door cells are open, so a lever pull knows whether it moved a door. */
 let doorsOpen = '';
@@ -119,6 +122,7 @@ function handle(events: SimEvent[]): void {
   if (events.some((e) => e.type === 'won')) {
     if (levelIndex + 1 < levels.length) fadeThrough(() => start(levelIndex + 1));
     else if (!playtest) fadeThrough(showEnding);
+    if (fade) walkCarry = walkLevel;
   }
   playEvents(events);
   view.onEvents(events);
@@ -146,7 +150,14 @@ function loop(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   $('fade').style.opacity = String(stepFade(dt));
-  sfx.walk(!briefing && !ending && sim.status === 'playing' && sim.moving ? (sim.sneaking ? SNEAK_STEPS : 1) : 0);
+  if (walkCarry !== null && !fade) walkCarry = null;
+  if (walkCarry !== null && fade) {
+    // a won level's footsteps carry on at full level while the screen fades out, then die away as the next fades in
+    sfx.walk(walkCarry * (fade.t < FADE_OUT ? 1 : Math.max(0, 1 - (fade.t - FADE_OUT) / FADE_IN)));
+  } else {
+    walkLevel = !briefing && !ending && sim.status === 'playing' && sim.moving ? (sim.sneaking ? SNEAK_STEPS : 1) : 0;
+    sfx.walk(walkLevel);
+  }
   if (ending) {
     ending.frame(dt);
     requestAnimationFrame(loop);

@@ -288,6 +288,7 @@ export function leverParts(cell: Pick<Cell, 'x' | 'y'>): LeverGlow {
 function doorChains(doorH: number, iron: Material): Group {
   const g = new Group();
   const link = new TorusGeometry(0.04, 0.012, 4, 8);
+  const bar = new BoxGeometry(0.12, 0.03, 0.04);
   const STEP = 0.095;
   const [x0, y0, x1, y1] = [-0.42, 0.14, 0.42, doorH - 0.14];
   for (const s of [-1, 1]) {
@@ -299,10 +300,12 @@ function doorChains(doorH: number, iron: Material): Group {
       const n = Math.floor(len / STEP);
       for (let i = 0; i <= n; i++) {
         const t = i / n;
-        // links alternate flat against the boards and edge-on to them, each stretched along the chain
-        const l = m(link, iron, ax + (bx - ax) * t, y0 + (y1 - y0) * t, z + (i % 2 ? s * 0.012 : 0), false);
-        l.rotation.set(i % 2 ? Math.PI / 2 : 0, 0, angle, 'ZYX');
-        l.scale.set(1.45, 1, 1);
+        // links alternate: a ring lying flat on the boards, stretched along the chain, then one standing edge-on,
+        // drawn pressed flat into a thick bar along the chain
+        const l = i % 2 ? m(bar, iron, 0, 0, 0, false) : m(link, iron, 0, 0, 0, false);
+        l.position.set(ax + (bx - ax) * t, y0 + (y1 - y0) * t, z);
+        l.rotation.z = angle;
+        if (!(i % 2)) l.scale.set(1.45, 1, 1);
         g.add(l);
       }
       // a staple bolting each end into the door

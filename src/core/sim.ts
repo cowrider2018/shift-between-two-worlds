@@ -391,7 +391,7 @@ export class Sim {
       const fx = Math.floor(m.x);
       const fy = Math.floor(m.y);
       const p = moveBox(m.x, m.y, (dx / d) * step, (dy / d) * step, TUNING.monsterHalfSize, (cx, cy) =>
-        this.grid.blocksMover(m.dim, cx, cy, this.channelOn, fx, fy),
+        this.grid.moverRect(m.dim, cx, cy, this.channelOn, fx, fy),
       );
       m.x = p.x;
       m.y = p.y;
@@ -455,7 +455,7 @@ export class Sim {
     const fx = Math.floor(this.x);
     const fy = Math.floor(this.y);
     const p = moveBox(this.x, this.y, mx * speed, my * speed, TUNING.playerHalfSize, (cx, cy) =>
-      this.grid.blocksMover(this.dim, cx, cy, this.channelOn, fx, fy),
+      this.grid.moverRect(this.dim, cx, cy, this.channelOn, fx, fy),
     );
     this.x = p.x;
     this.y = p.y;

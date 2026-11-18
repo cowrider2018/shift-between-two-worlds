@@ -2,11 +2,19 @@
  * Read-only query layer over a Level: block lookup, solidity, line of sight, collision.
  * Shared by the simulation, solver, validator, renderer and editor.
  */
-import { BLOCK_BY_CHAR, VOID, WALL, evalCondition, resolveProps, type BlockDef, type ChannelFn, type Props } from './blocks';
+import { BLOCK_BY_CHAR, DOOR_THICKNESS, VOID, WALL, evalCondition, resolveProps, type BlockDef, type ChannelFn, type Props } from './blocks';
 import { cellKey, type DimIndex, type Level } from './level';
 
 /** Exit `dir` values: 0 up (-y), 1 right (+x), 2 down (+y), 3 left (-x). */
 export const EXIT_DIRS: readonly [number, number][] = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+
+/** An axis-aligned rectangle in grid units: [x0, x1) × [y0, y1). */
+export interface Rect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
 
 export interface Cell {
   dim: DimIndex;
@@ -91,6 +99,20 @@ export class LevelGrid {
     return !!into && (fromX !== into[0] || fromY !== into[1]);
   }
 
+  /**
+   * The part of cell (x, y) a body centred in (fromX, fromY) collides with, or null when it may pass: a closed door
+   * blocks only its thin panel across the middle of the cell, anything else blocking blocks the whole cell.
+   */
+  moverRect(dim: DimIndex, x: number, y: number, channelOn: ChannelFn, fromX: number, fromY: number): Rect | null {
+    if (!this.blocksMover(dim, x, y, channelOn, fromX, fromY)) return null;
+    const c = this.cell(dim, x, y);
+    if (c.def.behavior !== 'door') return { x0: x, y0: y, x1: x + 1, y1: y + 1 };
+    const h = DOOR_THICKNESS / 2;
+    return c.props.vertical
+      ? { x0: x + 0.5 - h, y0: y, x1: x + 0.5 + h, y1: y + 1 }
+      : { x0: x, y0: y + 0.5 - h, x1: x + 1, y1: y + 0.5 + h };
+  }
+
   /** The lever at the same cell in the other dimension, if any: the two are one switch and always move together. */
   leverTwin(c: Cell): Cell | null {
     if (c.def.behavior !== 'lever') return null;
@@ -159,31 +181,38 @@ export function castRay(
 }
 
 /**
- * Move an axis-aligned square (half-size r) through the grid, sliding along walls.
- * Cells the square already overlaps are ignored, so a door closing on the player never traps them.
+ * Move an axis-aligned square (half-size r) through the grid, sliding along walls. `rect` gives the part of a cell
+ * that blocks (a whole wall, a door's thin panel) or null. Blockers the square already overlaps are ignored, so a door
+ * closing on the player never traps them.
  */
 export function moveBox(
   x: number, y: number, dx: number, dy: number, r: number,
-  solid: (cx: number, cy: number) => boolean,
+  rect: (cx: number, cy: number) => Rect | null,
 ): { x: number; y: number } {
   const EPS = 1e-4;
+  const overlaps = (px: number, py: number, b: Rect) => px + r > b.x0 && px - r < b.x1 && py + r > b.y0 && py - r < b.y1;
   const overlapped = new Set<string>();
   forCells(x, y, r, (cx, cy) => {
-    if (solid(cx, cy)) overlapped.add(cellKey(cx, cy));
+    const b = rect(cx, cy);
+    if (b && overlaps(x, y, b)) overlapped.add(cellKey(cx, cy));
   });
-  const hits = (px: number, py: number, fn: (cx: number, cy: number) => void) =>
+  const hits = (px: number, py: number, fn: (b: Rect) => void) =>
     forCells(px, py, r, (cx, cy) => {
-      if (!overlapped.has(cellKey(cx, cy)) && solid(cx, cy)) fn(cx, cy);
+      if (overlapped.has(cellKey(cx, cy))) return;
+      const b = rect(cx, cy);
+      if (b && overlaps(px, py, b)) fn(b);
     });
 
   let nx = x + dx;
-  hits(nx, y, (cx) => {
-    nx = dx > 0 ? Math.min(nx, cx - r - EPS) : Math.max(nx, cx + 1 + r + EPS);
-  });
+  if (dx !== 0)
+    hits(nx, y, (b) => {
+      nx = dx > 0 ? Math.min(nx, b.x0 - r - EPS) : Math.max(nx, b.x1 + r + EPS);
+    });
   let ny = y + dy;
-  hits(nx, ny, (_cx, cy) => {
-    ny = dy > 0 ? Math.min(ny, cy - r - EPS) : Math.max(ny, cy + 1 + r + EPS);
-  });
+  if (dy !== 0)
+    hits(nx, ny, (b) => {
+      ny = dy > 0 ? Math.min(ny, b.y0 - r - EPS) : Math.max(ny, b.y1 + r + EPS);
+    });
   return { x: nx, y: ny };
 }
 

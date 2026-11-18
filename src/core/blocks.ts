@@ -100,6 +100,9 @@ export function resolveProps(def: BlockDef, stored: Props | undefined): Props {
 
 export type ChannelFn = (channel: number) => boolean;
 
+/** Thickness of a door's panel through its cell: what the renderer draws and what a closed door blocks. */
+export const DOOR_THICKNESS = 0.3;
+
 export function isDoorOpen(props: Props, channelOn: ChannelFn): boolean {
   return channelOn(Number(props.channel ?? 0)) !== Boolean(props.inverted);
 }

@@ -6,6 +6,7 @@ import {
   AdditiveBlending, BoxGeometry, CanvasTexture, Color, CircleGeometry, CylinderGeometry, DoubleSide, Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PointLight, Shape, Vector3, ShapeGeometry, TorusGeometry,
   type Material, type Object3D,
 } from 'three';
+import { DOOR_THICKNESS } from '../core/blocks';
 import type { Cell, LevelGrid } from '../core/grid';
 import { TUNING, type Sim } from '../core/sim';
 import type { DimTheme } from './palette';
@@ -348,7 +349,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     const part = (along: number, h: number, across: number, mat: Material, a: number, y: number, off = 0, shadow = true) =>
       m(new BoxGeometry(spanX ? along : across, h, spanX ? across : along), mat, spanX ? a : off, y, spanX ? off : a, shadow);
     const iron = withHole(toon('#34343a'));
-    panel.add(part(1, doorH, 0.3, withHole(wood('#b8a088')), 0, doorH / 2));
+    panel.add(part(1, doorH, DOOR_THICKNESS, withHole(wood('#b8a088')), 0, doorH / 2));
     // iron straps across both faces near the top and bottom, studded with rivets
     for (const y of [0.24, doorH - 0.22]) {
       panel.add(part(1.005, 0.09, 0.34, iron, 0, y));

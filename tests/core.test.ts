@@ -1,8 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BLOCKS } from '../src/core/blocks';
-import { LevelGrid, angleDiff, castRay } from '../src/core/grid';
+import { BLOCKS, DOOR_THICKNESS } from '../src/core/blocks';
+import { LevelGrid, angleDiff, castRay, moveBox } from '../src/core/grid';
 import { isOuterRock } from '../src/render/terrain';
 import { createEmptyLevel, parseLevel, serializeLevel, setCell, setProp, type Level } from '../src/core/level';
 import { NO_INPUT, Sim, TUNING, type MonsterState, type SimInput } from '../src/core/sim';
@@ -326,6 +326,23 @@ describe('ray cast', () => {
   it('stops at the first blocked cell', () => {
     const d = castRay(0.5, 0.5, 1, 0, 10, (x) => x === 3);
     expect(d).toBeCloseTo(2.5);
+  });
+});
+
+describe('door collision', () => {
+  // a horizontal door at (2, 2): its panel spans the cell's middle, DOOR_THICKNESS deep
+  const h = DOOR_THICKNESS / 2;
+  const panel = (cx: number, cy: number) => (cx === 2 && cy === 2 ? { x0: 2, y0: 2.5 - h, x1: 3, y1: 2.5 + h } : null);
+  const r = 0.2;
+
+  it('lets a body walk into the door cell up to the panel', () => {
+    const p = moveBox(2.5, 1.5, 0, 1, r, panel);
+    expect(p.y).toBeCloseTo(2.5 - h - r, 3);
+  });
+
+  it('blocks walking through the panel from beside it once inside the cell', () => {
+    const p = moveBox(2.5, 2.5 - h - r - 0.01, 0, 0.5, r, panel);
+    expect(p.y).toBeLessThan(2.5 - h - r);
   });
 });
 

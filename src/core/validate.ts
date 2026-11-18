@@ -83,8 +83,8 @@ export function validateLevel(level: Level): ValidationReport {
     const src = levers.filter((l) => l.props.channel === door.props.channel);
     const at = { dim: door.dim, x: door.x, y: door.y };
     if (src.length === 0) {
+      // a plain door with no lever is chained shut on purpose (grid.chained); an inverted one would just stand open
       if (door.props.inverted) warn(`${where(door.dim, door.x, door.y)} 反相門沒有拉桿，永遠開著`, at);
-      else err(`${where(door.dim, door.x, door.y)} 門（頻道 ${door.props.channel}）沒有任何拉桿，永遠打不開`, at);
     }
   }
   for (const l of levers) {

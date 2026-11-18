@@ -122,11 +122,16 @@ describe('dug-out (void) cells', () => {
 });
 
 describe('validator', () => {
-  it('reports a door that no lever opens', () => {
+  it('accepts a door that no lever opens: it is chained shut', () => {
     const l = createEmptyLevel('t');
     setCell(l, 0, 5, 5, 'E');
     setCell(l, 0, 3, 3, 'D');
-    expect(validateLevel(l).issues.some((i) => i.severity === 'error' && i.message.includes('沒有任何拉桿'))).toBe(true);
+    expect(validateLevel(l).issues.some((i) => i.severity === 'error')).toBe(false);
+    const grid = new LevelGrid(l);
+    expect(grid.chained(grid.cell(0, 3, 3))).toBe(true);
+    setCell(l, 1, 1, 1, 'L');
+    const levered = new LevelGrid(l);
+    expect(levered.chained(levered.cell(0, 3, 3))).toBe(false);
   });
 
   it('detects an unsolvable level', () => {

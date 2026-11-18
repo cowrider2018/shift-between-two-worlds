@@ -81,6 +81,15 @@ export class Pane {
         const t = Math.max(3, c * 0.12);
         if (cell.props.vertical) ctx.fillRect(px + (c - t) / 2, py + 2, t, c - 4);
         else ctx.fillRect(px + 2, py + (c - t) / 2, c - 4, t);
+        if (g.chained(cell)) {
+          // chained shut: a grey X over the whole cell
+          ctx.strokeStyle = '#c8c8d0';
+          ctx.lineWidth = Math.max(2, c * 0.07);
+          ctx.beginPath();
+          ctx.moveTo(px + c * 0.2, py + c * 0.2); ctx.lineTo(px + c * 0.8, py + c * 0.8);
+          ctx.moveTo(px + c * 0.8, py + c * 0.2); ctx.lineTo(px + c * 0.2, py + c * 0.8);
+          ctx.stroke();
+        }
       }
       if (b !== 'none') {
         ctx.fillStyle = '#1a1620';

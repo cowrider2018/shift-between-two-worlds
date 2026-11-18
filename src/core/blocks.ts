@@ -60,7 +60,7 @@ export const BLOCKS: readonly BlockDef[] = [
     color: '#e07b39', params: [CHANNEL], solid: 'never', opaque: 'never', behavior: 'lever',
   },
   {
-    id: 'door', char: 'D', label: '門', description: '頻道訊號開啟時打開（inverted 則相反）。門板預設橫放（擋上下），勾選豎向則豎放（擋左右）。',
+    id: 'door', char: 'D', label: '門', description: '頻道訊號開啟時打開（inverted 則相反）；沒有拉桿接這個頻道的非反相門用鐵鍊封死，永遠不開（某次元不可走、另一次元是空地時用）。門板預設橫放（擋上下），勾選豎向則豎放（擋左右）。',
     color: '#8a5a3c',
     params: [
       CHANNEL,

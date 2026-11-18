@@ -280,6 +280,44 @@ export function leverParts(cell: Pick<Cell, 'x' | 'y'>): LeverGlow {
   };
 }
 
+/**
+ * A door no lever opens (LevelGrid.chained): two chains crossed in an X over each face, a padlock where they cross.
+ * Built for a panel spanning x with its faces towards ±z; the caller turns it for a vertical door.
+ */
+function doorChains(doorH: number, iron: Material): Group {
+  const g = new Group();
+  const steel = withHole(toon('#a8a8b2'));
+  const link = new TorusGeometry(0.05, 0.02, 4, 8);
+  const STEP = 0.12;
+  const [x0, y0, x1, y1] = [-0.42, 0.14, 0.42, doorH - 0.14];
+  for (const s of [-1, 1]) {
+    const z = s * 0.175;
+    for (const flip of [-1, 1]) {
+      const ax = flip * x0, bx = flip * x1;
+      const len = Math.hypot(bx - ax, y1 - y0);
+      const angle = Math.atan2(y1 - y0, bx - ax);
+      const n = Math.floor(len / STEP);
+      for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        // links alternate flat against the boards and edge-on to them, each stretched along the chain
+        const l = m(link, steel, ax + (bx - ax) * t, y0 + (y1 - y0) * t, z + (i % 2 ? s * 0.02 : 0), false);
+        l.rotation.set(i % 2 ? Math.PI / 2 : 0, 0, angle, 'ZYX');
+        l.scale.set(1.45, 1, 1);
+        g.add(l);
+      }
+      // a staple bolting each end into the door
+      for (const [px, py] of [[ax, y0], [bx, y1]]) g.add(m(new BoxGeometry(0.09, 0.09, 0.04), iron, px, py, s * 0.165, false));
+    }
+    // the padlock where the chains cross: a brass body under a hoop shackle
+    const cy = (y0 + y1) / 2 - 0.06;
+    g.add(m(new BoxGeometry(0.22, 0.19, 0.08), toon('#7a6230'), 0, cy, s * 0.23, false));
+    const shackle = m(new TorusGeometry(0.07, 0.02, 4, 10, Math.PI), steel, 0, cy + 0.095, s * 0.23, false);
+    g.add(shackle);
+    g.add(m(new BoxGeometry(0.03, 0.06, 0.01), toon('#121216'), 0, cy - 0.015, s * 0.272, false));
+  }
+  return g;
+}
+
 export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   floor: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
 
@@ -326,6 +364,11 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       ring.position.set(spanX ? -0.34 : s * 0.19, 0.66, spanX ? s * 0.19 : -0.34);
       if (!spanX) ring.rotation.y = Math.PI / 2;
       panel.add(ring);
+    }
+    if (ctx.grid.chained(cell)) {
+      const chains = doorChains(doorH, iron);
+      if (!spanX) chains.rotation.y = Math.PI / 2;
+      panel.add(chains);
     }
     const haunt = cell.dim === 1 ? hauntDoor(cell, doorH, spanX, part) : null;
     if (haunt) panel.add(haunt.object);

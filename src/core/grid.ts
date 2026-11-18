@@ -98,6 +98,18 @@ export class LevelGrid {
     return t.def.behavior === 'lever' ? t : null;
   }
 
+  private leverChannels?: Set<number>;
+
+  /**
+   * A door no lever answers to and that is not inverted never opens: it is chained shut, a permanent barrier for a
+   * cell that must be walkable in the other dimension (DESIGN §3.5).
+   */
+  chained(c: Cell): boolean {
+    if (c.def.behavior !== 'door' || c.props.inverted) return false;
+    this.leverChannels ??= new Set(this.all().filter((l) => l.def.behavior === 'lever').map((l) => Number(l.props.channel)));
+    return !this.leverChannels.has(Number(c.props.channel));
+  }
+
   solid(dim: DimIndex, x: number, y: number, channelOn: ChannelFn): boolean {
     const c = this.cell(dim, x, y);
     return evalCondition(c.def.solid, c.def, c.props, channelOn);

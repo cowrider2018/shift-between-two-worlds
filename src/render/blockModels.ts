@@ -281,14 +281,14 @@ export function leverParts(cell: Pick<Cell, 'x' | 'y'>): LeverGlow {
 }
 
 /**
- * A door no lever opens (LevelGrid.chained): two chains crossed in an X over each face, a padlock where they cross.
+ * A door no lever opens (LevelGrid.chained): two thin black iron chains crossed in an X over each face, of the
+ * same iron as the door's straps.
  * Built for a panel spanning x with its faces towards ±z; the caller turns it for a vertical door.
  */
 function doorChains(doorH: number, iron: Material): Group {
   const g = new Group();
-  const steel = withHole(toon('#a8a8b2'));
-  const link = new TorusGeometry(0.05, 0.02, 4, 8);
-  const STEP = 0.12;
+  const link = new TorusGeometry(0.04, 0.012, 4, 8);
+  const STEP = 0.095;
   const [x0, y0, x1, y1] = [-0.42, 0.14, 0.42, doorH - 0.14];
   for (const s of [-1, 1]) {
     const z = s * 0.175;
@@ -300,20 +300,14 @@ function doorChains(doorH: number, iron: Material): Group {
       for (let i = 0; i <= n; i++) {
         const t = i / n;
         // links alternate flat against the boards and edge-on to them, each stretched along the chain
-        const l = m(link, steel, ax + (bx - ax) * t, y0 + (y1 - y0) * t, z + (i % 2 ? s * 0.02 : 0), false);
+        const l = m(link, iron, ax + (bx - ax) * t, y0 + (y1 - y0) * t, z + (i % 2 ? s * 0.012 : 0), false);
         l.rotation.set(i % 2 ? Math.PI / 2 : 0, 0, angle, 'ZYX');
         l.scale.set(1.45, 1, 1);
         g.add(l);
       }
       // a staple bolting each end into the door
-      for (const [px, py] of [[ax, y0], [bx, y1]]) g.add(m(new BoxGeometry(0.09, 0.09, 0.04), iron, px, py, s * 0.165, false));
+      for (const [px, py] of [[ax, y0], [bx, y1]]) g.add(m(new BoxGeometry(0.07, 0.07, 0.03), iron, px, py, s * 0.16, false));
     }
-    // the padlock where the chains cross: a brass body under a hoop shackle
-    const cy = (y0 + y1) / 2 - 0.06;
-    g.add(m(new BoxGeometry(0.22, 0.19, 0.08), toon('#7a6230'), 0, cy, s * 0.23, false));
-    const shackle = m(new TorusGeometry(0.07, 0.02, 4, 10, Math.PI), steel, 0, cy + 0.095, s * 0.23, false);
-    g.add(shackle);
-    g.add(m(new BoxGeometry(0.03, 0.06, 0.01), toon('#121216'), 0, cy - 0.015, s * 0.272, false));
   }
   return g;
 }

@@ -125,10 +125,13 @@ export class Pane {
     }
 
     // the other dimension's monsters (invisible in game; shown faintly here as a design aid)
-    if (s.overlays.souls) {
-      for (const m of g.level.dimensions[other].monsters) this.drawMonster(m, s, true);
-    }
-    for (const m of g.level.dimensions[dim].monsters) this.drawMonster(m, s, false);
+    // patrols first, bodies after, so a waypoint on another monster's start never hides that monster
+    const drawn = [
+      ...(s.overlays.souls ? g.level.dimensions[other].monsters.map((m) => [m, true] as const) : []),
+      ...g.level.dimensions[dim].monsters.map((m) => [m, false] as const),
+    ];
+    for (const [m, soul] of drawn) this.drawPatrol(m, s, soul);
+    for (const [m, soul] of drawn) this.drawBody(m, s, soul);
 
     if (selCell && selCell.dim === dim) this.box(selCell.x, selCell.y, '#ffffff', 3);
     if (s.hover && s.hover.dim === dim) this.box(s.hover.x, s.hover.y, '#ffffff88', 1.5);
@@ -141,13 +144,20 @@ export class Pane {
     this.ctx.strokeRect(x * c + 1, y * c + 1, c - 2, c - 2);
   }
 
-  private drawMonster(m: MonsterDef, s: DrawState, soul: boolean): void {
-    const { ctx, cell: c } = this;
-    if (m.path.length === 0) return;
+  private monsterStyle(m: MonsterDef, s: DrawState, soul: boolean) {
+    const c = this.cell;
     const selected = s.selection?.kind === 'monster' && s.selection.id === m.id;
     const center = ([x, y]: [number, number]) => [(x + 0.5) * c, (y + 0.5) * c] as const;
     const color = soul ? '#9fe8ff' : selected ? '#ffdd55' : '#ff8a3d';
-    ctx.globalAlpha = soul ? 0.45 : 1;
+    this.ctx.globalAlpha = soul ? 0.45 : 1;
+    return { selected, center, color };
+  }
+
+  /** View cone, patrol line and numbered waypoints. */
+  private drawPatrol(m: MonsterDef, s: DrawState, soul: boolean): void {
+    const { ctx, cell: c } = this;
+    if (m.path.length === 0) return;
+    const { selected, center, color } = this.monsterStyle(m, s, soul);
 
     // view cone preview at the starting position (occluded by walls / doors closed)
     if (s.overlays.cones && !soul) {
@@ -195,8 +205,14 @@ export class Pane {
       ctx.fillStyle = '#1a1620';
       ctx.fillText(String(i), x, y + 1);
     });
+    ctx.globalAlpha = 1;
+  }
 
-    // body
+  /** The monster itself at its start, drawn above every patrol. */
+  private drawBody(m: MonsterDef, s: DrawState, soul: boolean): void {
+    const { ctx, cell: c } = this;
+    if (m.path.length === 0) return;
+    const { center, color } = this.monsterStyle(m, s, soul);
     const [x, y] = center(m.path[0]);
     ctx.fillStyle = soul ? '#bff6ff' : '#5b4e66';
     ctx.strokeStyle = color;

@@ -71,9 +71,14 @@ function selectedMonster(): MonsterDef | undefined {
   return selection?.kind === 'monster' ? monsterById(doc.level, selection.dim, selection.id) : undefined;
 }
 
+/** The monster that starts on this cell; two monsters never share a start, but a start may sit on another's waypoint. */
+function monsterStartingAt(dim: DimIndex, x: number, y: number): MonsterDef | undefined {
+  return doc.level.dimensions[dim].monsters.find((m) => m.path[0]?.[0] === x && m.path[0]?.[1] === y);
+}
+
+/** For picking: the monster starting here, else one whose patrol passes through. */
 function monsterAt(dim: DimIndex, x: number, y: number): MonsterDef | undefined {
-  const ms = doc.level.dimensions[dim].monsters;
-  return ms.find((m) => m.path[0]?.[0] === x && m.path[0]?.[1] === y) ?? ms.find((m) => m.path.some(([px, py]) => px === x && py === y));
+  return monsterStartingAt(dim, x, y) ?? doc.level.dimensions[dim].monsters.find((m) => m.path.some(([px, py]) => px === x && py === y));
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +101,7 @@ function paintAt(dim: DimIndex, x: number, y: number, erase: boolean): void {
 }
 
 function placeMonster(dim: DimIndex, x: number, y: number): void {
-  const existing = monsterAt(dim, x, y);
+  const existing = monsterStartingAt(dim, x, y);
   if (existing) {
     selection = { kind: 'monster', dim, id: existing.id };
     return render();

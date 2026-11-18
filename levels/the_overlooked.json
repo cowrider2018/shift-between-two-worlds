@@ -37,15 +37,15 @@
         "#......#",
         "#.####.#",
         "#.L....#",
-        "#.####D#",
-        "#..#...#",
+        "#.####.#",
+        "#..#.D.#",
         "#D##D#.#",
         "#.##E###",
         "###     "
       ],
       "props": {
         "2,3": {"channel":4},
-        "6,4": {"channel":4,"inverted":false,"vertical":false},
+        "5,5": {"channel":4,"inverted":false,"vertical":true},
         "1,6": {"channel":2,"inverted":true,"vertical":false},
         "4,6": {"channel":3,"inverted":false,"vertical":false},
         "4,7": {"dir":0}

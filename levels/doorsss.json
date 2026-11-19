@@ -1,0 +1,63 @@
+{
+  "format": 1,
+  "id": "level14",
+  "name": "doorsss",
+  "size": {"w":7,"h":7},
+  "dimensions": [
+    {
+      "rows": [
+        "#######",
+        "#.D.D.#",
+        "#D###D#",
+        "#LDSDL#",
+        "#D###D#",
+        "#.D.DL#",
+        "###E###"
+      ],
+      "props": {
+        "2,1": {"channel":2,"inverted":false,"vertical":true},
+        "4,1": {"channel":4,"inverted":false,"vertical":true},
+        "1,2": {"channel":3,"inverted":false,"vertical":false},
+        "5,2": {"channel":1,"inverted":false,"vertical":false},
+        "1,3": {"channel":1},
+        "2,3": {"channel":9,"inverted":false,"vertical":true},
+        "4,3": {"channel":9,"inverted":false,"vertical":true},
+        "5,3": {"channel":2},
+        "1,4": {"channel":2,"inverted":false,"vertical":false},
+        "5,4": {"channel":9,"inverted":false,"vertical":false},
+        "2,5": {"channel":9,"inverted":false,"vertical":true},
+        "4,5": {"channel":9,"inverted":false,"vertical":true},
+        "5,5": {"channel":4},
+        "3,6": {"dir":0}
+      },
+      "monsters": [
+        {"id":"m1","path":[[1,1],[3,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":0}
+      ]
+    },
+    {
+      "rows": [
+        "#######",
+        "#.D.DL#",
+        "#D###.#",
+        "#.D.D.#",
+        "#D###D#",
+        "#...D.#",
+        "#######"
+      ],
+      "props": {
+        "2,1": {"channel":3,"inverted":true,"vertical":true},
+        "4,1": {"channel":3,"inverted":true,"vertical":true},
+        "5,1": {"channel":3},
+        "1,2": {"channel":2,"inverted":true,"vertical":false},
+        "2,3": {"channel":1,"inverted":true,"vertical":true},
+        "4,3": {"channel":9,"inverted":false,"vertical":true},
+        "1,4": {"channel":9,"inverted":false,"vertical":false},
+        "5,4": {"channel":2,"inverted":false,"vertical":false},
+        "4,5": {"channel":9,"inverted":false,"vertical":true}
+      },
+      "monsters": [
+        {"id":"m2","path":[[1,1],[5,1]],"mode":"pingpong","speed":1.6,"pause":0.6,"viewRadius":5,"viewAngle":70,"facing":0}
+      ]
+    }
+  ]
+}

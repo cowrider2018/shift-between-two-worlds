@@ -86,9 +86,11 @@ function monsterAt(dim: DimIndex, x: number, y: number): MonsterDef | undefined 
 
 function paintAt(dim: DimIndex, x: number, y: number, erase: boolean): void {
   const ch = erase ? FLOOR.char : brush;
-  if (getChar(doc.level, dim, x, y) === ch) return;
+  // what was just placed is what the inspector shows
+  const focus = !erase && !(selection?.kind === 'cell' && selection.dim === dim && selection.x === x && selection.y === y);
+  if (focus) selection = { kind: 'cell', dim, x, y };
+  if (getChar(doc.level, dim, x, y) === ch) return focus ? render() : undefined;
   const def = BLOCK_BY_CHAR.get(ch)!;
-  if (def.params.length) selection = { kind: 'cell', dim, x, y };
   doc.edit((l) => {
     if (def.count?.max === 1) {
       ([0, 1] as DimIndex[]).forEach((d) =>
@@ -108,8 +110,9 @@ function placeMonster(dim: DimIndex, x: number, y: number): void {
   }
   if (!neverSolid(grid.cell(dim, x, y).def)) return toast('怪物只能放在可走格上');
   const id = nextMonsterId(doc.level);
-  doc.edit((l) => l.dimensions[dim].monsters.push({ id, path: [[x, y]], ...MONSTER_DEFAULTS }));
+  // select before the edit: the edit renders, and the inspector must show the new monster
   selection = { kind: 'monster', dim, id };
+  doc.edit((l) => l.dimensions[dim].monsters.push({ id, path: [[x, y]], ...MONSTER_DEFAULTS }));
   setTool('path');
   toast('已放置怪物 — 左鍵加入巡邏點，右鍵刪最後一點');
 }

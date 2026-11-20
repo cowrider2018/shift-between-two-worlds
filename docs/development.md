@@ -8,6 +8,7 @@ The dev build, the level editor and the code layout. Release and asset notes are
 npm run dev        # http://localhost:5173/ for the game, /editor.html for the editor
 npm run check      # type check + unit tests + level validation
 npm run validate   # validate levels/*.json only (optionally pass file names)
+npm run gen        # generate candidate levels into levels-gen/ (see "Generating levels")
 ```
 
 The dev build also has R to restart, ←→ to turn the camera, +/− to zoom, `?level=<id>` to jump to a level and an editor link in the top-right corner.
@@ -24,6 +25,26 @@ The dev build also has R to restart, ←→ to turn the camera, +/− to zoom, `
 
 Level JSON keeps one row per line for readable diffs; the format is in DESIGN.md §5.
 
+## Generating levels
+
+`npm run gen -- [--rooms 3|3x4] [--tries 20000] [--evolve N] [--keep 40] [--seed N] [--levers 3] [--trolls 2] [--ghosts 1]`
+writes the best candidates to `levels-gen/` (one JSON per level plus `index.txt` with both maps, metrics and the route).
+Copy the ones worth playing into `levels/`. `npm run gen -- --check [files]` runs the same checks on existing levels.
+
+1. Sample a room lattice (rooms on odd cells, connectors between them, pillars on even cells): per dimension each
+   connector is floor, a door or a chained door; one lever per channel; standing monsters; an exit on the border.
+2. Model it as a graph of states (dimension, cell, levers, kills) and read it twice: *strict* (the intended route:
+   no stepping on a monster, unseen everywhere in a cell, takedowns from a neighbouring cell) and *loose* (what the
+   engine lets a player get away with). The shortest strict route is the solution.
+3. Unique: banning any cell of the route leaves the loose reading without a win, and every winning kill is the
+   route's own.
+4. Minimize: drop any monster, door, lever or cell whose removal leaves the level unique with the same route.
+5. Crop, dig out rock that touches nothing, validate, and replay the route in the real simulation.
+6. Hill-climb from the best levels with random edits, then keep the top-scoring one per family (same shifts, pulls
+   and kills).
+
+Monsters are standing only: patrols have no discrete model yet, and `--check` reports levels with them as unsupported.
+
 ## Architecture
 
 ```
@@ -34,6 +55,7 @@ src/core/     pure logic (no three.js / DOM, testable in Node)
   sim.ts        deterministic game simulation
   solver.ts     solvability BFS
   validate.ts   validator (shared by the CLI, the tests and the editor)
+src/gen/      level generator: discrete model + uniqueness check, sampling/minimizing/evolving, engine replay
 src/render/   three.js view: pixel pipeline, characters, block model registry, GameView
 src/game/     input, main loop, HUD, level list
 src/editor/   level editor

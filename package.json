@@ -7,6 +7,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "validate": "tsx scripts/validate.ts",
+    "gen": "esbuild scripts/gen.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/gen.mjs --log-level=warning && node node_modules/.cache/gen.mjs",
     "check": "tsc --noEmit && vitest run && tsx scripts/validate.ts",
     "models": "tsx scripts/build-models.ts",
     "cover": "tsx scripts/cover.ts"
@@ -18,6 +19,7 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/three": "^0.187.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.7",

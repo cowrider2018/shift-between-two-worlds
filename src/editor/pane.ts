@@ -17,6 +17,8 @@ export interface DrawState {
   grid: LevelGrid;
   selection: Selection;
   hover: { dim: DimIndex; x: number; y: number } | null;
+  /** A monster waiting for its facing click: preview its cone turned toward the hovered cell. */
+  aim: { id: string; toward: [number, number] } | null;
   overlays: Overlays;
   issues: Issue[];
 }
@@ -169,11 +171,14 @@ export class Pane {
     const { selected, center, color } = this.monsterStyle(m, s, soul);
 
     // view cone preview at the starting position (occluded by walls / doors closed)
-    if (s.overlays.cones && !soul) {
+    const aim = !soul && s.aim?.id === m.id ? s.aim.toward : null;
+    if ((s.overlays.cones || aim) && !soul) {
       const [sx, sy] = m.path[0];
       const ox = sx + 0.5;
       const oy = sy + 0.5;
-      const facing = m.path.length > 1 ? Math.atan2(m.path[1][1] - sy, m.path[1][0] - sx) : (m.facing * Math.PI) / 180;
+      const facing = aim && (aim[0] !== sx || aim[1] !== sy)
+        ? Math.atan2(aim[1] - sy, aim[0] - sx)
+        : m.path.length > 1 ? Math.atan2(m.path[1][1] - sy, m.path[1][0] - sx) : (m.facing * Math.PI) / 180;
       const half = ((m.viewAngle / 2) * Math.PI) / 180;
       ctx.fillStyle = '#ffffff40';
       ctx.beginPath();

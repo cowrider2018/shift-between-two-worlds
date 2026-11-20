@@ -39,6 +39,8 @@ let report: ValidationReport = validateLevel(doc.level);
 let tool: Tool = 'terrain';
 let brush = '#';
 let selection: Selection = null;
+/** The selection of a monster just placed, whose next click sets its facing; any new selection ends the aim. */
+let aimFor: Selection = null;
 let hover: { dim: DimIndex; x: number; y: number } | null = null;
 let stroke: { erase: boolean } | null = null;
 /** levels/ as the dev server reports it, in play order (file = stem without .json, following the name). */
@@ -64,6 +66,11 @@ function toast(msg: string): void {
 
 function monsterById(level: Level, dim: DimIndex, id: string): MonsterDef | undefined {
   return level.dimensions[dim].monsters.find((m) => m.id === id);
+}
+
+/** The monster waiting for its facing click, if the selection is still the one it was placed with. */
+function aiming(): MonsterDef | undefined {
+  return aimFor && aimFor === selection ? selectedMonster() : undefined;
 }
 
 function selectedMonster(): MonsterDef | undefined {
@@ -111,10 +118,10 @@ function placeMonster(dim: DimIndex, x: number, y: number): void {
   if (!neverSolid(grid.cell(dim, x, y).def)) return toast('怪物只能放在可走格上');
   const id = nextMonsterId(doc.level);
   // select before the edit: the edit renders, and the inspector must show the new monster
-  selection = { kind: 'monster', dim, id };
+  selection = aimFor = { kind: 'monster', dim, id };
   doc.edit((l) => l.dimensions[dim].monsters.push({ id, path: [[x, y]], ...MONSTER_DEFAULTS }));
   setTool('select');
-  toast('已放置怪物 — 左鍵加入巡邏點，右鍵刪最後一點');
+  toast('已放置怪物 — 先點一下設定面向，之後左鍵加巡邏點');
 }
 
 function addWaypoint(dim: DimIndex, x: number, y: number): void {
@@ -153,6 +160,16 @@ function selectAt(dim: DimIndex, x: number, y: number, right: boolean): void {
     if (other && other.id !== selection.id) {
       selection = { kind: 'monster', dim, id: other.id };
       return render();
+    }
+    const aimed = aiming();
+    if (aimed) {
+      // the first click after placing turns the monster toward it; a right click or its own cell skips that
+      aimFor = null;
+      const [sx, sy] = aimed.path[0];
+      if (right || (x === sx && y === sy)) return render();
+      const facing = (Math.round((Math.atan2(y - sy, x - sx) * 180) / Math.PI) + 360) % 360;
+      const id = aimed.id;
+      return doc.edit((l) => (monsterById(l, dim, id)!.facing = facing));
     }
     if (right) popWaypoint();
     else if (!other) addWaypoint(dim, x, y);
@@ -211,6 +228,7 @@ window.addEventListener('mouseup', () => {
 // toolbar
 
 function setTool(t: Tool): void {
+  if (t !== 'select') aimFor = null;
   tool = t;
   renderToolbar();
 }
@@ -345,7 +363,7 @@ function renderInspector(): void {
       field('id', idIn),
       field('巡邏模式', mode),
       ...MONSTER_FIELDS.map((f) => field(f.label, numberInput(m[f.key] as number, f.min, f.max, f.step, (v) => edit((mm) => Object.assign(mm, { [f.key]: v }))))),
-      h('div', { className: 'muted' }, '路徑點（選取中：左鍵在同次元加點、右鍵刪最後一點、Esc 取消選取）'),
+      h('div', { className: 'muted' }, aiming() ? '點一下畫面設定面向（右鍵或點自己略過），之後才加路徑點' : '路徑點（選取中：左鍵在同次元加點、右鍵刪最後一點、Esc 取消選取）'),
       points,
       del,
     );
@@ -391,7 +409,9 @@ function layoutPanes(): void {
 }
 
 function drawPanes(): void {
-  for (const p of panes) p.draw({ grid, selection, hover, overlays, issues: report.issues });
+  const aimed = aiming();
+  const aim = aimed && hover && selection?.kind === 'monster' && hover.dim === selection.dim ? { id: aimed.id, toward: [hover.x, hover.y] as [number, number] } : null;
+  for (const p of panes) p.draw({ grid, selection, hover, aim, overlays, issues: report.issues });
   const cell = hover && grid.cell(hover.dim, hover.x, hover.y);
   $('status').textContent = cell
     ? `${DIM_IDS[cell.dim]} (${cell.x}, ${cell.y})　${cell.def.label}`

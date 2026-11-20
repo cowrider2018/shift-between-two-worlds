@@ -14,12 +14,11 @@ import { storePlaytest } from '../game/playtest';
 import { LevelDoc } from './doc';
 import { Pane, type Overlays, type Selection } from './pane';
 
-type Tool = 'paint' | 'select' | 'monster' | 'path';
+type Tool = 'terrain' | 'monster' | 'select';
 const TOOLS: { id: Tool; label: string; key: string; tip: string }[] = [
-  { id: 'paint', label: '畫筆', key: 'B', tip: '左鍵畫、右鍵擦成空塊' },
-  { id: 'select', label: '選取', key: 'V', tip: '點格子編參數、點怪物編屬性' },
+  { id: 'terrain', label: '地形', key: 'B', tip: '左鍵畫、右鍵擦成空塊' },
   { id: 'monster', label: '怪物', key: 'M', tip: '左鍵放置、右鍵刪除' },
-  { id: 'path', label: '路徑', key: 'P', tip: '左鍵替選中怪物加路徑點、右鍵刪最後一點' },
+  { id: 'select', label: '選取', key: 'V', tip: '點格子編參數、點怪物編屬性；選中怪物時左鍵在同次元加路徑點、右鍵刪最後一點，Esc 取消選取' },
 ];
 const DRAFT_KEY = 'shift.editor.draft';
 
@@ -37,7 +36,7 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, 
 const doc = new LevelDoc(createEmptyLevel());
 let grid = new LevelGrid(doc.level);
 let report: ValidationReport = validateLevel(doc.level);
-let tool: Tool = 'paint';
+let tool: Tool = 'terrain';
 let brush = '#';
 let selection: Selection = null;
 let hover: { dim: DimIndex; x: number; y: number } | null = null;
@@ -106,6 +105,7 @@ function placeMonster(dim: DimIndex, x: number, y: number): void {
   const existing = monsterStartingAt(dim, x, y);
   if (existing) {
     selection = { kind: 'monster', dim, id: existing.id };
+    setTool('select');
     return render();
   }
   if (!neverSolid(grid.cell(dim, x, y).def)) return toast('怪物只能放在可走格上');
@@ -113,13 +113,13 @@ function placeMonster(dim: DimIndex, x: number, y: number): void {
   // select before the edit: the edit renders, and the inspector must show the new monster
   selection = { kind: 'monster', dim, id };
   doc.edit((l) => l.dimensions[dim].monsters.push({ id, path: [[x, y]], ...MONSTER_DEFAULTS }));
-  setTool('path');
+  setTool('select');
   toast('已放置怪物 — 左鍵加入巡邏點，右鍵刪最後一點');
 }
 
 function addWaypoint(dim: DimIndex, x: number, y: number): void {
   const m = selectedMonster();
-  if (!m || selection?.kind !== 'monster') return toast('先用「怪物」或「選取」工具選一隻怪物');
+  if (!m || selection?.kind !== 'monster') return;
   if (selection.dim !== dim) return toast('路徑點必須在怪物所在的次元');
   const last = m.path[m.path.length - 1];
   if (last[0] === x && last[1] === y) return;
@@ -142,6 +142,28 @@ function deleteMonster(dim: DimIndex, id: string): void {
   render();
 }
 
+/**
+ * The select tool. With a monster selected, its own dimension is its patrol: left click adds a waypoint, right click
+ * drops the last, and only another monster's start changes the selection (Esc lets go). Otherwise a click picks the
+ * monster or cell under it.
+ */
+function selectAt(dim: DimIndex, x: number, y: number, right: boolean): void {
+  if (selection?.kind === 'monster' && selection.dim === dim) {
+    const other = monsterStartingAt(dim, x, y);
+    if (other && other.id !== selection.id) {
+      selection = { kind: 'monster', dim, id: other.id };
+      return render();
+    }
+    if (right) popWaypoint();
+    else if (!other) addWaypoint(dim, x, y);
+    return;
+  }
+  if (right) return;
+  const m = monsterAt(dim, x, y);
+  selection = m ? { kind: 'monster', dim, id: m.id } : { kind: 'cell', dim, x, y };
+  render();
+}
+
 // ---------------------------------------------------------------------------
 // pane input
 
@@ -152,23 +174,16 @@ for (const pane of panes) {
     if (!grid.inBounds(x, y)) return;
     const right = e.button === 2;
     const dim = pane.dim;
-    if (tool === 'paint') {
+    if (tool === 'terrain') {
       doc.beginStroke();
       stroke = { erase: right };
       paintAt(dim, x, y, right);
-    } else if (tool === 'select') {
-      const m = monsterAt(dim, x, y);
-      selection = m ? { kind: 'monster', dim, id: m.id } : { kind: 'cell', dim, x, y };
-      render();
     } else if (tool === 'monster') {
       if (right) {
         const m = monsterAt(dim, x, y);
         if (m) deleteMonster(dim, m.id);
       } else placeMonster(dim, x, y);
-    } else if (tool === 'path') {
-      if (right) popWaypoint();
-      else addWaypoint(dim, x, y);
-    }
+    } else selectAt(dim, x, y, right);
   });
   c.addEventListener('mousemove', (e) => {
     const { x, y } = pane.cellAt(e);
@@ -220,7 +235,7 @@ function renderToolbar(): void {
       (b.firstChild as HTMLElement).style.background = def.color;
       b.onclick = () => {
         brush = def.char;
-        setTool('paint');
+        setTool('terrain');
       };
       return b;
     }),
@@ -330,7 +345,7 @@ function renderInspector(): void {
       field('id', idIn),
       field('巡邏模式', mode),
       ...MONSTER_FIELDS.map((f) => field(f.label, numberInput(m[f.key] as number, f.min, f.max, f.step, (v) => edit((mm) => Object.assign(mm, { [f.key]: v }))))),
-      h('div', { className: 'muted' }, '路徑點（「路徑」工具在畫面上點擊新增）'),
+      h('div', { className: 'muted' }, '路徑點（選取中：左鍵在同次元加點、右鍵刪最後一點、Esc 取消選取）'),
       points,
       del,
     );
@@ -608,7 +623,7 @@ window.addEventListener('keydown', (e) => {
     const digit = /^Digit(\d)$/.exec(e.code);
     if (digit && BLOCKS[Number(digit[1]) - 1]) {
       brush = BLOCKS[Number(digit[1]) - 1].char;
-      setTool('paint');
+      setTool('terrain');
     }
     if ((e.code === 'Delete' || e.code === 'Backspace') && selection?.kind === 'monster') deleteMonster(selection.dim, selection.id);
     if (e.code === 'Escape') {

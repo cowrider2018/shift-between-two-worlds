@@ -29,7 +29,13 @@ Level JSON keeps one row per line for readable diffs; the format is in DESIGN.md
 
 `npm run gen -- [--rooms 3|3x4] [--tries 20000] [--evolve N] [--keep 40] [--seed N] [--levers 3] [--trolls 2] [--ghosts 1]`
 writes the best candidates to `levels-gen/` (one JSON per level plus `index.txt` with both maps, metrics and the route).
-Copy the ones worth playing into `levels/`. `npm run gen -- --check [files]` runs the same checks on existing levels.
+`npm run gen -- --check [files]` runs the same checks on existing levels.
+
+Sort through a batch in `/gallery.html` (dev server): both maps with the route drawn on, a step slider showing where
+the player is and which doors stand open, and three sections — the batch, **picks** (copied to `levels-picks/`, kept
+when the next batch replaces `levels-gen/`) and **rejects** (for this batch only). P pick, X reject, U unmark, Enter
+playtest, ←→ step, ↑↓ next level, 1/2/3 sections; `gallery.html#picks/<id>` links straight to a level. **加入正式關卡**
+copies a level into `levels/` and opens it in the editor (`editor.html?file=<stem>`).
 
 1. Sample a room lattice (rooms on odd cells, connectors between them, pillars on even cells): per dimension each
    connector is floor, a door or a chained door; one lever per channel; standing monsters; an exit on the border.

@@ -674,8 +674,12 @@ async function boot(): Promise<void> {
   } catch {
     /* ignore broken drafts */
   }
+  // ?file=<stem> (the gallery's "加入正式關卡") opens that level, unless an unsaved draft would be lost
+  const asked = new URLSearchParams(location.search).get('file');
+  const wanted = asked ? serverLevels?.find((l) => l.file === asked) : undefined;
+  if (asked && restored) toast(`有未存檔的草稿，${asked} 請從左側清單開啟`);
   if (!restored) {
-    const first = serverLevels?.[0];
+    const first = wanted ?? serverLevels?.[0];
     if (!(first && loadText(first.text, first.file))) render();
   }
   render();

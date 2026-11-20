@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SHIFT 生成關卡</title>
+    <style>
+      :root { --bg: #16131c; --panel: #211d29; --line: #352f40; --ink: #ece6f5; --muted: #9a92a8; --accent: #7ff0ff;
+        --pick: #ffd75e; --reject: #ff6b6b; --ok: #6be08a; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+        font: 13px/1.45 system-ui, "Microsoft JhengHei", sans-serif; }
+      body { display: grid; grid-template-columns: 280px 1fr 320px; grid-template-rows: 44px 1fr 26px; height: 100vh; }
+      header { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+      header .brand { font-weight: 800; letter-spacing: 3px; margin-right: 8px; }
+      header .grow { flex: 1; }
+      header a { color: var(--muted); }
+      #info { color: var(--muted); font-family: ui-monospace, monospace; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      button, select { font: inherit; color: var(--ink); background: #2c2736; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+      button { cursor: pointer; }
+      button:hover { border-color: #5a5068; }
+      button.active { background: #3a3150; border-color: var(--accent); }
+      button.primary { background: #2f5d66; border-color: #3f8a96; }
+      button.pick.on { background: #5c4c1c; border-color: var(--pick); }
+      button.reject.on { background: #5c2626; border-color: var(--reject); }
+      kbd { font: 11px ui-monospace, monospace; color: var(--muted); margin-left: 4px; }
+      aside { background: var(--panel); overflow: auto; }
+      aside.left { border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+      aside.right { border-left: 1px solid var(--line); padding: 10px; }
+      #tabs { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid var(--line); }
+      #tabs button { flex: 1; padding: 4px 2px; }
+      #sortbar { display: flex; gap: 6px; align-items: center; padding: 6px 8px; color: var(--muted); border-bottom: 1px solid var(--line); }
+      #sortbar select { flex: 1; }
+      #list { list-style: none; margin: 0; padding: 4px; overflow: auto; flex: 1; }
+      #list li { display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 6px; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+      #list li:hover { background: #ffffff0c; }
+      #list li.current { border-color: var(--accent); background: #3a315088; }
+      #list canvas { image-rendering: pixelated; align-self: center; }
+      #list .id { font-family: ui-monospace, monospace; font-size: 12px; }
+      #list .meta { color: var(--muted); font-size: 11px; }
+      .badge { font-size: 11px; padding: 0 4px; border-radius: 3px; margin-left: 4px; }
+      .badge.pick { background: #5c4c1c; color: var(--pick); } .badge.reject { background: #5c2626; color: var(--reject); }
+      #empty { color: var(--muted); padding: 16px; }
+      main { overflow: hidden; position: relative; display: flex; flex-direction: column; }
+      #panes { flex: 1; display: flex; gap: 24px; justify-content: center; align-items: center; padding: 16px; }
+      .pane-title { font-weight: 700; margin-bottom: 4px; }
+      .pane.dim0 .pane-title { color: #e0b878; } .pane.dim1 .pane-title { color: #9aa6ff; }
+      .pane canvas { display: block; box-shadow: 0 0 0 1px var(--line), 0 6px 24px #0008; }
+      .pane.here canvas { box-shadow: 0 0 0 2px var(--accent), 0 6px 24px #0008; }
+      #stepbar { display: flex; gap: 10px; align-items: center; padding: 8px 16px 14px; }
+      #stepbar input { flex: 1; }
+      #step-label { min-width: 240px; font-family: ui-monospace, monospace; }
+      h3 { margin: 14px 0 6px; font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+      h3:first-child { margin-top: 0; }
+      #title { font: 700 15px ui-monospace, monospace; }
+      #status-line { color: var(--muted); margin: 2px 0 8px; }
+      #actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      #actions button { display: flex; justify-content: space-between; align-items: center; }
+      #metrics { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; }
+      #metrics span:nth-child(odd) { color: var(--muted); }
+      #route { list-style: none; padding: 0; margin: 0; font-family: ui-monospace, monospace; font-size: 12px; }
+      #route li { padding: 1px 6px; border-radius: 3px; cursor: pointer; }
+      #route li:hover { background: #ffffff0c; }
+      #route li.done { color: var(--muted); }
+      #route li.now { background: #3a3150; color: var(--accent); }
+      footer { grid-column: 1 / -1; display: flex; gap: 16px; align-items: center; padding: 0 12px; background: var(--panel); border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+      #toast { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); background: #000d; padding: 6px 14px; border-radius: 4px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+      #toast.show { opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="brand">SHIFT</span><span>生成關卡</span>
+      <span id="info"></span>
+      <span class="grow"></span>
+      <button id="btn-reload" title="重新讀取 levels-gen/ 與 levels-picks/">重新整理</button>
+      <a href="./editor.html">編輯器</a>
+      <a href="./index.html">遊戲</a>
+    </header>
+    <aside class="left">
+      <div id="tabs"></div>
+      <div id="sortbar">排序 <select id="sort"></select></div>
+      <ol id="list"></ol>
+    </aside>
+    <main>
+      <div id="panes"></div>
+      <div id="stepbar">
+        <button id="btn-prev" title="←">◀</button>
+        <input id="step" type="range" min="0" max="0" value="0" />
+        <button id="btn-next" title="→">▶</button>
+        <span id="step-label"></span>
+      </div>
+    </main>
+    <aside class="right">
+      <div id="title"></div>
+      <div id="status-line"></div>
+      <div id="actions"></div>
+      <h3>數據</h3>
+      <div id="metrics"></div>
+      <h3>解法（點一步跳過去）</h3>
+      <ol id="route"></ol>
+    </aside>
+    <footer>
+      <span id="status"></span>
+      <span style="margin-left:auto">1/2/3 分區・↑↓ 或 J/K 換關・←→ 逐步・P 挑選・X 淘汰・U 取消標記・Enter 試玩</span>
+    </footer>
+    <div id="toast"></div>
+    <script type="module" src="/src/gallery/main.ts"></script>
+  </body>
+</html>

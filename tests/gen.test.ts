@@ -45,6 +45,18 @@ describe('generator model', () => {
     expect(a.status).toBe('ambiguous');
   });
 
+  it('forces a takedown when the troll looks down the only way on', () => {
+    // the troll faces the exit; the player comes up behind it, cuts its throat from the next cell and walks on.
+    // Stepping onto its cell first is the same takedown, not a second way (B is chained shut past the spawn)
+    const troll: MonsterDef = { id: 'm1', path: [[3, 1]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: 14, viewAngle: 70, facing: 0 };
+    const chained = Object.fromEntries([2, 3, 4, 5, 6].map((x) => [`${x},1`, door(9)]));
+    const level = corridor('#S.....E', '#.DDDDD#', [{ '7,1': { dir: 3 } }, chained], [[troll], []]);
+    const a = analyze(level);
+    expect(a.status).toBe('unique');
+    expect(a.route!.find((s) => s.type === 'kill')).toMatchObject({ x: 2, y: 1, monster: 'm1' });
+    expect(replay(level, a.route!).ok).toBe(true);
+  });
+
   it('generates levels that validate, are unique and win in the engine', () => {
     const r = rng(1);
     const made = [];

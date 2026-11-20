@@ -101,15 +101,14 @@ export function sample(r: Rng, o: GenOptions): Level {
     setProp(level, d, x, y, 'channel', ch);
   }
   const span = Math.max(W, H);
-  const facings = [0, 90, 180, 270];
   let n = 0;
   for (let i = int(r, 0, o.maxTrolls); i > 0 && free.length; i--) {
     const [x, y] = take();
-    level.dimensions[0].monsters.push(monster(`m${++n}`, x, y, pick(r, facings), span));
+    level.dimensions[0].monsters.push(monster(`m${++n}`, x, y, aim(level, 0, x, y, r), span));
   }
   for (let i = int(r, 0, o.maxGhosts); i > 0 && free.length; i--) {
     const [x, y] = take();
-    level.dimensions[1].monsters.push(monster(`m${++n}`, x, y, pick(r, facings), span));
+    level.dimensions[1].monsters.push(monster(`m${++n}`, x, y, aim(level, 1, x, y, r), span));
   }
 
   // exit: a border cell next to a room, rock in the other dimension
@@ -125,6 +124,18 @@ export function sample(r: Rng, o: GenOptions): Level {
   set(ed, ex, ey, 'E');
   setProp(level, ed, ex, ey, 'dir', dir);
   return level;
+}
+
+/**
+ * A facing for a monster at (x, y): toward an open neighbour when there is one. The engine has no body collision, so
+ * a monster staring at a wall blocks nothing and its kill is never forced; only a gaze down a passage the player must
+ * take can make a takedown the one way through.
+ */
+function aim(level: Level, d: DimIndex, x: number, y: number, r: Rng): number {
+  const open = ([[0, 1, 0], [90, 0, 1], [180, -1, 0], [270, 0, -1]] as const)
+    .filter(([, dx, dy]) => !['#', ' ', 'E'].includes(getChar(level, d, x + dx, y + dy)))
+    .map(([f]) => f);
+  return pick(r, open.length ? open : [0, 90, 180, 270]);
 }
 
 function getProp(level: Level, d: DimIndex, x: number, y: number, key: string) {
@@ -434,8 +445,8 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
     const all = l.dimensions.flatMap((d, di) => d.monsters.map((m) => [di, m] as const));
     const c = r();
     if (c < 0.4 && all.length) {
-      const [, m] = pick(r, all);
-      m.facing = pick(r, [0, 90, 180, 270]);
+      const [di, m] = pick(r, all);
+      m.facing = r() < 0.8 ? aim(l, di as DimIndex, m.path[0][0], m.path[0][1], r) : pick(r, [0, 90, 180, 270]);
     } else if (c < 0.6 && all.length) {
       const [di, m] = pick(r, all);
       l.dimensions[di].monsters = l.dimensions[di].monsters.filter((mm) => mm !== m);
@@ -446,7 +457,7 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
       const x = rx();
       const y = ry();
       if (!roomFree(x, y)) return l;
-      l.dimensions[di].monsters.push(monster(nextMonsterId(l), x, y, pick(r, [0, 90, 180, 270]), span));
+      l.dimensions[di].monsters.push(monster(nextMonsterId(l), x, y, aim(l, di as DimIndex, x, y, r), span));
     }
   } else {
     // the exit: to another border cell next to a room, in either dimension
@@ -467,7 +478,11 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
  * Hill-climb from the given candidates: mutate a few times, keep the child when it is a unique level scoring no lower
  * than its parent (neutral steps let unused structure pile up for later steps to use). Every unique child found on the way is reported, not only the improvements.
  */
-export function evolve(seeds: Candidate[], r: Rng, o: GenOptions, iterations: number, onFound: (c: Candidate) => void): void {
+export function evolve(
+  seeds: Candidate[], r: Rng, o: GenOptions, iterations: number, onFound: (c: Candidate) => void,
+  /** A child may replace its parent only when this holds (e.g. it keeps a required takedown). */
+  admit: (c: Candidate) => boolean = () => true,
+): void {
   const pool = [...seeds];
   if (!pool.length) return;
   for (let i = 0; i < iterations; i++) {
@@ -477,6 +492,6 @@ export function evolve(seeds: Candidate[], r: Rng, o: GenOptions, iterations: nu
     const c = finish(child, r);
     if (!c) continue;
     onFound(c);
-    if (c.score >= pool[pi].score) pool[pi] = c;
+    if (admit(c) && c.score >= pool[pi].score) pool[pi] = c;
   }
 }

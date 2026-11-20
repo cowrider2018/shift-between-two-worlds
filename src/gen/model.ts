@@ -8,8 +8,10 @@
  *  - strict: what the intended route may use. A monster's own cell is blocked, a cell counts as seen when any point
  *    the player's body can reach in it is seen, and a takedown is made from a 4-neighbouring cell only (A2).
  *  - loose: what a player could get away with in the engine. Monster cells are walkable (the engine has no body
- *    collision), a cell counts as seen only when all of it is, and a takedown may also come from the troll's own or a
- *    diagonal cell. Alternatives are searched for in this reading, so any route it finds is a real risk.
+ *    collision), a cell counts as seen only when all of it is, and a takedown may also come from a diagonal cell.
+ *    Not from the troll's own cell: the engine allows it, but the player reached that cell from a neighbour where the
+ *    same takedown was already open, so it is the same choice, not another way through. Alternatives are searched for
+ *    in this reading, so any route it finds is a real risk.
  *
  * Hot paths run on typed arrays: a position is `d * w * h + y * w + x`, a state is `mask * 2wh + position` with
  * `mask = kills << switches | levers`.
@@ -282,7 +284,7 @@ export class Model {
         const dy = ty - y;
         const ax = Math.abs(dx);
         const ay = Math.abs(dy);
-        if (strict ? ax + ay !== 1 : ax > 1 || ay > 1) continue;
+        if (strict ? ax + ay !== 1 : ax > 1 || ay > 1 || ax + ay === 0) continue;
         // a diagonal reach needs the corner between the two cells to be open
         if (ax === 1 && ay === 1 && solid[y * w + x + dx] && solid[(y + dy) * w + x]) continue;
         const nkm = km | (1 << i);

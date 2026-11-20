@@ -3,7 +3,7 @@
  * `npm run gen -- --check levels/a.json ...` — run the uniqueness model on existing levels instead.
  *
  * Options: --rooms 3 | 3x4 (rows x cols), --tries 20000, --evolve <tries>, --keep 40, --seed 1, --levers 3, --trolls 2, --ghosts 1,
- *          --out levels-gen
+ *          --min-kills 0 (keep and evolve only levels whose route has at least this many takedowns), --out levels-gen
  */
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -86,6 +86,9 @@ const seed = Number(flag('seed', String(Date.now() % 1e9)));
 const out = resolve(flag('out', 'levels-gen'));
 
 const evolveIters = Number(flag('evolve', String(tries)));
+const minKills = Number(flag('min-kills', '0'));
+/** Levels meeting --min-kills rank first; then by score. */
+const rank = (a: Candidate, b: Candidate) => Number(b.analysis.metrics!.kills >= minKills) - Number(a.analysis.metrics!.kills >= minKills) || b.score - a.score;
 
 const r = rng(seed);
 const found = new Map<string, Candidate>();
@@ -104,14 +107,15 @@ for (let i = 0; i < tries; i++) {
 // hill-climb from the best distinct seeds, a few rounds so improvements build on each other
 const rounds = 4;
 for (let k = 0; k < rounds; k++) {
-  const seeds = [...found.values()].sort((a, b) => b.score - a.score).slice(0, Math.max(keep, 20));
-  evolve(seeds, r, opts, Math.ceil(evolveIters / rounds), add);
+  const seeds = [...found.values()].sort(rank).slice(0, Math.max(keep, 20));
+  evolve(seeds, r, opts, Math.ceil(evolveIters / rounds), add, (c) => c.analysis.metrics!.kills >= minKills);
   process.stdout.write(`\r演化 ${k + 1}/${rounds}  成功 ${made}  不重複 ${found.size}   `);
 }
 // near-duplicates (one evolved family) share their shifts, pulls and kills: keep the best of each
 const family = (route: Action[]) => route.filter((a) => a.type !== 'move').map((a) => `${a.type}${a.dim}${a.x},${a.y}`).join(' ');
 const families = new Set<string>();
-const best = [...found.values()].sort((a, b) => b.score - a.score).filter((c) => {
+const best = [...found.values()].sort(rank).filter((c) => {
+  if (c.analysis.metrics!.kills < minKills) return false;
   const f = family(c.analysis.route!);
   if (families.has(f)) return false;
   families.add(f);

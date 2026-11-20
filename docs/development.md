@@ -27,7 +27,7 @@ Level JSON keeps one row per line for readable diffs; the format is in DESIGN.md
 
 ## Generating levels
 
-`npm run gen -- [--rooms 3|3x4] [--tries 20000] [--evolve N] [--keep 40] [--seed N] [--levers 3] [--trolls 2] [--ghosts 1]`
+`npm run gen -- [--rooms 3|3x4] [--tries 20000] [--evolve N] [--keep 40] [--seed N] [--levers 3] [--trolls 2] [--ghosts 1] [--min-kills 1]`
 writes the best candidates to `levels-gen/` (one JSON per level plus `index.txt` with both maps, metrics and the route).
 `npm run gen -- --check [files]` runs the same checks on existing levels.
 

@@ -27,9 +27,10 @@ Level JSON keeps one row per line for readable diffs; the format is in DESIGN.md
 
 ## Generating levels
 
-`npm run gen -- [--rooms 3|3x4] [--tries 20000] [--evolve N] [--keep 40] [--seed N] [--levers 3] [--trolls 2] [--ghosts 1] [--patrol 0.5] [--min-kills 1] [--min-patrols 1]`
+`npm run gen -- [--rooms 3|3x4] [--tries 20000] [--evolve N] [--keep 40] [--seed N] [--levers 3] [--trolls 2] [--ghosts 1] [--patrol 0.5] [--min-kills 1] [--min-patrols 1] [--jobs 4]`
 writes the best candidates to `levels-gen/` (one JSON per level plus `index.txt` with both maps, metrics and the route).
-`npm run gen -- --check [files]` runs the same checks on existing levels.
+`npm run gen -- --check [files]` runs the same checks on existing levels. The work runs on worker threads (`--jobs`, by
+default half the logical cores); a seed gives the same levels at any thread count.
 
 Sort through a batch in `/gallery.html` (dev server): both maps with the route drawn on, a step slider showing where
 the player is and which doors stand open, and three sections — the batch, **picks** (copied to `levels-picks/`, kept

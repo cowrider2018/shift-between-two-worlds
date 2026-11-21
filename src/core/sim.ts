@@ -155,19 +155,35 @@ export class MonsterState {
    * patrol in step: one that takes whole ticks between cells still does after turning back at a door. A door shut
    * after it has passed that centre stops it at the door's edge instead. It checks afresh every time it comes back,
    * so once the door is open it walks straight through.
+   *
+   * Time carries over: what is left of the frame after it stops goes into its turn, and what is left after the turn
+   * into walking on, so a patrol keeps the same pace at any frame rate.
    */
   update(dt: number, blocked: (cx: number, cy: number) => boolean = () => false): void {
-    const n = this.ring.length;
-    if (!this.alive || this.risen || n < 2) return;
-    if (this.stopped) {
+    if (!this.alive || this.risen || this.ring.length < 2) return;
+    for (let i = 0; i < 8 && dt > 1e-12; i++) dt = this.stopped ? this.turn(dt) : this.walk(dt, blocked);
+  }
+
+  /** Stand turning for up to dt; the time left once the pause is over and it faces its heading. */
+  private turn(dt: number): number {
+    const h = this.heading();
+    const need = Math.max(this.pauseT, Math.abs(angleDiff(h, this.angle)) / TUNING.monsterTurnSpeed);
+    if (dt < need) {
       this.pauseT -= dt;
-      const h = this.heading();
       this.turnTowards(h, dt, this.turnSign);
-      if (this.pauseT > 0 || Math.abs(angleDiff(h, this.angle)) > 1e-6) return;
-      this.stopped = false;
-      return;
+      return 0;
     }
-    let left = this.def.speed * dt;
+    this.angle = h;
+    this.pauseT = 0;
+    this.stopped = false;
+    return dt - need;
+  }
+
+  /** Walk for up to dt; the time left when it stops to turn. */
+  private walk(dt: number, blocked: (cx: number, cy: number) => boolean): number {
+    const n = this.ring.length;
+    const speed = this.def.speed;
+    let left = speed * dt;
     while (left > 1e-12) {
       this.angle = this.heading();
       const ux = this.segUx[this.seg] * this.dir;
@@ -186,7 +202,7 @@ export class MonsterState {
             this.place();
             this.dir = -this.dir;
             this.stop();
-            return;
+            return (left - toCentre) / speed;
           }
         }
       }
@@ -197,12 +213,12 @@ export class MonsterState {
       if ((ax !== Math.floor(this.x) || ay !== Math.floor(this.y)) && blocked(ax, ay)) {
         this.dir = -this.dir;
         this.stop();
-        return;
+        return left / speed;
       }
       if (left < togo) {
         this.t += this.dir * left;
         this.place();
-        return;
+        return 0;
       }
       left -= togo;
       let v: number;
@@ -218,9 +234,10 @@ export class MonsterState {
       this.place();
       if (this.corner[v]) {
         this.stop();
-        return;
+        return left / speed;
       }
     }
+    return 0;
   }
 
   /** Turn towards `a` at the monster's turn speed, the shorter way; `tie` picks the way when it is an about-face. */

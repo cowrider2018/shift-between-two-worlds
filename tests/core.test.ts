@@ -248,6 +248,20 @@ describe('patrol as one continuous ring', () => {
     }
   };
 
+  it('keeps the same pace at any frame rate: time left over at a stop or a turn carries on', () => {
+    const at = (fps: number) => {
+      const l = createEmptyLevel('t', 11, 9);
+      l.dimensions[0].monsters.push({ id: 'm', path: [[1, 4], [7, 4], [7, 1]], mode: 'loop', speed: 1.6, pause: 0.6, viewRadius: 1, viewAngle: 10, facing: 0 });
+      const sim = new Sim(l);
+      sim.dim = 1;
+      for (let i = 0; i < 20 * fps; i++) sim.update(NO_INPUT, 1 / fps);
+      return sim.monsters[0];
+    };
+    const a = at(60);
+    const b = at(240);
+    expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeLessThan(0.02);
+  });
+
   it('walks straight through nodes that do not change direction, without stopping or turning', () => {
     const sim = field('pingpong', [[1, 4], [3, 4], [5, 4], [8, 4]]);
     let still = 0;

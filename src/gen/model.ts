@@ -1053,6 +1053,8 @@ export interface Metrics {
   moves: number;
   /** Ticks spent waiting for a monster to pass. */
   waits: number;
+  /** The route only wins in the engine with its waits (set by the generator, which replays; the model leaves it unset). */
+  timed?: boolean;
   shifts: number;
   /** Shifts that only carry on down a straight run of them (see straightShifts). */
   straightShifts: number;

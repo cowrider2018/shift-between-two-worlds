@@ -500,7 +500,8 @@ export function score(m: Metrics): number {
   const base = 3 * m.pulls + 2 * (m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + KILL_POINTS * m.kills + INTERLEAVE_POINTS * m.interleaves + 2 * (m.leverStates - 1) + 2 * m.revisits + 2 * Math.log2(1 + m.traps)
     - 2 * m.chained - 0.1 * m.cells
     // every monster left after minimizing is load-bearing; one on patrol counts PATROL_BONUS times one standing still
-    + MONSTER_POINTS * (m.standing + PATROL_BONUS * m.patrolling);
+    + MONSTER_POINTS * (m.standing + PATROL_BONUS * m.patrolling)
+    + (m.timed ? TIMING_POINTS : 0);
   // a lever that drives fewer doors is clearer: divide by 1 + DOOR_DIVISOR per door beyond the first
   const f = 1 + DOOR_DIVISOR * Math.max(0, m.doorsPerLever - 1);
   return base > 0 ? base / f : base * f;
@@ -509,6 +510,8 @@ export function score(m: Metrics): number {
 export const MONSTER_POINTS = 2;
 /** A takedown is the tensest thing the game asks for and the hardest to generate: twice a pull. */
 export const KILL_POINTS = 6;
+/** The route has to time itself around a patrol: without its waits it does not win. */
+export const TIMING_POINTS = 4;
 export const STRAIGHT_SHIFT_COST = 1;
 /** Per change of decision kind along the route (shift → pull, pull → takedown, ...): the route asks for different things. */
 export const INTERLEAVE_POINTS = 2;
@@ -538,8 +541,9 @@ export function finish(raw: Level, r: Rng): Candidate | null {
   // the strict reading waits more than the game needs: when the route waits but also wins without waiting, patrols
   // that only time the route decorate (A1: idle), so they stand still and the level is made again. A patrol the doors
   // confine needs no waiting to matter: minimizing already showed that standing still changes the level
+  a.metrics.timed = timingMatters(tidied, a.route!);
   const waits = a.route!.some((s) => s.type === 'wait');
-  if (a.metrics.patrolling > a.metrics.throughDoors && waits && !timingMatters(tidied, a.route!)) {
+  if (a.metrics.patrolling > a.metrics.throughDoors && waits && !a.metrics.timed) {
     const still = clone(raw);
     let stood = 0;
     for (const d of still.dimensions) for (const m of d.monsters) if (m.path.length > 1 && !crossesDoor(still, d, m)) {

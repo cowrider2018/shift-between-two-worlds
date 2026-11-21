@@ -152,7 +152,9 @@ async function main(): Promise<void> {
     maxLevers: Number(flag('levers', String(DEFAULT_OPTIONS.maxLevers))),
     // n takedowns need at least n trolls; the monsters asked for need room too
     maxTrolls: Math.max(minKills, minPatrols + minStanding, Number(flag('trolls', String(DEFAULT_OPTIONS.maxTrolls)))),
-    maxGhosts: Number(flag('ghosts', String(DEFAULT_OPTIONS.maxGhosts))),
+    // patrols asked for: as many may be ghosts, which cannot be taken down (a troll blocking a way can be, and the
+    // level then has a second way through)
+    maxGhosts: Math.max(minPatrols, Number(flag('ghosts', String(DEFAULT_OPTIONS.maxGhosts)))),
     // chasing patrols: almost every new monster walks; chasing standing monsters too: walking or not by their shares
     patrol: given.has('patrol') ? Number(flag('patrol', '')) : minPatrols > 0 ? (minStanding > 0 ? minPatrols / (minPatrols + minStanding) : 0.9) : minStanding > 0 ? 0.2 : DEFAULT_OPTIONS.patrol,
     // chasing takedowns or monsters: a third of mutations add an aimed (and maybe walking) troll, else one in ten

@@ -36,7 +36,7 @@ export interface GenOptions {
   maxChained: number;
 }
 
-export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, addTroll: 0, patrol: 0.5, routePatrol: 0.1, maxChained: Infinity };
+export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, patrol: 0.5, routePatrol: 0.1, maxChained: Infinity, addTroll: 0.1 };
 
 export type Rng = () => number;
 
@@ -497,7 +497,7 @@ export function canonicalKey(level: Level): string {
 /** A rough "worth playing" number; the metrics themselves are in the index for sorting by hand. */
 export function score(m: Metrics): number {
   // a shift down a straight run of them is no decision: it scores nothing and costs STRAIGHT_SHIFT_COST
-  const base = 3 * m.pulls + 2 * (m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + 3 * m.kills + INTERLEAVE_POINTS * m.interleaves + 2 * (m.leverStates - 1) + 2 * m.revisits + 2 * Math.log2(1 + m.traps)
+  const base = 3 * m.pulls + 2 * (m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + KILL_POINTS * m.kills + INTERLEAVE_POINTS * m.interleaves + 2 * (m.leverStates - 1) + 2 * m.revisits + 2 * Math.log2(1 + m.traps)
     - 2 * m.chained - 0.1 * m.cells
     // every monster left after minimizing is load-bearing; one on patrol counts PATROL_BONUS times one standing still
     + MONSTER_POINTS * (m.standing + PATROL_BONUS * m.patrolling);
@@ -507,6 +507,8 @@ export function score(m: Metrics): number {
 }
 
 export const MONSTER_POINTS = 2;
+/** A takedown is the tensest thing the game asks for and the hardest to generate: twice a pull. */
+export const KILL_POINTS = 6;
 export const STRAIGHT_SHIFT_COST = 1;
 /** Per change of decision kind along the route (shift → pull, pull → takedown, ...): the route asks for different things. */
 export const INTERLEAVE_POINTS = 2;

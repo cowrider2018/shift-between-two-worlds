@@ -155,8 +155,8 @@ async function main(): Promise<void> {
     maxGhosts: Number(flag('ghosts', String(DEFAULT_OPTIONS.maxGhosts))),
     // chasing patrols: almost every new monster walks; chasing standing monsters too: walking or not by their shares
     patrol: given.has('patrol') ? Number(flag('patrol', '')) : minPatrols > 0 ? (minStanding > 0 ? minPatrols / (minPatrols + minStanding) : 0.9) : minStanding > 0 ? 0.2 : DEFAULT_OPTIONS.patrol,
-    // chasing takedowns or monsters: a third of mutations add an aimed (and maybe walking) troll
-    addTroll: minKills > 0 || minPatrols > 0 || minStanding > 0 ? 0.3 : 0,
+    // chasing takedowns or monsters: a third of mutations add an aimed (and maybe walking) troll, else one in ten
+    addTroll: minKills > 0 || minPatrols > 0 || minStanding > 0 ? 0.3 : DEFAULT_OPTIONS.addTroll,
     // chasing patrols: a third of mutations lay one across the route
     routePatrol: minPatrols > 0 ? 0.35 : DEFAULT_OPTIONS.routePatrol,
     maxChained,

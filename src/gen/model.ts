@@ -52,6 +52,22 @@ const MAX_REACHED = 3_000_000;
 
 const MONSTER_CACHE = new Map<string, Mon | string>();
 
+/**
+ * The dense search's tables, shared by every model (searches never overlap) and grown as needed: minimizing builds
+ * hundreds of models of one level, and fresh tables for each (tens of megabytes when the states multiply up) were
+ * most of the memory traffic. A state counts as seen when its stamp is the current search's number.
+ */
+let TABLES: { parent: Int32Array; stamp: Uint32Array; gen: number; queue: Int32Array; via: Uint8Array; viaArg: Int32Array } | null = null;
+
+function searchTables(n: number) {
+  if (!TABLES || TABLES.parent.length < n) {
+    const size = Math.min(MAX_DENSE, Math.max(n, Math.ceil((TABLES?.parent.length ?? 0) * 1.5)));
+    TABLES = { parent: new Int32Array(size), stamp: new Uint32Array(size), gen: TABLES?.gen ?? 0, queue: new Int32Array(size), via: new Uint8Array(size), viaArg: new Int32Array(size) };
+  }
+  TABLES.gen++;
+  return TABLES;
+}
+
 /** A search ran past MAX_REACHED states. */
 export class StateLimit extends Error {
   constructor() {
@@ -116,6 +132,12 @@ interface Mover {
   poses: Pose[];
 }
 
+/** The player's sample points in a cell (x, y pairs): centre, corners and edge middles of the body. */
+const SAMPLES = (() => {
+  const r = TUNING.playerHalfSize;
+  return Float64Array.of(0.5, 0.5, r, r, 1 - r, r, r, 1 - r, 1 - r, 1 - r, 0.5, r, 0.5, 1 - r, r, 0.5, 1 - r, 0.5);
+})();
+
 const MOVE = 0;
 const SHIFT = 1;
 const LEVER = 2;
@@ -150,11 +172,17 @@ export class Model {
   private readonly exitAt: Uint8Array;
   private readonly stepShut: Uint8Array;
   private readonly leverAt: Int8Array;
+  /** Position steps east, west, south, north. */
+  private readonly dirs: Int32Array;
   private readonly solidCache = new Map<number, Uint8Array>();
   private readonly doorKeyCache = new Map<number, string[]>();
   private readonly maskCache = new Map<string, Uint16Array>();
   private readonly viewCache = new Map<number, Uint8Array>();
-  private buf: { parent: Int32Array; stamp: Uint32Array; gen: number; queue: Int32Array; via: Uint8Array; viaArg: Int32Array } | null = null;
+  /** Views and masks are cut from big blocks: a small typed array of its own costs a trip to the system allocator, which
+   *  worker threads queue up for. */
+  private readonly bytes = new Slab(Uint8Array);
+  private readonly words = new Slab(Uint16Array);
+  private looseScratch: Uint16Array | null = null;
 
   constructor(readonly level: Level) {
     const grid = (this.grid = new LevelGrid(level));
@@ -165,6 +193,7 @@ export class Model {
     const all = grid.all();
     this.spawn = all.find((c) => c.def.behavior === 'spawn') ?? null;
     this.leverAt = new Int8Array(this.P).fill(-1);
+    this.dirs = Int32Array.of(1, -1, w, -w);
     for (const c of all) {
       if (c.def.behavior !== 'lever' || this.switchOf.has(c)) continue;
       const i = this.switchChannel.length;
@@ -422,7 +451,7 @@ export class Model {
   private solid(lm: number): Uint8Array {
     let s = this.solidCache.get(lm);
     if (s) return s;
-    s = new Uint8Array(this.P);
+    s = this.bytes.take(this.P);
     const ch = this.channelFn(lm);
     for (let d = 0; d < 2; d++)
       for (let y = 0; y < this.h; y++)
@@ -449,25 +478,24 @@ export class Model {
     const { w, h, wh, grid } = this;
     const ch = this.channelFn(lm);
     const solid = this.solid(lm);
-    out = new Uint16Array(wh);
+    out = this.words.take(wh);
     const opaque = (cx: number, cy: number) => grid.opaque(d, cx, cy, ch);
     const walled = (ax: number, ay: number, bx: number, by: number) => grid.walled(d, ax, ay, bx, by);
-    const r = TUNING.playerHalfSize;
-    const samples: [number, number][] = [[0.5, 0.5], [r, r], [1 - r, r], [r, 1 - r], [1 - r, 1 - r], [0.5, r], [0.5, 1 - r], [r, 0.5], [1 - r, 0.5]];
     const reach = m.radius + 1.5;
+    const r2 = m.radius * m.radius;
     for (let y = Math.max(0, Math.floor(p.y - reach)); y < Math.min(h, p.y + reach); y++)
       for (let x = Math.max(0, Math.floor(p.x - reach)); x < Math.min(w, p.x + reach); x++) {
         if (solid[d * wh + y * w + x]) continue;
         let bits = 0;
-        samples.forEach(([sx, sy], i) => {
-          const dx = x + sx - p.x;
-          const dy = y + sy - p.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist > m.radius) return;
+        for (let i = 0; i < SAMPLES.length; i += 2) {
+          const dx = x + SAMPLES[i] - p.x;
+          const dy = y + SAMPLES[i + 1] - p.y;
+          if (dx * dx + dy * dy > r2) continue;
+          const dist = Math.sqrt(dx * dx + dy * dy);
           const a = Math.atan2(dy, dx);
-          if (Math.abs(angleDiff(a, p.angle)) > m.half) return;
-          if (castRay(p.x, p.y, Math.cos(a), Math.sin(a), dist, opaque, walled) >= dist - 1e-6) bits |= 1 << i;
-        });
+          if (Math.abs(angleDiff(a, p.angle)) > m.half) continue;
+          if (castRay(p.x, p.y, Math.cos(a), Math.sin(a), dist, opaque, walled) >= dist - 1e-6) bits |= 1 << (i >> 1);
+        }
         out[y * w + x] = bits;
       }
     this.maskCache.set(k, out);
@@ -484,8 +512,8 @@ export class Model {
     const hit = this.viewCache.get(key);
     if (hit) return hit;
     const { wh, w } = this;
-    const out = new Uint8Array(this.P);
-    const loose = new Uint16Array(this.P);
+    const out = this.bytes.take(this.P);
+    const loose = (this.looseScratch ??= new Uint16Array(this.P)).fill(0);
     const ALL = (1 << 9) - 1;
     const watch = (key: string, d: DimIndex, p: Pose, m: Mon, sub: number) => {
       const mk = this.mask(key, d, p, m, lm);
@@ -544,82 +572,99 @@ export class Model {
 
   /** Successors of s into the out arrays; returns how many. `banned` marks positions the player may not enter. */
   expand(s: number, strict: boolean, banned: Uint8Array | null, to: Float64Array, kind: Uint8Array, arg: Int32Array): number {
-    const { pos, d, x, y, lm, mc, t } = this.parts(s);
+    const P = this.P;
+    const pos = s % P;
     if (this.exitAt[pos]) return 0;
-    const { wh, w, L } = this;
+    const { wh, w, L, LM, M } = this;
+    let r = (s - pos) / P;
+    const lm = r % LM;
+    r = (r - lm) / LM;
+    const mc = r % M;
+    const t = (r - mc) / M;
+    const d = pos >= wh ? 1 : 0;
     const t1 = (t + 1) % L;
+    const dirs = this.dirs;
+    const stepShut = this.stepShut;
     let n = 0;
-    const push = (np: number, nlm: number, nmc: number, nt: number, k: number, a = 0) => {
-      to[n] = this.state(np, nlm, nmc, nt);
+    const emit = (np: number, nlm: number, nmc: number, nt: number, k: number, a: number) => {
+      to[n] = ((nt * M + nmc) * LM + nlm) * P + np;
       kind[n] = k;
       arg[n] = a;
       n++;
     };
-    const dirs = [1, -1, w, -w];
     // the monster states once this tick is over (a pull changes the doors for the whole tick)
     const nmc = this.advance(mc, lm);
     const sw = this.leverAt[pos];
     const op = d ? pos - wh : pos + wh;
+    const solid = this.solid(lm);
     if (strict) {
       // every action is checked over its own tick, on the cells the player is in during it: a step's both cells, a
       // shift's landing cell (it happens on the tick's first frame), a pull's or a wait's own cell
-      const safe = (p: number, l: number, m: number, tt: number) => !this.solid(l)[p] && !(banned && banned[p]) && !(this.view(l, m, tt)[p] & 6);
-      const here = safe(pos, lm, mc, t);
-      if (here) {
-        push(pos, lm, nmc, t1, WAIT);
+      const view = this.view(lm, mc, t);
+      const safe = (p: number) => !solid[p] && !(banned && banned[p]) && !(view[p] & 6);
+      if (safe(pos)) {
+        emit(pos, lm, nmc, t1, WAIT, 0);
         for (let k = 0; k < 4; k++) {
-          if (this.stepShut[pos * 4 + k]) continue;
+          if (stepShut[pos * 4 + k]) continue;
           const np = pos + dirs[k];
-          if (safe(np, lm, mc, t)) push(np, lm, nmc, t1, MOVE);
+          if (safe(np)) emit(np, lm, nmc, t1, MOVE, 0);
         }
       }
-      if (!this.exitAt[op] && safe(op, lm, mc, t)) push(op, lm, nmc, t1, SHIFT);
+      if (!this.exitAt[op] && safe(op)) emit(op, lm, nmc, t1, SHIFT, 0);
       if (sw >= 0) {
         const nlm = lm ^ (1 << sw);
         // pulling can open a door onto a watcher
-        if (safe(pos, nlm, mc, t)) push(pos, nlm, this.advance(mc, nlm), t1, LEVER);
+        if (!this.solid(nlm)[pos] && !(banned && banned[pos]) && !(this.view(nlm, mc, t)[pos] & 6)) emit(pos, nlm, this.advance(mc, nlm), t1, LEVER, 0);
       }
     } else {
-      if (this.ok(pos, lm, nmc, t1, false, banned)) push(pos, lm, nmc, t1, WAIT);
+      const view = this.view(lm, nmc, t1);
+      const open = (p: number) => !solid[p] && !(banned && banned[p]) && !(view[p] & 1);
+      if (open(pos)) emit(pos, lm, nmc, t1, WAIT, 0);
       for (let k = 0; k < 4; k++) {
-        if (this.stepShut[pos * 4 + k]) continue;
+        if (stepShut[pos * 4 + k]) continue;
         const np = pos + dirs[k];
-        if (this.ok(np, lm, nmc, t1, false, banned)) push(np, lm, nmc, t1, MOVE);
+        if (!open(np)) continue;
+        emit(np, lm, nmc, t1, MOVE, 0);
         // running covers two cells in a tick
-        if (!this.solid(lm)[np] && !(banned && banned[np]) && !(this.view(lm, nmc, t1)[np] & 1))
-          for (let k2 = 0; k2 < 4; k2++) {
-            if (this.stepShut[np * 4 + k2]) continue;
-            const np2 = np + dirs[k2];
-            if (np2 !== pos && this.ok(np2, lm, nmc, t1, false, banned)) push(np2, lm, nmc, t1, RUN);
-          }
+        for (let k2 = 0; k2 < 4; k2++) {
+          if (stepShut[np * 4 + k2]) continue;
+          const np2 = np + dirs[k2];
+          if (np2 !== pos && open(np2)) emit(np2, lm, nmc, t1, RUN, 0);
+        }
       }
-      if (!this.exitAt[op] && this.ok(op, lm, nmc, t1, false, banned)) push(op, lm, nmc, t1, SHIFT);
+      if (!this.exitAt[op] && open(op)) emit(op, lm, nmc, t1, SHIFT, 0);
       if (sw >= 0) {
         const nlm = lm ^ (1 << sw);
         const pmc = this.advance(mc, nlm);
-        if (this.ok(pos, nlm, pmc, t1, false, banned)) push(pos, nlm, pmc, t1, LEVER);
+        if (this.ok(pos, nlm, pmc, t1, false, banned)) emit(pos, nlm, pmc, t1, LEVER, 0);
       }
     }
-    if (d === 0)
-      this.trolls.forEach((m, i) => {
-        if (this.deadClass(mc, i) >= 0) return;
+    if (d === 0 && this.trolls.length) {
+      const cell = pos;
+      const x = cell % w;
+      const y = (cell - x) / w;
+      for (let i = 0; i < this.trolls.length; i++) {
+        const m = this.trolls[i];
+        const q = this.digit(mc, m);
+        if (q >= m.alive) continue;
         const p = this.pose(m, mc, lm, t, 0);
         const ax = Math.abs(Math.floor(p.x) - x);
         const ay = Math.abs(Math.floor(p.y) - y);
-        if (strict ? ax + ay !== 1 : ax > 1 || ay > 1 || ax + ay === 0) return;
-        const q = this.digit(mc, m);
+        if (strict ? ax + ay !== 1 : ax > 1 || ay > 1 || ax + ay === 0) continue;
         const cls = m.mover ? m.deadAt[q] : m.deadAt[t % m.period];
         let kmc = mc + (m.alive + cls - q) * m.base;
         const ticks = strict ? TAKEDOWN_TICKS : LOOSE_TAKEDOWN_TICKS;
         // the player stays where they are, and must stay unseen, until the takedown is over (strict: through each of
         // its ticks; loose: at each tick that follows)
-        for (let k = strict ? 0 : 1; k <= (strict ? ticks - 1 : ticks); k++) {
+        let seen = false;
+        for (let k = strict ? 0 : 1; k <= (strict ? ticks - 1 : ticks) && !seen; k++) {
           if (!strict) kmc = this.advance(kmc, lm);
-          if (!this.ok(pos, lm, kmc, (t + k) % L, strict, banned)) return;
+          if (!this.ok(pos, lm, kmc, (t + k) % L, strict, banned)) seen = true;
           if (strict) kmc = this.advance(kmc, lm);
         }
-        push(pos, lm, kmc, (t + ticks) % L, KILL, i);
-      });
+        if (!seen) emit(pos, lm, kmc, (t + ticks) % L, KILL, i);
+      }
+    }
     return n;
   }
 
@@ -630,10 +675,7 @@ export class Model {
   }
 
   private bfsBuffers() {
-    const N = this.stateCount;
-    if (!this.buf) this.buf = { parent: new Int32Array(N), stamp: new Uint32Array(N), gen: 0, queue: new Int32Array(N), via: new Uint8Array(N), viaArg: new Int32Array(N) };
-    this.buf.gen++;
-    return this.buf;
+    return searchTables(this.stateCount);
   }
 
   /**
@@ -737,51 +779,123 @@ export class Model {
   }
 
   /**
-   * Every reachable state, which of them can still reach the exit (alive), and the kill edges [from, to, troll].
+   * Every reachable state: how many, how many can no longer reach the exit (traps), and the kill edges with the troll
+   * killed and whether the exit can still be reached after it (from both ends).
    */
-  explore(mode: Mode): { reached: number[]; alive: Set<number>; kills: [number, number, number][] } {
+  explore(mode: Mode): { states: number; traps: number; kills: { s: number; troll: number; alive: boolean }[] } {
     const strict = mode === 'strict';
-    const reached: number[] = [];
-    const kills: [number, number, number][] = [];
-    const alive = new Set<number>();
     const start = this.startState(mode);
-    if (start < 0) return { reached, alive, kills };
-    const index = new Map<number, number>([[start, 0]]);
+    if (start < 0) return { states: 0, traps: 0, kills: [] };
+    // state number → index among the reached: in the shared tables while they fit, else a map
+    const dense = this.stateCount <= MAX_DENSE;
+    const tb = dense ? this.bfsBuffers() : null;
+    const map = dense ? null : new Map<number, number>();
+    const indexOf = (s: number) => (tb ? (tb.stamp[s] === tb.gen ? tb.parent[s] : -1) : (map!.get(s) ?? -1));
+    const reached = new Grow(Float64Array);
+    const edges = new Grow(Int32Array);
+    const killEdges: number[] = [];
+    const add = (s: number) => {
+      const i = reached.length;
+      if (i > MAX_REACHED) throw new StateLimit();
+      if (tb) {
+        tb.stamp[s] = tb.gen;
+        tb.parent[s] = i;
+      } else map!.set(s, i);
+      reached.push(s);
+      return i;
+    };
     const { to, kind, arg } = this.buffers();
-    const back: number[][] = [[]];
-    const stack = [start];
-    reached.push(start);
+    add(start);
+    const stack = new Grow(Int32Array);
+    stack.push(0);
     while (stack.length) {
-      const s = stack.pop()!;
-      const si = index.get(s)!;
-      const n = this.expand(s, strict, null, to, kind, arg);
+      const si = stack.pop();
+      const n = this.expand(reached.at(si), strict, null, to, kind, arg);
       for (let i = 0; i < n; i++) {
-        const t = to[i];
-        if (kind[i] === KILL) kills.push([s, t, arg[i]]);
-        let ti = index.get(t);
-        if (ti === undefined) {
-          ti = reached.length;
-          if (ti > MAX_REACHED) throw new StateLimit();
-          index.set(t, ti);
-          reached.push(t);
-          back.push([]);
-          stack.push(t);
+        let ti = indexOf(to[i]);
+        if (ti < 0) {
+          ti = add(to[i]);
+          stack.push(ti);
         }
-        back[ti].push(si);
+        edges.push(si);
+        edges.push(ti);
+        if (kind[i] === KILL) killEdges.push(si, ti, arg[i]);
       }
     }
-    const q: number[] = [];
-    reached.forEach((s, i) => {
-      if (this.exitAt[s % this.P]) {
-        alive.add(s);
-        q.push(i);
-      }
-    });
-    while (q.length) for (const p of back[q.pop()!]) if (!alive.has(reached[p])) {
-      alive.add(reached[p]);
-      q.push(p);
+    // alive: can reach the exit; walk the edges backwards from the exits
+    const N = reached.length;
+    const E = edges.length / 2;
+    const start2 = new Int32Array(N + 1);
+    for (let e = 0; e < E; e++) start2[edges.at(2 * e + 1) + 1]++;
+    for (let i = 0; i < N; i++) start2[i + 1] += start2[i];
+    const fill = start2.slice(0, N);
+    const from = new Int32Array(E);
+    for (let e = 0; e < E; e++) from[fill[edges.at(2 * e + 1)]++] = edges.at(2 * e);
+    const alive = new Uint8Array(N);
+    const q = new Int32Array(N);
+    let qn = 0;
+    for (let i = 0; i < N; i++) if (this.exitAt[reached.at(i) % this.P]) {
+      alive[i] = 1;
+      q[qn++] = i;
     }
-    return { reached, alive, kills };
+    while (qn) {
+      const i = q[--qn];
+      for (let e = start2[i]; e < start2[i + 1]; e++) if (!alive[from[e]]) {
+        alive[from[e]] = 1;
+        q[qn++] = from[e];
+      }
+    }
+    let traps = 0;
+    for (let i = 0; i < N; i++) if (!alive[i]) traps++;
+    const kills: { s: number; troll: number; alive: boolean }[] = [];
+    for (let k = 0; k < killEdges.length; k += 3)
+      kills.push({ s: reached.at(killEdges[k]), troll: killEdges[k + 2], alive: !!(alive[killEdges[k]] && alive[killEdges[k + 1]]) });
+    return { states: N, traps, kills };
+  }
+}
+
+/** Hands out zeroed pieces of big blocks. */
+class Slab<A extends Uint8Array | Uint16Array> {
+  private block: A | null = null;
+  private used = 0;
+
+  constructor(private readonly make: new (n: number) => A) {}
+
+  take(n: number): A {
+    if (!this.block || this.used + n > this.block.length) {
+      this.block = new this.make(Math.max(n, 1 << 15));
+      this.used = 0;
+    }
+    const piece = this.block.subarray(this.used, this.used + n) as A;
+    this.used += n;
+    return piece;
+  }
+}
+
+/** A growable typed array. */
+class Grow<A extends Int32Array | Float64Array> {
+  private data: A;
+  length = 0;
+
+  constructor(private readonly make: new (n: number) => A) {
+    this.data = new make(1024);
+  }
+
+  push(v: number): void {
+    if (this.length === this.data.length) {
+      const bigger = new this.make(this.data.length * 2);
+      bigger.set(this.data);
+      this.data = bigger;
+    }
+    this.data[this.length++] = v;
+  }
+
+  pop(): number {
+    return this.data[--this.length];
+  }
+
+  at(i: number): number {
+    return this.data[i];
   }
 }
 
@@ -999,11 +1113,11 @@ export function check(m: Model, route: Action[]): Analysis {
   }
   // every kill that still lets you win is the route's kill, made from the route's cell (at any moment)
   const routeKills = new Set(route.filter((a) => a.type === 'kill').map((a) => `${a.monster}@${a.x},${a.y}`));
-  const { reached, alive, kills } = m.explore('loose');
-  for (const [s, t, i] of kills) {
-    if (!alive.has(s) || !alive.has(t)) continue;
+  const { states, traps, kills } = m.explore('loose');
+  for (const { s, troll, alive } of kills) {
+    if (!alive) continue;
     const { x, y } = m.parts(s);
-    const id = m.trolls[i].id;
+    const id = m.trolls[troll].id;
     if (!routeKills.has(`${id}@${x},${y}`)) return { status: 'ambiguous', reason: `在 A(${x},${y}) 殺 ${id} 也能贏`, route };
   }
 
@@ -1033,8 +1147,8 @@ export function check(m: Model, route: Action[]): Analysis {
       kills: routeKills.size,
       leverStates: masks.size,
       revisits,
-      traps: reached.filter((s) => !alive.has(s)).length,
-      states: reached.length,
+      traps,
+      states,
       chained: all.filter((c) => m.grid.chained(c)).length,
       standing: monsters - m.patrolling,
       patrolling: m.patrolling,

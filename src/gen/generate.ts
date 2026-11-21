@@ -26,9 +26,11 @@ export interface GenOptions {
   roomHole: number;
   /** Chance a connector is rock in both dimensions. */
   connWall: number;
+  /** Chance a mutation adds a troll aimed down a passage (raised when takedowns are the goal). */
+  addTroll: number;
 }
 
-export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2 };
+export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, addTroll: 0 };
 
 export type Rng = () => number;
 
@@ -359,8 +361,19 @@ export function canonicalKey(level: Level): string {
 
 /** A rough "worth playing" number; the metrics themselves are in the index for sorting by hand. */
 export function score(m: Metrics): number {
-  return 3 * m.pulls + 2 * m.shifts + 3 * m.kills + 2 * (m.leverStates - 1) + 2 * m.revisits + 2 * Math.log2(1 + m.traps) - 2 * m.chained - 0.1 * m.cells;
+  const base = 3 * m.pulls + 2 * m.shifts + 3 * m.kills + 2 * (m.leverStates - 1) + 2 * m.revisits + 2 * Math.log2(1 + m.traps)
+    - 2 * m.chained - 0.1 * m.cells
+    // every monster left after minimizing is load-bearing; one on patrol counts PATROL_BONUS times one standing still
+    + MONSTER_POINTS * (m.standing + PATROL_BONUS * m.patrolling);
+  // a lever that drives fewer doors is clearer: divide by 1 + DOOR_DIVISOR per door beyond the first
+  const f = 1 + DOOR_DIVISOR * Math.max(0, m.doorsPerLever - 1);
+  return base > 0 ? base / f : base * f;
 }
+
+export const MONSTER_POINTS = 2;
+export const PATROL_BONUS = 1.75;
+/** 2 doors per lever → score ÷ 1.5, 3 → ÷ 2, 4 → ÷ 2.5. */
+export const DOOR_DIVISOR = 0.5;
 
 export interface Candidate {
   /** Tidied: cropped and dug out, ready to save. */
@@ -400,6 +413,16 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
   const roomFree = (x: number, y: number) => ['.'].includes(getChar(l, 0, x, y)) && getChar(l, 1, x, y) === '.' && !monsterAt(x, y);
   const rx = () => 2 * int(r, 0, o.cols - 1) + 1;
   const ry = () => 2 * int(r, 0, o.rows - 1) + 1;
+  if (r() < o.addTroll && l.dimensions[0].monsters.length < o.maxTrolls) {
+    // try a few rooms: a troll needs a free one
+    for (let k = 0; k < 6; k++) {
+      const x = rx();
+      const y = ry();
+      if (!roomFree(x, y)) continue;
+      l.dimensions[0].monsters.push(monster(nextMonsterId(l), x, y, aim(l, 0, x, y, r), span));
+      return l;
+    }
+  }
   const kind = r();
   if (kind < 0.45) {
     // a connector: per dimension floor / door / chained, or rock in both
@@ -480,8 +503,9 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
  */
 export function evolve(
   seeds: Candidate[], r: Rng, o: GenOptions, iterations: number, onFound: (c: Candidate) => void,
-  /** A child may replace its parent only when this holds (e.g. it keeps a required takedown). */
-  admit: (c: Candidate) => boolean = () => true,
+  /** Ranking (negative: a before b). A child replaces its parent when it ranks no lower, so a goal ranked ahead of the
+   *  score (e.g. takedowns toward a target) is climbed one step at a time and never given up. */
+  rank: (a: Candidate, b: Candidate) => number = (a, b) => b.score - a.score,
 ): void {
   const pool = [...seeds];
   if (!pool.length) return;
@@ -492,6 +516,6 @@ export function evolve(
     const c = finish(child, r);
     if (!c) continue;
     onFound(c);
-    if (admit(c) && c.score >= pool[pi].score) pool[pi] = c;
+    if (rank(c, pool[pi]) <= 0) pool[pi] = c;
   }
 }

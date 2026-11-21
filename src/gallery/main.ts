@@ -395,7 +395,8 @@ function renderDetail(): void {
   const m = e.analysis.metrics;
   $('metrics').replaceChildren(...(m ? [
     ['分數', e.score.toFixed(1)], ['步數', m.moves], ['轉移', m.shifts], ['拉桿', `${m.pulls}（${m.leverStates} 種狀態）`], ['擊殺', m.kills],
-    ['回頭', m.revisits], ['陷阱狀態', `${m.traps} / ${m.states}`], ['鐵鍊門', m.chained], ['可走格', m.cells],
+    ['回頭', m.revisits], ['陷阱狀態', `${m.traps} / ${m.states}`], ['鐵鍊門', m.chained], ['每根拉桿控制門數', m.doorsPerLever.toFixed(1)],
+    ['怪物', `站樁 ${m.standing}・巡邏 ${m.patrolling}`], ['可走格', m.cells],
   ] : [['狀態', e.analysis.status], ['原因', e.analysis.reason ?? '']]).flatMap(([k, v]) => [h('span', {}, String(k)), h('span', {}, String(v))]));
   const route = e.analysis.route ?? [];
   $('route').replaceChildren(...route.map((a, i) => h('li', {

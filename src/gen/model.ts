@@ -442,6 +442,11 @@ export interface Metrics {
   /** Reachable states in all (loose reading). */
   states: number;
   chained: number;
+  /** Monsters standing still and monsters on patrol (the model only takes standing ones so far). */
+  standing: number;
+  patrolling: number;
+  /** Doors per lever, averaged over the levers (1 when there are none). */
+  doorsPerLever: number;
   /** Walkable cells in both dimensions. */
   cells: number;
 }
@@ -514,6 +519,11 @@ export function check(m: Model, route: Action[]): Analysis {
       traps: reached.filter((s) => !alive[s]).length,
       states: reached.length,
       chained: all.filter((c) => m.grid.chained(c)).length,
+      standing: m.trolls.length + m.ghosts.length,
+      patrolling: 0,
+      doorsPerLever: m.switches
+        ? m.switchChannel.reduce((s, ch) => s + all.filter((c) => c.def.behavior === 'door' && Number(c.props.channel) === ch).length, 0) / m.switches
+        : 1,
       cells: all.filter((c) => c.def.solid !== 'always' || c.def.behavior === 'door').length,
     },
   };

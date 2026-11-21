@@ -27,7 +27,7 @@ Level JSON keeps one row per line for readable diffs; the format is in DESIGN.md
 
 ## Generating levels
 
-`npm run gen -- [--rooms 3|3x4] [--tries 20000] [--evolve N] [--keep 40] [--seed N] [--levers 3] [--trolls 2] [--ghosts 1] [--patrol 0.5] [--min-kills 1] [--min-patrols 1] [--min-standing 1] [--max-chained 0] [--max-straight-shifts 0] [--jobs 4]`
+`npm run gen -- [--rooms 3|3x4] [--tries 20000] [--evolve N] [--keep 40] [--seed N] [--levers 3] [--trolls 2] [--ghosts 1] [--patrol 0.5] [--min-kills 1] [--min-patrols 1] [--min-standing 1] [--max-chained 0] [--max-straight-shifts 0] [--fill 40 [--max-rounds 20]] [--jobs 4]`
 writes the best candidates to `levels-gen/` (one JSON per level plus `index.txt` with both maps, metrics and the route).
 `npm run gen -- --check [files]` runs the same checks on existing levels. The work runs on worker threads (`--jobs`, by
 default half the logical cores); a seed gives the same levels at any thread count.
@@ -65,7 +65,9 @@ copies a level into `levels/` and opens it in the editor (`editor.html?file=<ste
 patrolling monsters / monsters standing still. `--max-chained N` keeps only levels with at most N chained doors (sampling
 and mutation stop laying them at the limit; minimizing a lever away can still chain its doors). A straight shift is one
 that only carries on a run down a corridor (one or two steps after the last shift, the same way before and after, nothing
-else in between); it scores nothing and costs a point, and `--max-straight-shifts N` caps them.
+else in between); it scores nothing and costs a point, and `--max-straight-shifts N` caps them. `--fill N` repeats
+whole rounds (sampling and evolution at the given `--tries` / `--evolve`, each round from fresh random streams and
+climbing from its own finds) until N levels from different families meet the filters, or `--max-rounds` have run.
 `--check` reports a level as unsupported when a patrol's speed or pause is not the default, when its path is not
 made of horizontal and vertical legs, or when a search passes three million states.
 

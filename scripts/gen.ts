@@ -6,6 +6,8 @@
  *          --patrol 0.5 (chance a new monster patrols), --min-kills 0 (keep and evolve only levels whose route has at least this many takedowns), --min-patrols 0 (likewise for patrolling monsters), --min-standing 0 (likewise for monsters standing still),
  *          --max-chained <doors> (keep only levels with at most this many chained doors),
  *          --max-straight-shifts <shifts> (likewise for shifts down a straight run of them), --out levels-gen,
+ *          --fill <levels> (run whole rounds of --tries and --evolve, each from fresh random streams, until that many
+ *          levels meet the filters, or --max-rounds 20 have run; the levels kept build up over the rounds),
  *          --jobs <threads> (worker threads, default half the logical cores)
  *
  * The work runs on worker threads (this same file, run as a worker) as a queue of small jobs: sampling in batches of
@@ -24,7 +26,7 @@ import { analyze, describeRoute, type Action, type Analysis, type Metrics } from
 import { replay } from '../src/gen/replay';
 
 const args = process.argv.slice(2);
-const FLAGS = ['rooms', 'tries', 'evolve', 'keep', 'seed', 'levers', 'trolls', 'ghosts', 'patrol', 'min-kills', 'min-patrols', 'min-standing', 'max-chained', 'max-straight-shifts', 'out', 'jobs'];
+const FLAGS = ['rooms', 'tries', 'evolve', 'keep', 'seed', 'levers', 'trolls', 'ghosts', 'patrol', 'min-kills', 'min-patrols', 'min-standing', 'max-chained', 'max-straight-shifts', 'fill', 'max-rounds', 'out', 'jobs'];
 /** --name value or --name=value. An unknown option stops the run: a typo must not silently fall back to a default. */
 const given = new Map<string, string>();
 if (isMainThread && args[0] !== '--check') {
@@ -160,7 +162,9 @@ async function main(): Promise<void> {
     maxChained,
   };
   const tries = Number(flag('tries', '20000'));
-  const keep = Number(flag('keep', '40'));
+  const fill = Number(flag('fill', '0'));
+  const keep = Number(flag('keep', String(fill || 40)));
+  const maxRounds = fill ? Number(flag('max-rounds', '20')) : 1;
   const seed = Number(flag('seed', String(Date.now() % 1e9)));
   const out = resolve(flag('out', 'levels-gen'));
 
@@ -169,13 +173,17 @@ async function main(): Promise<void> {
   const jobs = Math.max(1, Number(flag('jobs', String(Math.max(1, Math.floor(availableParallelism() / 2))))));
   const rank = ranking(goals);
 
+  /** Every distinct level found, over all rounds; pool: this round's, which its evolution climbs from. */
   const found = new Map<string, Candidate>();
+  const pool = new Map<string, Candidate>();
   const t0 = Date.now();
   let made = 0;
   const add = (c: Candidate) => {
     made++;
-    const old = found.get(c.key);
-    if (!old || c.score > old.score) found.set(c.key, c);
+    for (const m of [found, pool]) {
+      const old = m.get(c.key);
+      if (!old || c.score > old.score) m.set(c.key, c);
+    }
   };
   const workers = Array.from({ length: jobs }, () => new Worker(fileURLToPath(import.meta.url), { workerData: { opts, goals } }));
   /** Run the jobs on the free workers as they come free; then merge the finds in job order. */
@@ -210,34 +218,53 @@ async function main(): Promise<void> {
   // every job its own random stream, from the seed, the phase and the job's number
   const streamSeed = (phase: number, k: number) => (seed + Math.imul(0x9e3779b1, phase * 1_000_003 + k + 1)) >>> 0;
   const share = (n: number, k: number, parts: number) => Math.floor(n / parts) + (k < n % parts ? 1 : 0);
-  const batches = Math.ceil(tries / SAMPLE_BATCH);
-  await runAll(Array.from({ length: batches }, (_, k) => ({ kind: 'sample', seed: streamSeed(0, k), tries: share(tries, k, batches) })), (n) => {
-    if (n % 20 === 0 || n === batches) process.stdout.write(`\r抽樣 ${Math.min(tries, n * SAMPLE_BATCH)}/${tries}（${jobs} 執行緒）  成功 ${made}   `);
-  });
-  process.stdout.write(`\r抽樣 ${tries}/${tries}  成功 ${made}  不重複 ${found.size}   `);
-  // hill-climb from the best distinct seeds, a few rounds so improvements build on each other
-  const rounds = 4;
-  for (let k = 0; k < rounds; k++) {
-    const seeds = [...found.values()].sort(rank).slice(0, Math.max(keep, 20));
-    const iterations = Math.ceil(evolveIters / rounds);
-    await runAll(seeds.map((from, j) => ({ kind: 'evolve', seed: streamSeed(k + 1, j), from, iterations: share(iterations, j, seeds.length) })), () => {});
-    process.stdout.write(`\r演化 ${k + 1}/${rounds}  成功 ${made}  不重複 ${found.size}   `);
-  }
-  await Promise.all(workers.map((w) => w.terminate()));
   // near-duplicates (one evolved family) share their shifts, pulls and kills: keep the best of each
   const family = (route: Action[]) => route.filter((a) => a.type !== 'move' && a.type !== 'wait').map((a) => `${a.type}${a.dim}${a.x},${a.y}`).join(' ');
-  const families = new Set<string>();
-  const best = [...found.values()].sort(rank).filter((c) => {
-    if (!meets(goals, c.analysis.metrics!)) return false;
-    const f = family(c.analysis.route!);
-    if (families.has(f)) return false;
-    families.add(f);
-    return true;
-  }).slice(0, keep);
+  /** The best level of each family that meets the goals, best first. */
+  const select = () => {
+    const families = new Set<string>();
+    return [...found.values()].sort(rank).filter((c) => {
+      if (!meets(goals, c.analysis.metrics!)) return false;
+      const f = family(c.analysis.route!);
+      if (families.has(f)) return false;
+      families.add(f);
+      return true;
+    });
+  };
+  const batches = Math.ceil(tries / SAMPLE_BATCH);
+  // hill-climb from the best distinct seeds, a few rounds so improvements build on each other
+  const rounds = 4;
+  let ran = 0;
+  let met = 0;
+  while (ran < maxRounds) {
+    // each round's phases come after the last round's, so every round draws fresh streams
+    const phase = ran * (rounds + 1);
+    const tr = Date.now();
+    pool.clear();
+    await runAll(Array.from({ length: batches }, (_, k) => ({ kind: 'sample', seed: streamSeed(phase, k), tries: share(tries, k, batches) })), (n) => {
+      if (n % 20 === 0 || n === batches) process.stdout.write(`抽樣 ${Math.min(tries, n * SAMPLE_BATCH)}/${tries}（${jobs} 執行緒）  成功 ${made}   `);
+    });
+    process.stdout.write(`抽樣 ${tries}/${tries}  成功 ${made}  不重複 ${found.size}   `);
+    for (let k = 0; k < rounds; k++) {
+      const seeds = [...pool.values()].sort(rank).slice(0, Math.max(keep, 20));
+      const iterations = Math.ceil(evolveIters / rounds);
+      await runAll(seeds.map((from, j) => ({ kind: 'evolve', seed: streamSeed(phase + k + 1, j), from, iterations: share(iterations, j, seeds.length) })), () => {});
+      process.stdout.write(`演化 ${k + 1}/${rounds}  成功 ${made}  不重複 ${found.size}   `);
+    }
+    ran++;
+    if (!fill) break;
+    const before = met;
+    met = select().length;
+    console.log(`第 ${ran} 輪：達標 ${met}/${fill} 關（本輪 +${met - before}，${((Date.now() - tr) / 1000).toFixed(1)}s）              `);
+    if (met >= fill) break;
+  }
+  await Promise.all(workers.map((w) => w.terminate()));
+  const meeting = select();
+  const best = meeting.slice(0, keep);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   const options = [...given].map(([k, v]) => `--${k} ${v}`).join(' ') || '（預設）';
-  const index: string[] = [`seed ${seed}  ${options}  成功 ${made}  不重複 ${found.size}  不同解法 ${families.size}  ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+  const index: string[] = [`seed ${seed}  ${options}  ${fill ? `${ran} 輪  ` : ''}成功 ${made}  不重複 ${found.size}  達標不同解法 ${meeting.length}  ${((Date.now() - t0) / 1000).toFixed(1)}s`,
     '圖例：數字 = 門的頻道，字母 = 反相門（a=1），= 鐵鍊門，L 拉桿，> v < ^ 怪物朝向，S 出生，E 出口', ''];
   best.forEach((c, i) => {
     const id = `gen_${seed}_${String(i + 1).padStart(2, '0')}`;
@@ -256,6 +283,6 @@ async function main(): Promise<void> {
     };
     const asked = [...entries(goals.min).filter(([, v]) => v > 0), ...entries(goals.max)].map(([k]) => k);
     const goal = [...entries(goals.min).filter(([, v]) => v > 0).map(([k, v]) => `${LABEL[k] ?? k} ≥ ${v}`), ...entries(goals.max).map(([k, v]) => `${LABEL[k] ?? k} ≤ ${v}`)].join('、');
-    console.log(`⚠ 只有 ${best.length} 關達到 ${goal}（要 ${keep} 關）。找到的不重複關卡——${asked.map(spread).join('；')}。加大 --tries / --evolve，或放大 --rooms`);
+    console.log(`⚠ 只有 ${best.length} 關達到 ${goal}（要 ${keep} 關）。找到的不重複關卡——${asked.map(spread).join('；')}。${fill ? `跑滿 ${maxRounds} 輪仍不足：放寬條件、加大 --max-rounds，或放大 --rooms` : '加大 --tries / --evolve、改用 --fill，或放大 --rooms'}`);
   }
 }

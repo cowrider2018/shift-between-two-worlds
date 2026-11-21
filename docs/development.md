@@ -68,6 +68,25 @@ that only carries on a run down a corridor (one or two steps after the last shif
 else in between); it scores nothing and costs a point, and `--max-straight-shifts N` caps them. `--fill N` repeats
 whole rounds (sampling and evolution at the given `--tries` / `--evolve`, each round from fresh random streams and
 climbing from its own finds) until N levels from different families meet the filters, or `--max-rounds` have run.
+The score (`score()` in `src/gen/generate.ts`) ranks levels once the filters are met:
+
+| Term | Points |
+| --- | --- |
+| lever pull | +3 each |
+| shift (not straight) | 2·√n |
+| straight shift | −1 each |
+| takedown | +6 each |
+| change of decision kind (shift / pull / takedown) | +2 each |
+| lever settings passed through | +2 each beyond the first |
+| revisited cell | +2 each |
+| trap entrance | +2 each, up to 5 |
+| monster standing / patrolling | +2 / +3.5 each |
+| route must wait for a patrol | +4 |
+| chained door | −2 each |
+| walkable cell | −0.1 each |
+
+The sum is then divided (multiplied when negative) by 1 + 0.5 per door a lever drives beyond the first, on average.
+
 `--check` reports a level as unsupported when a patrol's speed or pause is not the default, when its path is not
 made of horizontal and vertical legs, or when a search passes three million states.
 

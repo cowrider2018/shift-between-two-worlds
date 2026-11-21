@@ -570,6 +570,32 @@ export class Model {
     return this.ok(pos, 0, 0, 0, mode === 'strict', null) ? this.state(pos, 0, 0, 0) : -1;
   }
 
+  /**
+   * The strict route with its action `skip` (a pull) left out, a wait in its place: the index of the first later action
+   * it can no longer take (the same kind of action to the same place), or -1 when it still gets through, or when it
+   * cannot even wait there.
+   */
+  firstBlockedWithout(route: Action[], skip: number): number {
+    const { to, kind, arg } = this.buffers();
+    let cur = skip === 0 ? this.startState('strict') : route[skip - 1].state!;
+    const KINDS: Record<Action['type'], number[]> = { move: [MOVE, RUN], wait: [WAIT], shift: [SHIFT], lever: [LEVER], kill: [KILL] };
+    const take = (want: number[], pos: number) => {
+      const n = this.expand(cur, true, null, to, kind, arg);
+      for (let i = 0; i < n; i++) if (want.includes(kind[i]) && to[i] % this.P === pos) return to[i];
+      return -1;
+    };
+    const here = cur % this.P;
+    cur = take([WAIT], here);
+    if (cur < 0) return -1;
+    for (let i = skip + 1; i < route.length; i++) {
+      const a = route[i];
+      const next = take(KINDS[a.type], a.dim * this.wh + a.y * this.w + a.x);
+      if (next < 0) return i;
+      cur = next;
+    }
+    return -1;
+  }
+
   /** Successors of s into the out arrays; returns how many. `banned` marks positions the player may not enter. */
   expand(s: number, strict: boolean, banned: Uint8Array | null, to: Float64Array, kind: Uint8Array, arg: Int32Array): number {
     const P = this.P;
@@ -1070,6 +1096,10 @@ export interface Metrics {
   straightShifts: number;
   pulls: number;
   kills: number;
+  /** Pulls on the longest chain of pulls that each need the one before (see dependencies). */
+  depth: number;
+  /** Pairs of pulls where the later needs the earlier. */
+  links: number;
   /** Decisions (shift, pull, takedown) followed by one of another kind: the route mixes them rather than repeating one. */
   interleaves: number;
   /** Distinct lever settings the route passes through. */
@@ -1165,6 +1195,7 @@ export function check(m: Model, route: Action[]): Analysis {
       pulls: route.filter((a) => a.type === 'lever').length,
       kills: routeKills.size,
       interleaves: interleaves(route),
+      ...dependencies(m, route),
       leverStates: masks.size,
       revisits,
       traps,
@@ -1180,6 +1211,28 @@ export function check(m: Model, route: Action[]): Analysis {
       cells: all.filter((c) => c.def.solid !== 'always' || c.def.behavior === 'door').length,
     },
   };
+}
+
+/**
+ * How the route's pulls hang together. Pull j needs pull i (before it) when, with i left out (a wait in its place,
+ * everything else as the route does it), the route breaks before it gets to j: i opened a door on the way, shut one
+ * against a monster's sight, or confined a patrol, and j lies beyond. Pulls that only matter at the end need nothing of
+ * each other. depth: the most pulls on one chain of such needs; links: how many pairs need each other.
+ */
+export function dependencies(m: Model, route: Action[]): { depth: number; links: number } {
+  const pulls = route.flatMap((a, i) => (a.type === 'lever' ? [i] : []));
+  const breaks = pulls.map((p) => m.firstBlockedWithout(route, p));
+  const chain: number[] = [];
+  let links = 0;
+  pulls.forEach((j, b) => {
+    let below = 0;
+    for (let a = 0; a < b; a++) if (breaks[a] >= 0 && breaks[a] <= j) {
+      links++;
+      below = Math.max(below, chain[a]);
+    }
+    chain.push(below + 1);
+  });
+  return { depth: pulls.length ? Math.max(...chain) : 0, links };
 }
 
 /** Consecutive decisions (shift, pull, takedown; steps and waits between them do not count) of different kinds. */

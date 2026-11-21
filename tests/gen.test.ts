@@ -5,7 +5,7 @@ import { LEVEL_FORMAT, MONSTER_DEFAULTS, createEmptyLevel, parseLevel, setCell, 
 import { NO_INPUT, Sim } from '../src/core/sim';
 import { validateLevel } from '../src/core/validate';
 import { DEFAULT_OPTIONS, canonicalKey, generateOne, rng, timingMatters, transform } from '../src/gen/generate';
-import { Model, TICK, analyze, interleaves, straightShifts, type Action } from '../src/gen/model';
+import { Model, TICK, analyze, dependencies, interleaves, straightShifts, type Action } from '../src/gen/model';
 import { replay } from '../src/gen/replay';
 
 /** A one-row level: rows for A and B, props per dimension. */
@@ -136,6 +136,18 @@ describe('generator model', () => {
     const pull: Action = { type: 'lever', dim: 0, x: 1, y: 1, on: true };
     // shift shift (same) → pull (change) → wait, step → shift (change)
     expect(interleaves([a('shift'), a('move', 2), a('shift'), pull, a('wait'), a('move', 3), a('shift')])).toBe(2);
+  });
+
+  it('chains a pull to the one it opens the way to, not to one that only matters at the end', () => {
+    const walls = '#######';
+    // lever 1 opens the door to lever 2, whose door leads out: 2 deep, 1 link
+    const chained = corridor('#SLDLDE', walls, [{ '2,1': { channel: 1 }, '3,1': door(1), '4,1': { channel: 2 }, '5,1': door(2), '6,1': { dir: 3 } }, {}]);
+    const m = new Model(chained);
+    expect(dependencies(m, m.route('strict')!)).toEqual({ depth: 2, links: 1 });
+    // both levers side by side, both doors at the end: neither needs the other
+    const apart = corridor('#SLLDDE', walls, [{ '2,1': { channel: 1 }, '3,1': { channel: 2 }, '4,1': door(1), '5,1': door(2), '6,1': { dir: 3 } }, {}]);
+    const n = new Model(apart);
+    expect(dependencies(n, n.route('strict')!)).toEqual({ depth: 1, links: 0 });
   });
 
   it('gives mirror images and rotations one key', () => {

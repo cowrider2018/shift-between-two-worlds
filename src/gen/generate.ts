@@ -498,7 +498,8 @@ export function canonicalKey(level: Level): string {
 export function score(m: Metrics): number {
   // shifts score with diminishing returns (1 → 2, 4 → 4, 9 → 6): stacking them is not a puzzle. One down a straight
   // run of them is no decision: it scores nothing and costs STRAIGHT_SHIFT_COST
-  const base = 3 * m.pulls + 2 * Math.sqrt(m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + KILL_POINTS * m.kills + INTERLEAVE_POINTS * m.interleaves + 2 * (m.leverStates - 1) + 2 * m.revisits + TRAP_POINTS * Math.min(m.trapEntrances, TRAP_CAP)
+  const base = 3 * m.pulls + 2 * Math.sqrt(m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + KILL_POINTS * m.kills + INTERLEAVE_POINTS * m.interleaves
+    + DEPTH_POINTS * Math.max(0, m.depth - 1) + LINK_POINTS * m.links + 2 * (m.leverStates - 1) + 2 * m.revisits + TRAP_POINTS * Math.min(m.trapEntrances, TRAP_CAP)
     - 2 * m.chained - 0.1 * m.cells
     // every monster left after minimizing is load-bearing; one on patrol counts PATROL_BONUS times one standing still
     + MONSTER_POINTS * (m.standing + PATROL_BONUS * m.patrolling)
@@ -509,6 +510,10 @@ export function score(m: Metrics): number {
 }
 
 export const MONSTER_POINTS = 2;
+/** Per pull on the longest chain of pulls that need each other, beyond the first, and per pair that does (see
+ *  dependencies): mechanisms that work together, not side by side. */
+export const DEPTH_POINTS = 4;
+export const LINK_POINTS = 2;
 /** A takedown is the tensest thing the game asks for and the hardest to generate: twice a pull. */
 export const KILL_POINTS = 6;
 /** The route has to time itself around a patrol: without its waits it does not win. */

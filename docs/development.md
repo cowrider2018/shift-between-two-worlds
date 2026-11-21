@@ -77,6 +77,8 @@ The score (`score()` in `src/gen/generate.ts`) ranks levels once the filters are
 | straight shift | −1 each |
 | takedown | +6 each |
 | change of decision kind (shift / pull / takedown) | +2 each |
+| pull on the longest chain of pulls that need each other | +4 each beyond the first |
+| pair of pulls where the later needs the earlier | +2 each |
 | lever settings passed through | +2 each beyond the first |
 | revisited cell | +2 each |
 | trap entrance | +2 each, up to 5 |
@@ -85,6 +87,8 @@ The score (`score()` in `src/gen/generate.ts`) ranks levels once the filters are
 | chained door | −2 each |
 | walkable cell | −0.1 each |
 
+A pull needs an earlier one when, with the earlier left out (a wait in its place), the route breaks before it gets to
+the later one: a door opened on the way, a door shut against a monster's sight, a patrol confined.
 The sum is then divided (multiplied when negative) by 1 + 0.5 per door a lever drives beyond the first, on average.
 
 `--check` reports a level as unsupported when a patrol's speed or pause is not the default, when its path is not

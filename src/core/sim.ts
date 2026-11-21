@@ -149,9 +149,12 @@ export class MonsterState {
 
   /**
    * Patrol one step along the ring, at an even pace: straight through nodes that do not change direction, stopping only
-   * at turns. `blocked` reports cells it cannot walk into right now (walls, closed doors): on reaching one the monster
-   * stops at its edge, turns about and walks the ring the other way, so it paces whatever part it can reach to and fro.
-   * It checks afresh every time it comes back, so once the door is open it walks straight through.
+   * at turns. `blocked` reports cells it cannot walk into right now (walls, closed doors): a monster about to walk into
+   * one turns back at the centre of the cell before it, stopping and turning there as at any turn of its patrol, and
+   * walks the ring the other way, so it paces whatever part it can reach to and fro. Turning at a cell centre keeps a
+   * patrol in step: one that takes whole ticks between cells still does after turning back at a door. A door shut
+   * after it has passed that centre stops it at the door's edge instead. It checks afresh every time it comes back,
+   * so once the door is open it walks straight through.
    */
   update(dt: number, blocked: (cx: number, cy: number) => boolean = () => false): void {
     const n = this.ring.length;
@@ -170,6 +173,23 @@ export class MonsterState {
       const ux = this.segUx[this.seg] * this.dir;
       const uy = this.segUy[this.seg] * this.dir;
       const togo = this.dir > 0 ? this.segLen[this.seg] - this.t : this.t;
+      // a straight leg between cell centres passes a cell centre every whole cell: turn back at the one before a shut
+      // cell (not at the leg's far end: that node is a turn of its own)
+      if ((ux === 0 || uy === 0) && togo > 1e-9) {
+        const near = Math.round(this.t);
+        const toCentre = Math.abs(this.t - near) < 1e-6 ? 0 : this.dir > 0 ? Math.ceil(this.t) - this.t : this.t - Math.floor(this.t);
+        if (toCentre <= left && (toCentre === 0 || toCentre < togo - 1e-9)) {
+          const cx = Math.floor(this.x + ux * (toCentre + 1));
+          const cy = Math.floor(this.y + uy * (toCentre + 1));
+          if (blocked(cx, cy)) {
+            this.t = toCentre === 0 ? near : this.t + this.dir * toCentre;
+            this.place();
+            this.dir = -this.dir;
+            this.stop();
+            return;
+          }
+        }
+      }
       // probe just ahead of the body: stepping into a blocked cell turns the monster round instead
       const reach = Math.min(left, togo) + TUNING.monsterBumpReach;
       const ax = Math.floor(this.x + ux * reach);

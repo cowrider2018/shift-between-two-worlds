@@ -199,10 +199,24 @@ describe('patrol blocked by a closed door', () => {
       if (d && d !== dir) { turns++; dir = d; }
       last = x;
     });
-    expect(max).toBeLessThan(5);
-    expect(max).toBeGreaterThan(4.6);
+    // it turns back at the centre of the cell before the door, as at any turn of its patrol
+    expect(max).toBeCloseTo(4.5, 5);
     expect(min).toBeCloseTo(2.5, 5);
     expect(turns).toBeGreaterThanOrEqual(4);
+  });
+
+  it('stops at the door edge when the door shuts after it has passed the last centre', () => {
+    const sim = new Sim(corridor('pingpong', [[2, 2], [8, 2]]));
+    sim.x = 1.5; sim.y = 4.5;
+    const channels = (sim as unknown as { channels: Map<number, boolean> }).channels;
+    channels.set(1, true);
+    // walk on until just past (4.5, 2), then shut the door in its face
+    while (sim.monsters[0].x < 4.6) sim.update(NO_INPUT, 1 / 60);
+    channels.set(1, false);
+    let max = 0;
+    run(sim, 3, (x) => { max = Math.max(max, x); });
+    expect(max).toBeLessThan(5);
+    expect(max).toBeGreaterThan(4.6);
   });
 
   it('walks straight through once the door opens', () => {

@@ -558,7 +558,12 @@ export function finish(raw: Level, r: Rng): Candidate | null {
     if (!stood) for (const d of still.dimensions) for (const m of d.monsters) if (m.path.length > 1) standStill(m);
     return finish(still, r);
   }
-  return { level: tidied, lattice: raw, analysis: a, key: canonicalKey(tidied), score: score(a.metrics) };
+  // mutation goes on from the lattice, but without the monsters minimizing removed: they would hold the slots
+  // (maxTrolls, maxGhosts) that new monsters need
+  const kept = new Set(level.dimensions.flatMap((d) => d.monsters.map((m) => m.id)));
+  const lattice = clone(raw);
+  for (const d of lattice.dimensions) d.monsters = d.monsters.filter((m) => kept.has(m.id));
+  return { level: tidied, lattice, analysis: a, key: canonicalKey(tidied), score: score(a.metrics) };
 }
 
 /** The patrol walks through a door a lever drives. */

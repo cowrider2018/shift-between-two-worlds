@@ -4,7 +4,8 @@
  *
  * Options: --rooms 3 | 3x4 (rows x cols), --tries 20000, --evolve <tries>, --keep 40, --seed 1, --levers 3, --trolls 2, --ghosts 1,
  *          --patrol 0.5 (chance a new monster patrols), --min-kills 0 (keep and evolve only levels whose route has at least this many takedowns), --min-patrols 0 (likewise for patrolling monsters), --min-standing 0 (likewise for monsters standing still),
- *          --max-chained <doors> (keep only levels with at most this many chained doors), --out levels-gen,
+ *          --max-chained <doors> (keep only levels with at most this many chained doors),
+ *          --max-straight-shifts <shifts> (likewise for shifts down a straight run of them), --out levels-gen,
  *          --jobs <threads> (worker threads, default half the logical cores)
  *
  * The work runs on worker threads (this same file, run as a worker) as a queue of small jobs: sampling in batches of
@@ -23,7 +24,7 @@ import { analyze, describeRoute, type Action, type Analysis, type Metrics } from
 import { replay } from '../src/gen/replay';
 
 const args = process.argv.slice(2);
-const FLAGS = ['rooms', 'tries', 'evolve', 'keep', 'seed', 'levers', 'trolls', 'ghosts', 'patrol', 'min-kills', 'min-patrols', 'min-standing', 'max-chained', 'out', 'jobs'];
+const FLAGS = ['rooms', 'tries', 'evolve', 'keep', 'seed', 'levers', 'trolls', 'ghosts', 'patrol', 'min-kills', 'min-patrols', 'min-standing', 'max-chained', 'max-straight-shifts', 'out', 'jobs'];
 /** --name value or --name=value. An unknown option stops the run: a typo must not silently fall back to a default. */
 const given = new Map<string, string>();
 if (isMainThread && args[0] !== '--check') {
@@ -81,7 +82,7 @@ function ascii(level: Level): string {
 function report(a: Analysis): string {
   if (!a.metrics) return `${a.status}${a.reason ? `：${a.reason}` : ''}`;
   const m = a.metrics;
-  return `步 ${m.moves}  轉移 ${m.shifts}  拉桿 ${m.pulls}（${m.leverStates} 種狀態）  擊殺 ${m.kills}  回頭 ${m.revisits}  陷阱狀態 ${m.traps}/${m.states}  鐵鍊門 ${m.chained}  門/拉桿 ${m.doorsPerLever.toFixed(1)}  怪 ${m.standing} 站 ${m.patrolling} 巡${m.throughDoors ? `（${m.throughDoors} 穿門）` : ''}`;
+  return `步 ${m.moves}  轉移 ${m.shifts}${m.straightShifts ? `（${m.straightShifts} 直行）` : ''}  拉桿 ${m.pulls}（${m.leverStates} 種狀態）  擊殺 ${m.kills}  回頭 ${m.revisits}  陷阱狀態 ${m.traps}/${m.states}  鐵鍊門 ${m.chained}  門/拉桿 ${m.doorsPerLever.toFixed(1)}  怪 ${m.standing} 站 ${m.patrolling} 巡${m.throughDoors ? `（${m.throughDoors} 穿門）` : ''}`;
 }
 
 type Count = { [K in keyof Metrics]: Metrics[K] extends number ? K : never }[keyof Metrics];
@@ -90,7 +91,7 @@ interface Goals {
   min: Partial<Record<Count, number>>;
   max: Partial<Record<Count, number>>;
 }
-const LABEL: Partial<Record<Count, string>> = { kills: '擊殺', patrolling: '巡邏怪', standing: '定點怪', chained: '鐵鍊門' };
+const LABEL: Partial<Record<Count, string>> = { kills: '擊殺', patrolling: '巡邏怪', standing: '定點怪', chained: '鐵鍊門', straightShifts: '直行轉移' };
 const entries = (r: Partial<Record<Count, number>>) => Object.entries(r).filter(([, v]) => v !== undefined) as [Count, number][];
 const meets = (g: Goals, m: Metrics) => entries(g.min).every(([k, v]) => m[k] >= v) && entries(g.max).every(([k, v]) => m[k] <= v);
 /** Minimums counted up to their targets, maximums counted down from any excess: more progress is better until every
@@ -139,7 +140,10 @@ async function main(): Promise<void> {
   const minPatrols = Number(flag('min-patrols', '0'));
   const minStanding = Number(flag('min-standing', '0'));
   const maxChained = given.has('max-chained') ? Number(flag('max-chained', '')) : Infinity;
-  const goals: Goals = { min: { kills: minKills, patrolling: minPatrols, standing: minStanding }, max: Number.isFinite(maxChained) ? { chained: maxChained } : {} };
+  const max: Goals['max'] = {};
+  if (Number.isFinite(maxChained)) max.chained = maxChained;
+  if (given.has('max-straight-shifts')) max.straightShifts = Number(flag('max-straight-shifts', ''));
+  const goals: Goals = { min: { kills: minKills, patrolling: minPatrols, standing: minStanding }, max };
   const opts = {
     ...DEFAULT_OPTIONS,
     rows, cols: cols ?? rows,

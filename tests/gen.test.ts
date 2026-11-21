@@ -5,7 +5,7 @@ import { LEVEL_FORMAT, MONSTER_DEFAULTS, createEmptyLevel, parseLevel, setCell, 
 import { NO_INPUT, Sim } from '../src/core/sim';
 import { validateLevel } from '../src/core/validate';
 import { DEFAULT_OPTIONS, canonicalKey, generateOne, rng, timingMatters, transform } from '../src/gen/generate';
-import { Model, TICK, analyze } from '../src/gen/model';
+import { Model, TICK, analyze, straightShifts, type Action } from '../src/gen/model';
 import { replay } from '../src/gen/replay';
 
 /** A one-row level: rows for A and B, props per dimension. */
@@ -118,6 +118,17 @@ describe('generator model', () => {
       expect(analyze(c.level).status).toBe('unique');
       expect(replay(c.level, c.analysis.route!).ok).toBe(true);
     }
+  });
+
+  it('counts shifts down a straight run of alternating doors, not the first or one after a turn', () => {
+    const mv = (dim: 0 | 1, x: number, y: number): Action => ({ type: 'move', dim, x, y });
+    const sh = (dim: 0 | 1, x: number, y: number): Action => ({ type: 'shift', dim, x, y });
+    // east, shift, east, shift, east, shift, east: the first shift starts the run, the next two carry it on
+    const straight = [mv(0, 2, 1), sh(1, 2, 1), mv(1, 3, 1), sh(0, 3, 1), mv(0, 4, 1), mv(0, 5, 1), sh(1, 5, 1), mv(1, 6, 1)];
+    expect(straightShifts(straight, { x: 1, y: 1 })).toBe(2);
+    // the second shift leads into a turn south, the third comes three steps later: neither carries a run on
+    const turning = [mv(0, 2, 1), sh(1, 2, 1), mv(1, 3, 1), sh(0, 3, 1), mv(0, 3, 2), mv(0, 3, 3), mv(0, 3, 4), sh(1, 3, 4), mv(1, 3, 5)];
+    expect(straightShifts(turning, { x: 1, y: 1 })).toBe(0);
   });
 
   it('gives mirror images and rotations one key', () => {

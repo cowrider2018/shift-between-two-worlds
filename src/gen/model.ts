@@ -1054,6 +1054,8 @@ export interface Metrics {
   /** Ticks spent waiting for a monster to pass. */
   waits: number;
   shifts: number;
+  /** Shifts that only carry on down a straight run of them (see straightShifts). */
+  straightShifts: number;
   pulls: number;
   kills: number;
   /** Distinct lever settings the route passes through. */
@@ -1143,6 +1145,7 @@ export function check(m: Model, route: Action[]): Analysis {
       moves: route.filter((a) => a.type === 'move').length,
       waits: route.filter((a) => a.type === 'wait').length,
       shifts: route.filter((a) => a.type === 'shift').length,
+      straightShifts: straightShifts(route, spawn),
       pulls: route.filter((a) => a.type === 'lever').length,
       kills: routeKills.size,
       leverStates: masks.size,
@@ -1159,6 +1162,36 @@ export function check(m: Model, route: Action[]): Analysis {
       cells: all.filter((c) => c.def.solid !== 'always' || c.def.behavior === 'door').length,
     },
   };
+}
+
+/**
+ * Shifts that only carry on a straight run: one or two steps after the last shift, every step between them and the
+ * step after it going the same way, with no pull, wait or takedown in between. Doors alternating down one corridor
+ * make such a run; its first shift counts as a shift, the rest are these.
+ */
+export function straightShifts(route: Action[], spawn: { x: number; y: number }): number {
+  // the way each action moved the player (0, 0 for anything but a step)
+  const way: [number, number][] = [];
+  let x = spawn.x;
+  let y = spawn.y;
+  for (const a of route) {
+    way.push(a.type === 'move' ? [a.x - x, a.y - y] : [0, 0]);
+    x = a.x;
+    y = a.y;
+  }
+  let n = 0;
+  let last = -1;
+  route.forEach((a, i) => {
+    if (a.type !== 'shift') return;
+    const between = route.slice(last + 1, i);
+    const next = route[i + 1];
+    const [dx, dy] = way[i - 1] ?? [0, 0];
+    if (last >= 0 && between.length >= 1 && between.length <= 2 && (dx || dy) && next?.type === 'move'
+      && between.every((b, k) => b.type === 'move' && way[last + 1 + k][0] === dx && way[last + 1 + k][1] === dy)
+      && way[i + 1][0] === dx && way[i + 1][1] === dy) n++;
+    last = i;
+  });
+  return n;
 }
 
 /** One line per action group, e.g. "走 A(2,1) A(3,1)", "等 3 拍", "拉 B(5,1) 開". */

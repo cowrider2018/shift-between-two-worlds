@@ -1058,6 +1058,8 @@ export interface Metrics {
   straightShifts: number;
   pulls: number;
   kills: number;
+  /** Decisions (shift, pull, takedown) followed by one of another kind: the route mixes them rather than repeating one. */
+  interleaves: number;
   /** Distinct lever settings the route passes through. */
   leverStates: number;
   /** Steps that come back to a (dimension, cell) the route has already stood on. */
@@ -1148,6 +1150,7 @@ export function check(m: Model, route: Action[]): Analysis {
       straightShifts: straightShifts(route, spawn),
       pulls: route.filter((a) => a.type === 'lever').length,
       kills: routeKills.size,
+      interleaves: interleaves(route),
       leverStates: masks.size,
       revisits,
       traps,
@@ -1162,6 +1165,12 @@ export function check(m: Model, route: Action[]): Analysis {
       cells: all.filter((c) => c.def.solid !== 'always' || c.def.behavior === 'door').length,
     },
   };
+}
+
+/** Consecutive decisions (shift, pull, takedown; steps and waits between them do not count) of different kinds. */
+export function interleaves(route: Action[]): number {
+  const kinds = route.filter((a) => a.type === 'shift' || a.type === 'lever' || a.type === 'kill').map((a) => a.type);
+  return kinds.filter((k, i) => i > 0 && k !== kinds[i - 1]).length;
 }
 
 /**

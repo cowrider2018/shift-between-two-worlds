@@ -497,7 +497,7 @@ export function canonicalKey(level: Level): string {
 /** A rough "worth playing" number; the metrics themselves are in the index for sorting by hand. */
 export function score(m: Metrics): number {
   // a shift down a straight run of them is no decision: it scores nothing and costs STRAIGHT_SHIFT_COST
-  const base = 3 * m.pulls + 2 * (m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + 3 * m.kills + 2 * (m.leverStates - 1) + 2 * m.revisits + 2 * Math.log2(1 + m.traps)
+  const base = 3 * m.pulls + 2 * (m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + 3 * m.kills + INTERLEAVE_POINTS * m.interleaves + 2 * (m.leverStates - 1) + 2 * m.revisits + 2 * Math.log2(1 + m.traps)
     - 2 * m.chained - 0.1 * m.cells
     // every monster left after minimizing is load-bearing; one on patrol counts PATROL_BONUS times one standing still
     + MONSTER_POINTS * (m.standing + PATROL_BONUS * m.patrolling);
@@ -508,6 +508,8 @@ export function score(m: Metrics): number {
 
 export const MONSTER_POINTS = 2;
 export const STRAIGHT_SHIFT_COST = 1;
+/** Per change of decision kind along the route (shift → pull, pull → takedown, ...): the route asks for different things. */
+export const INTERLEAVE_POINTS = 2;
 export const PATROL_BONUS = 1.75;
 /** 2 doors per lever → score ÷ 1.5, 3 → ÷ 2, 4 → ÷ 2.5. */
 export const DOOR_DIVISOR = 0.5;

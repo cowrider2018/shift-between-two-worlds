@@ -5,7 +5,7 @@ import { LEVEL_FORMAT, MONSTER_DEFAULTS, createEmptyLevel, parseLevel, setCell, 
 import { NO_INPUT, Sim } from '../src/core/sim';
 import { validateLevel } from '../src/core/validate';
 import { DEFAULT_OPTIONS, canonicalKey, generateOne, rng, timingMatters, transform } from '../src/gen/generate';
-import { Model, TICK, analyze, straightShifts, type Action } from '../src/gen/model';
+import { Model, TICK, analyze, interleaves, straightShifts, type Action } from '../src/gen/model';
 import { replay } from '../src/gen/replay';
 
 /** A one-row level: rows for A and B, props per dimension. */
@@ -129,6 +129,13 @@ describe('generator model', () => {
     // the second shift leads into a turn south, the third comes three steps later: neither carries a run on
     const turning = [mv(0, 2, 1), sh(1, 2, 1), mv(1, 3, 1), sh(0, 3, 1), mv(0, 3, 2), mv(0, 3, 3), mv(0, 3, 4), sh(1, 3, 4), mv(1, 3, 5)];
     expect(straightShifts(turning, { x: 1, y: 1 })).toBe(0);
+  });
+
+  it('counts changes of decision kind along a route, not steps or waits between them', () => {
+    const a = (type: 'move' | 'wait' | 'shift', x = 1): Action => ({ type, dim: 0, x, y: 1 });
+    const pull: Action = { type: 'lever', dim: 0, x: 1, y: 1, on: true };
+    // shift shift (same) → pull (change) → wait, step → shift (change)
+    expect(interleaves([a('shift'), a('move', 2), a('shift'), pull, a('wait'), a('move', 3), a('shift')])).toBe(2);
   });
 
   it('gives mirror images and rotations one key', () => {

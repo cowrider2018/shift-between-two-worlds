@@ -32,9 +32,11 @@ export interface GenOptions {
   patrol: number;
   /** Chance a mutation adds a patrol across the current route (see patrolAcross). */
   routePatrol: number;
+  /** Chained doors sampling and mutation may lay (minimizing a lever away can still chain its doors). */
+  maxChained: number;
 }
 
-export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, addTroll: 0, patrol: 0.5, routePatrol: 0.1 };
+export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, addTroll: 0, patrol: 0.5, routePatrol: 0.1, maxChained: Infinity };
 
 export type Rng = () => number;
 
@@ -52,6 +54,14 @@ export function rng(seed: number): Rng {
 
 const pick = <T>(r: Rng, xs: readonly T[]): T => xs[Math.floor(r() * xs.length)];
 const int = (r: Rng, lo: number, hi: number) => lo + Math.floor(r() * (hi - lo + 1));
+
+/** Chained doors in the level. */
+function chainedDoors(level: Level): number {
+  return level.dimensions.reduce((n, d, di) => n + Object.entries(d.props).filter(([k, p]) => {
+    const [x, y] = parseCellKey(k)!;
+    return p.channel === CHAINED_CHANNEL && getChar(level, di as DimIndex, x, y) === 'D';
+  }).length, 0);
+}
 
 /** A monster standing at (x, y). Its stats are the defaults: the generator never tunes them. */
 function monster(id: string, x: number, y: number, facing: number): MonsterDef {
@@ -176,9 +186,13 @@ export function sample(r: Rng, o: GenOptions): Level {
   const has = (x: number, y: number) => present.some(([px, py]) => px === x && py === y);
 
   const L = int(r, 1, o.maxLevers);
+  let chained = 0;
   const door = (d: DimIndex, x: number, y: number, vertical: boolean) => {
     set(d, x, y, 'D');
-    if (r() < 0.25) setProp(level, d, x, y, 'channel', CHAINED_CHANNEL);
+    if (r() < 0.25 && chained < o.maxChained) {
+      setProp(level, d, x, y, 'channel', CHAINED_CHANNEL);
+      chained++;
+    }
     else setProp(level, d, x, y, 'channel', int(r, 1, L));
     setProp(level, d, x, y, 'inverted', getProp(level, d, x, y, 'channel') !== CHAINED_CHANNEL && r() < 0.35);
     setProp(level, d, x, y, 'vertical', vertical);
@@ -589,10 +603,13 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
     }
     const d = (r() < 0.5 ? 0 : 1) as DimIndex;
     const c = r();
-    if (c < 0.3) setCell(l, d, x, y, '.');
+    const chain = c < 0.5 || !channels.length;
+    // at the limit (counting the door it may replace) a chained door becomes floor
+    const wasChained = getChar(l, d, x, y) === 'D' && getProp(l, d, x, y, 'channel') === CHAINED_CHANNEL;
+    if (c < 0.3 || (chain && chainedDoors(l) - (wasChained ? 1 : 0) >= o.maxChained)) setCell(l, d, x, y, '.');
     else {
       setCell(l, d, x, y, 'D');
-      const ch = c < 0.5 || !channels.length ? CHAINED_CHANNEL : pick(r, channels);
+      const ch = chain ? CHAINED_CHANNEL : pick(r, channels);
       setProp(l, d, x, y, 'channel', ch);
       setProp(l, d, x, y, 'inverted', ch !== CHAINED_CHANNEL && r() < 0.4);
       setProp(l, d, x, y, 'vertical', x % 2 === 0);

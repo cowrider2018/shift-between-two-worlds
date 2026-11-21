@@ -4,7 +4,7 @@
  *
  * Options: --rooms 3 | 3x4 (rows x cols), --tries 20000, --evolve <tries>, --keep 40, --seed 1, --levers 3, --trolls 2, --ghosts 1,
  *          --patrol 0.5 (chance a new monster patrols), --min-kills 0 (keep and evolve only levels whose route has at least this many takedowns), --min-patrols 0 (likewise for patrolling monsters), --min-standing 0 (likewise for monsters standing still),
- *          --out levels-gen,
+ *          --max-chained <doors> (keep only levels with at most this many chained doors), --out levels-gen,
  *          --jobs <threads> (worker threads, default half the logical cores)
  *
  * The work runs on worker threads (this same file, run as a worker) as a queue of small jobs: sampling in batches of
@@ -23,7 +23,7 @@ import { analyze, describeRoute, type Action, type Analysis, type Metrics } from
 import { replay } from '../src/gen/replay';
 
 const args = process.argv.slice(2);
-const FLAGS = ['rooms', 'tries', 'evolve', 'keep', 'seed', 'levers', 'trolls', 'ghosts', 'patrol', 'min-kills', 'min-patrols', 'min-standing', 'out', 'jobs'];
+const FLAGS = ['rooms', 'tries', 'evolve', 'keep', 'seed', 'levers', 'trolls', 'ghosts', 'patrol', 'min-kills', 'min-patrols', 'min-standing', 'max-chained', 'out', 'jobs'];
 /** --name value or --name=value. An unknown option stops the run: a typo must not silently fall back to a default. */
 const given = new Map<string, string>();
 if (isMainThread && args[0] !== '--check') {
@@ -138,7 +138,8 @@ async function main(): Promise<void> {
   const minKills = Number(flag('min-kills', '0'));
   const minPatrols = Number(flag('min-patrols', '0'));
   const minStanding = Number(flag('min-standing', '0'));
-  const goals: Goals = { min: { kills: minKills, patrolling: minPatrols, standing: minStanding }, max: {} };
+  const maxChained = given.has('max-chained') ? Number(flag('max-chained', '')) : Infinity;
+  const goals: Goals = { min: { kills: minKills, patrolling: minPatrols, standing: minStanding }, max: Number.isFinite(maxChained) ? { chained: maxChained } : {} };
   const opts = {
     ...DEFAULT_OPTIONS,
     rows, cols: cols ?? rows,
@@ -152,6 +153,7 @@ async function main(): Promise<void> {
     addTroll: minKills > 0 || minPatrols > 0 || minStanding > 0 ? 0.3 : 0,
     // chasing patrols: a third of mutations lay one across the route
     routePatrol: minPatrols > 0 ? 0.35 : DEFAULT_OPTIONS.routePatrol,
+    maxChained,
   };
   const tries = Number(flag('tries', '20000'));
   const keep = Number(flag('keep', '40'));

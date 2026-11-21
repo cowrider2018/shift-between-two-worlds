@@ -496,8 +496,9 @@ export function canonicalKey(level: Level): string {
 
 /** A rough "worth playing" number; the metrics themselves are in the index for sorting by hand. */
 export function score(m: Metrics): number {
-  // a shift down a straight run of them is no decision: it scores nothing and costs STRAIGHT_SHIFT_COST
-  const base = 3 * m.pulls + 2 * (m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + KILL_POINTS * m.kills + INTERLEAVE_POINTS * m.interleaves + 2 * (m.leverStates - 1) + 2 * m.revisits + 2 * Math.log2(1 + m.traps)
+  // shifts score with diminishing returns (1 → 2, 4 → 4, 9 → 6): stacking them is not a puzzle. One down a straight
+  // run of them is no decision: it scores nothing and costs STRAIGHT_SHIFT_COST
+  const base = 3 * m.pulls + 2 * Math.sqrt(m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + KILL_POINTS * m.kills + INTERLEAVE_POINTS * m.interleaves + 2 * (m.leverStates - 1) + 2 * m.revisits + 2 * Math.log2(1 + m.traps)
     - 2 * m.chained - 0.1 * m.cells
     // every monster left after minimizing is load-bearing; one on patrol counts PATROL_BONUS times one standing still
     + MONSTER_POINTS * (m.standing + PATROL_BONUS * m.patrolling)

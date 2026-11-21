@@ -8,7 +8,8 @@ import { NO_INPUT, Sim, TUNING, type SimInput } from '../core/sim';
 import { TAKEDOWN_TICKS, TICK, type Action } from './model';
 
 const DT = 1 / 60;
-const FRAMES = Math.round(TICK / DT);
+/** The frame tick t starts on (a tick is not a whole number of frames). */
+const frameOf = (t: number) => Math.round((t * TICK) / DT);
 
 export function replay(level: Level, route: Action[]): { ok: boolean; reason?: string } {
   const sim = new Sim(level);
@@ -39,9 +40,8 @@ export function replay(level: Level, route: Action[]): { ok: boolean; reason?: s
   let tick = 0;
   for (const a of route) {
     if (spotted()) return { ok: false, reason: `第 ${tick} 拍被發現` };
-    const start = tick * FRAMES;
     const ticks = a.type === 'kill' ? TAKEDOWN_TICKS : 1;
-    const end = (tick + ticks) * FRAMES;
+    const end = frameOf(tick + ticks);
     if (a.type === 'move') walkTo(a.x + 0.5, a.y + 0.5, end);
     else if (a.type === 'shift') step({ shift: true });
     else if (a.type === 'lever') step({ interact: true });
@@ -50,7 +50,7 @@ export function replay(level: Level, route: Action[]): { ok: boolean; reason?: s
       if (!m) return { ok: false, reason: `找不到 ${a.monster}` };
       // close in (running: a patrolling troll walks nearly as fast as a sneak), cut, then back to the cell's centre
       const reached = (() => {
-        while (frame < start + FRAMES && !spotted()) {
+        while (frame < frameOf(tick + 1) && !spotted()) {
           if (Math.hypot(m.x - sim.x, m.y - sim.y) <= TUNING.attackRange - 0.05) return true;
           walkTo(m.x, m.y, frame + 1, TUNING.attackRange - 0.05, true);
         }

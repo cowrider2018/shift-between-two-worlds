@@ -8,10 +8,10 @@
  */
 import { BLOCK_BY_CHAR } from '../core/blocks';
 import { EXIT_DIRS } from '../core/grid';
-import { LEVEL_FORMAT, cellKey, getChar, nextMonsterId, parseCellKey, setCell, setProp, type DimIndex, type Level, type MonsterDef } from '../core/level';
+import { LEVEL_FORMAT, MONSTER_DEFAULTS, cellKey, getChar, nextMonsterId, parseCellKey, setCell, setProp, type DimIndex, type Level, type MonsterDef } from '../core/level';
 import { segmentCells, validateLevel } from '../core/validate';
 import { replay } from './replay';
-import { Model, StateLimit, TICK, analyze, check, type Action, type Analysis, type Metrics } from './model';
+import { Model, StateLimit, analyze, check, type Action, type Analysis, type Metrics } from './model';
 
 export const CHAINED_CHANNEL = 9;
 
@@ -53,18 +53,17 @@ export function rng(seed: number): Rng {
 const pick = <T>(r: Rng, xs: readonly T[]): T => xs[Math.floor(r() * xs.length)];
 const int = (r: Rng, lo: number, hi: number) => lo + Math.floor(r() * (hi - lo + 1));
 
-function monster(id: string, x: number, y: number, facing: number, span: number): MonsterDef {
-  // radius big enough that sneaking (half radius) still sees across the whole level: sight is about lines, not range
-  return { id, path: [[x, y]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: Math.min(15, 2 * span), viewAngle: 70, facing };
+/** A monster standing at (x, y). Its stats are the defaults: the generator never tunes them. */
+function monster(id: string, x: number, y: number, facing: number): MonsterDef {
+  return { id, path: [[x, y]], ...MONSTER_DEFAULTS, mode: 'pingpong', facing };
 }
 
 /** Cells a patrol may walk: open floor, a lever, the spawn, or a door a lever drives (it turns back while that is shut). */
 const PATROL_FLOOR = ['.', 'L', 'S'];
 
 /**
- * Turn the monster into a back-and-forth patrol from its cell along one straight line of open cells, timed to the
- * model's clock: each leg takes a whole number of ticks (near the default 1.6 cells/s) and each turn two ticks (the
- * engine spends one frame more than the pause at a turn, hence the 1.5 frames off). A line may run through doors that
+ * Turn the monster into a back-and-forth patrol from its cell along one straight line of open cells (at the default
+ * speed and pause: one cell a tick, a turn a tick). A line may run through doors that
  * levers drive; such lines are preferred, since a patrol the levers confine or release is a puzzle piece where a free
  * one is mostly a timing gate. False when no line fits.
  */
@@ -96,25 +95,19 @@ function patrolLine(level: Level, d: DimIndex, x: number, y: number, dx: number,
   return { door };
 }
 
-/** Walk n cells from the monster's cell in direction (dx, dy) and back, on the model's clock (see makePatrol). */
+/** Walk n cells from the monster's cell in direction (dx, dy) and back. */
 function setPatrol(m: MonsterDef, dx: number, dy: number, n: number): void {
   const [x, y] = m.path[0];
-  const k = Math.max(1, Math.round(n / (1.6 * TICK)));
   m.path = [[x, y], [x + dx * n, y + dy * n]];
-  m.speed = n / (k * TICK);
-  m.pause = 2 * TICK - 1.5 / 60;
   m.facing = (Math.round((Math.atan2(dy, dx) * 180) / Math.PI) + 360) % 360;
 }
-
-/** View radius of a patrol laid across the route (sneaking halves it): it watches its stretch, not the whole level. */
-const ROUTE_PATROL_SIGHT = 6;
 
 /**
  * A new patrol whose line runs through a cell of the level's current (strict) route: from a free room in the same row
  * or column, across that cell. A patrol only stays after minimizing when the route has to time itself around it (it
  * never blocks a way for good: it always turns away at some point), so this is where patrols can be load-bearing.
  */
-function patrolAcross(l: Level, r: Rng, o: GenOptions, span: number): boolean {
+function patrolAcross(l: Level, r: Rng, o: GenOptions): boolean {
   let route: Action[] | null;
   try {
     const m = new Model(l);
@@ -153,10 +146,8 @@ function patrolAcross(l: Level, r: Rng, o: GenOptions, span: number): boolean {
   const ways = through.length && (!turning.length || r() < 0.7) ? through : turning;
   if (!ways.length) return false;
   const [d, sx, sy, dx, dy, n] = pick(r, ways);
-  const m = monster(nextMonsterId(l), sx, sy, 0, span);
+  const m = monster(nextMonsterId(l), sx, sy, 0);
   setPatrol(m, dx, dy, n);
-  // a patrol that sees the whole map down its line leaves no moment to cross it
-  m.viewRadius = ROUTE_PATROL_SIGHT;
   l.dimensions[d].monsters.push(m);
   return true;
 }
@@ -164,8 +155,6 @@ function patrolAcross(l: Level, r: Rng, o: GenOptions, span: number): boolean {
 /** Back to standing still where the patrol starts, looking the way it set out. */
 function standStill(m: MonsterDef): void {
   m.path = [m.path[0]];
-  m.speed = 1.6;
-  m.pause = 0.6;
 }
 
 /** One random lattice level. Not checked. */
@@ -216,11 +205,10 @@ export function sample(r: Rng, o: GenOptions): Level {
     set(d, x, y, 'L');
     setProp(level, d, x, y, 'channel', ch);
   }
-  const span = Math.max(W, H);
   let n = 0;
   const add = (d: DimIndex) => {
     const [x, y] = take();
-    const m = monster(`m${++n}`, x, y, aim(level, d, x, y, r), span);
+    const m = monster(`m${++n}`, x, y, aim(level, d, x, y, r));
     if (r() < o.patrol) makePatrol(level, d, m, r);
     level.dimensions[d].monsters.push(m);
   };
@@ -565,7 +553,6 @@ export function generateOne(r: Rng, o: GenOptions): Candidate | null {
 export function mutate(level: Level, r: Rng, o: GenOptions): Level {
   const l = clone(level);
   const { w: W, h: H } = l.size;
-  const span = Math.max(W, H);
   const channels = [...new Set(l.dimensions.flatMap((d, di) => Object.entries(d.props)
     .filter(([k]) => { const [x, y] = parseCellKey(k)!; return getChar(l, di as DimIndex, x, y) === 'L'; })
     .map(([, p]) => Number(p.channel))))];
@@ -573,14 +560,14 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
   const roomFree = (x: number, y: number) => ['.'].includes(getChar(l, 0, x, y)) && getChar(l, 1, x, y) === '.' && !monsterAt(x, y);
   const rx = () => 2 * int(r, 0, o.cols - 1) + 1;
   const ry = () => 2 * int(r, 0, o.rows - 1) + 1;
-  if (r() < o.routePatrol && patrolAcross(l, r, o, span)) return l;
+  if (r() < o.routePatrol && patrolAcross(l, r, o)) return l;
   if (r() < o.addTroll && l.dimensions[0].monsters.length < o.maxTrolls) {
     // try a few rooms: a troll needs a free one
     for (let k = 0; k < 6; k++) {
       const x = rx();
       const y = ry();
       if (!roomFree(x, y)) continue;
-      const m = monster(nextMonsterId(l), x, y, aim(l, 0, x, y, r), span);
+      const m = monster(nextMonsterId(l), x, y, aim(l, 0, x, y, r));
       if (r() < o.patrol) makePatrol(l, 0, m, r);
       l.dimensions[0].monsters.push(m);
       return l;
@@ -648,7 +635,7 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
       const x = rx();
       const y = ry();
       if (!roomFree(x, y)) return l;
-      const m = monster(nextMonsterId(l), x, y, aim(l, di as DimIndex, x, y, r), span);
+      const m = monster(nextMonsterId(l), x, y, aim(l, di as DimIndex, x, y, r));
       if (r() < o.patrol) makePatrol(l, di as DimIndex, m, r);
       l.dimensions[di].monsters.push(m);
     }

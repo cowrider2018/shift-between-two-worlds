@@ -38,16 +38,18 @@ playtest, ←→ step, ↑↓ next level, 1/2/3 sections; `gallery.html#picks/<i
 copies a level into `levels/` and opens it in the editor (`editor.html?file=<stem>`).
 
 1. Sample a room lattice (rooms on odd cells, connectors between them, pillars on even cells): per dimension each
-   connector is floor, a door or a chained door; one lever per channel; standing or patrolling monsters; an exit on
-   the border. A patrol walks a straight line, one cell a tick, and may run through doors a lever drives: while such a
-   door is shut it turns back at the cell before it.
+   connector is floor, a door or a chained door; one lever per channel; standing or patrolling monsters (always at the
+   default stats); an exit on the border. A patrol walks a straight line and may run through doors a lever drives:
+   while such a door is shut it turns back at the cell before it.
 2. Model it as a graph of states (dimension, cell, levers, monster states, tick) and read it twice: *strict* (the
    intended route: every action unseen, everywhere in the cells it uses, for its whole tick, off monster bodies,
    takedowns from a neighbouring cell) and *loose* (what the engine lets a player get away with: sight only at the
-   tick, running, bodies walkable). Time runs in 0.6 s ticks (one sneaking step); monster motion is the engine's own
-   patrol code, sampled four times a tick. A patrol through a lever door depends on when the levers were pulled, so its
-   own state (the engine's, at each tick's start) is part of the model's state. The shortest strict route (in ticks,
-   with waits) is the solution.
+   tick, running, bodies walkable). A tick is the time a monster at the default speed takes to walk a cell (0.625 s;
+   a sneaking step fits in it), and a turn at the default pause takes one tick too, so a patrol is modelled in whole
+   cells: one cell or one turn a tick, its sight sampled four times a tick. This is the engine's walk to within a frame
+   per turn, not to the frame; the replay in step 5 is the final word. A patrol through a lever door depends on when
+   the levers were pulled, so its own state (cell, direction, turning) is part of the model's state. The shortest
+   strict route (in ticks, with waits) is the solution.
 3. Unique: banning any cell of the route leaves the loose reading without a win, and every winning kill is the
    route's own.
 4. Minimize: drop any monster, door, lever or cell whose removal leaves the level unique with the same route.
@@ -59,9 +61,8 @@ copies a level into `levels/` and opens it in the editor (`editor.html?file=<ste
    always turn away at some point), so they are load-bearing only where the route has to time itself around them.
 
 `--min-kills N` / `--min-patrols N` climb toward and keep only levels with that many takedowns / patrols.
-`--check` reports a level as unsupported when a patrol that crosses no lever door does not come out to a whole
-number of ticks in one round, when one that does has more than 2000 states at a tick's start (its speed or pause
-is off the 0.6 s clock), or when a search passes three million states.
+`--check` reports a level as unsupported when a patrol's speed or pause is not the default, when its path is not
+made of horizontal and vertical legs, or when a search passes three million states.
 
 ## Architecture
 

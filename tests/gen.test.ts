@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { LEVEL_FORMAT, createEmptyLevel, parseLevel, setCell, setProp, type Level, type MonsterDef } from '../src/core/level';
+import { LEVEL_FORMAT, MONSTER_DEFAULTS, createEmptyLevel, parseLevel, setCell, setProp, type Level, type MonsterDef } from '../src/core/level';
 import { NO_INPUT, Sim } from '../src/core/sim';
 import { validateLevel } from '../src/core/validate';
 import { DEFAULT_OPTIONS, canonicalKey, generateOne, rng, timingMatters, transform } from '../src/gen/generate';
@@ -62,25 +62,26 @@ describe('generator model', () => {
 
   it('times a route around a patrol and replays it on the same clock', () => {
     // a generated level: the ghost walks B's bottom corridor and, turning about at its east end, sweeps up the shaft
-    // the route shifts into, so the player waits three ticks first
+    // the route shifts into, so the player waits a tick first
     const level = parseLevel(JSON.parse(readFileSync(resolve(import.meta.dirname, 'fixtures', 'gen-patrol-gate.json'), 'utf8'))).level!;
     const a = analyze(level);
     expect(a.status).toBe('unique');
     expect(a.metrics!.patrolling).toBe(1);
-    expect(a.route!.slice(0, 4).map((s) => s.type)).toEqual(['wait', 'wait', 'wait', 'shift']);
+    expect(a.route!.slice(0, 2).map((s) => s.type)).toEqual(['wait', 'shift']);
     expect(replay(level, a.route!).ok).toBe(true);
     // shifting straight away walks into its sweep: the waiting is real, not the model being careful
     expect(timingMatters(level, a.route!)).toBe(true);
   });
 
-  it('follows a patrol through a lever door tick by tick, as the engine moves it', () => {
-    // corridor y=2, door at (5, 2) on channel 1 (lever in B), patrol 2 ↔ 8 one cell a tick; the player is out of the way
+  it('follows a patrol through a lever door tick by tick, close to how the engine moves it', () => {
+    // corridor y=2, door at (5, 2) on channel 1 (lever in B), patrol 2 <-> 8 at the default stats; the player is out
+    // of the way
     const l = createEmptyLevel('t', 11, 5);
     setCell(l, 0, 5, 2, 'D');
     setProp(l, 0, 5, 2, 'vertical', true);
     setCell(l, 1, 5, 2, 'L');
     setProp(l, 1, 5, 2, 'channel', 1);
-    l.dimensions[0].monsters.push({ id: 'm', path: [[2, 2], [8, 2]], mode: 'pingpong', speed: 1 / TICK, pause: 2 * TICK - 1.5 / 60, viewRadius: 1, viewAngle: 10, facing: 0 });
+    l.dimensions[0].monsters.push({ id: 'm', path: [[2, 2], [8, 2]], ...MONSTER_DEFAULTS, viewRadius: 1, viewAngle: 10 });
     const model = new Model(l);
     expect(model.unsupported).toBeNull();
     expect(model.movingThroughDoors).toBe(1);
@@ -88,16 +89,18 @@ describe('generator model', () => {
     sim.x = 1.5;
     sim.y = 4.5;
     const channels = (sim as unknown as { channels: Map<number, boolean> }).channels;
-    // shut for 7 ticks (it paces 2 ↔ 4), open for 12, shut again: the pull lands on a tick's first frame
+    // shut for 7 ticks (it paces 2 <-> 4), open for 12, shut again: the pull lands on a tick's first frame
     const open = (t: number) => t >= 7 && t < 19;
+    const frameOf = (t: number) => Math.round(t * TICK * 60);
     let mc = 0;
     for (let t = 0; t < 30; t++) {
       const [m] = model.monstersAt(mc, t);
-      expect(m.x).toBeCloseTo(sim.monsters[0].x, 4);
-      expect(m.y).toBeCloseTo(sim.monsters[0].y, 4);
+      // the engine's turns run a frame or two off a tick
+      expect(Math.abs(m.x - sim.monsters[0].x)).toBeLessThan(0.1);
+      expect(Math.abs(m.y - sim.monsters[0].y)).toBeLessThan(0.1);
       const lm = open(t) ? 1 : 0;
       channels.set(1, !!lm);
-      for (let f = 0; f < Math.round(TICK * 60); f++) sim.update(NO_INPUT, 1 / 60);
+      for (let f = frameOf(t); f < frameOf(t + 1); f++) sim.update(NO_INPUT, 1 / 60);
       mc = model.advance(mc, lm);
     }
   });

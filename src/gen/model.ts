@@ -1,51 +1,49 @@
 /**
  * Discrete model of a level for generation and uniqueness checks (LEVEL-PRINCIPLES B1/B2/B4/B5).
  *
- * Time runs in ticks of TICK seconds: one sneaking step, a wait, a shift or a pull per tick, a takedown over
- * TAKEDOWN_TICKS. A state is (position, lever switches, monster states, tick mod the level's period). Monster motion is
- * the engine's own (MonsterState stepped at the simulation's frame rate) sampled SUB times per tick, so a patrol here is
- * exactly the patrol in the game. A patrol that stays clear of lever-driven doors must come back to its start in a whole
- * number of ticks; its pose is then a function of the tick.
+ * Time runs in units of TICK seconds, the time a monster at the default speed takes to walk one cell; monster stats are
+ * the defaults (speed, pause), so a patrol walks one cell a unit and turns (pause and swing together) in one unit. The
+ * player sneaks a step, waits, shifts or pulls in a unit, a takedown takes TAKEDOWN_TICKS. A state is (position, lever
+ * switches, monster states, unit mod the level's period).
  *
- * A patrol across a lever-driven door turns back at the door while it is shut, so where it is depends on when the
- * levers were pulled. Such a patrol is a *mover*: its state at the start of each tick (the engine's MonsterState
- * itself: position, leg, direction, pause left, facing) is part of the monster states, and one tick of it is the
- * engine's update under that tick's doors. Everything runs in whole frames, so the states it can reach form a finite
- * set, listed up front for every setting of its doors. A lever press acts on the tick's first frame, before monsters
- * move, so the tick after a pull runs under the new doors.
+ * A patrol is the engine's walk in whole cells: along its ring of cell centres, stopping to turn at corners, and turning
+ * back at the centre of the cell before one it cannot enter. The engine's turns take a frame or two more or less than a
+ * unit, so this is close, not exact; a generated route is replayed in the engine before it counts. A patrol that stays
+ * clear of lever-driven doors comes back to its start after a fixed number of units; its pose is then a function of the
+ * unit. One across a lever-driven door turns back at the door while it is shut, so where it is depends on when the
+ * levers were pulled: such a patrol is a *mover*, its state at the start of each unit (cell, direction, mid-turn) part
+ * of the monster states. A lever press acts at the start of the unit, before monsters move.
  *
  * Monster states: a surface (A) troll is alive or dead; a dead one watches from the underside (B) in the pose it died
- * in, so a patrolling troll's death is kept as its pose class (cell and facing to 45°). Underside monsters are ghosts:
- * never killed.
+ * in, so a patrolling troll's death is kept as its pose class (cell and facing to 45 degrees). Underside monsters are
+ * ghosts: never killed.
  *
  * Two readings of the same level:
- *  - strict: what the intended route may use. Every action is checked over its own tick, on the cells the player is in
- *    during it (a step: both cells; a shift: the landing cell, as it happens on the tick's first frame; a pull or a
- *    wait: its cell): each must be out of sight at every sub-step of the tick and at every point the player's body can
- *    take in it, and no monster's body may pass through it; a takedown is made from a 4-neighbouring cell and the
- *    player must stay unseen through all of its ticks.
- *  - loose: what a player could get away with in the engine: sight checked only at the tick itself and only when all of
- *    the cell is in view, bodies walkable, running (two cells a tick), a shorter takedown, also from a diagonal cell.
+ *  - strict: what the intended route may use. Every action is checked over its own unit, on the cells the player is in
+ *    during it (a step: both cells; a shift: the landing cell, as it happens at the unit's start; a pull or a wait: its
+ *    cell): each must be out of sight at every sample of the unit and at every point the player's body can take in it,
+ *    and no monster's body may pass through it; a takedown is made from a 4-neighbouring cell and the player must stay
+ *    unseen through all of its units.
+ *  - loose: what a player could get away with in the engine: sight checked only at the unit's start and only when all
+ *    of the cell is in view, bodies walkable, running (two cells a unit), a shorter takedown, also from a diagonal cell.
  *    Alternatives are searched for in this reading, so any route it finds is a real risk.
  */
 import { LevelGrid, angleDiff, castRay, type Cell } from '../core/grid';
-import type { DimIndex, Level, MonsterDef } from '../core/level';
-import { MonsterState, TUNING, patrolRing } from '../core/sim';
+import { MONSTER_DEFAULTS, type DimIndex, type Level, type MonsterDef } from '../core/level';
+import { TUNING, patrolRing } from '../core/sim';
 import { segmentCells } from '../core/validate';
 
 export type Mode = 'strict' | 'loose';
 
-/** Seconds per tick: a sneaking step (1.92 cells/s) fits in one. */
-export const TICK = 0.6;
-/** Sight samples per tick. */
+/** Seconds per unit: one cell at the default monster speed (a sneaking step, 1.92 cells/s, fits in one). */
+export const TICK = 1 / MONSTER_DEFAULTS.speed;
+/** Sight samples per unit. */
 const SUB = 4;
-const FRAME = 1 / 60;
-const FRAMES_PER_SUB = Math.round(TICK / SUB / FRAME);
 /** Reaching the troll, the takedown itself and stepping back. */
 export const TAKEDOWN_TICKS = Math.ceil((TUNING.takedownTime + 0.25) / TICK);
 const LOOSE_TAKEDOWN_TICKS = Math.floor(TUNING.takedownTime / TICK);
 const MAX_PERIOD = 120;
-/** Most tick-start states a mover may have. */
+/** Most unit-start states a mover may have. */
 const MAX_MOVER_STATES = 2000;
 /** Searches keep tables indexed by state number up to this many states; past it only the states reached. */
 const MAX_DENSE = 1 << 22;
@@ -91,7 +89,7 @@ interface Mon {
   home: DimIndex;
   radius: number;
   half: number;
-  /** Ticks per round of its patrol; 1 when it stands still or is a mover. */
+  /** Units per round of its patrol; 1 when it stands still or is a mover. */
   period: number;
   /** Pose at every sub-step of one period. */
   poses: Pose[];
@@ -112,7 +110,7 @@ interface Mover {
   /** Door settings it can meet (distinct patterns of its doors over all lever settings), and which one each gives. */
   V: number;
   variantOf: Int32Array;
-  /** State q under door setting v: the state a tick later at next[q * V + v], its poses through the tick (SUB + 1,
+  /** State q under door setting v: the state a unit later at next[q * V + v], its poses through the unit (SUB + 1,
    *  the last being the next state's) at poses[(q * V + v) * (SUB + 1) + sub]. */
   next: Int32Array;
   poses: Pose[];
@@ -248,13 +246,19 @@ export class Model {
 
   private buildMonster(def: MonsterDef, home: DimIndex): Mon | string {
     const grid = this.grid;
-    const off = this.channelFn(0);
     const radius = def.viewRadius * TUNING.sneakRadiusMul;
     const half = ((def.viewAngle / 2) * Math.PI) / 180;
     const ring = patrolRing(def);
+    if (ring.length < 2) {
+      const p = { x: def.path[0][0] + 0.5, y: def.path[0][1] + 0.5, angle: (def.facing * Math.PI) / 180 };
+      return { id: def.id, home, radius, half, period: 1, poses: Array<Pose>(SUB).fill(p), mover: null, ...deathClasses([p]), base: 0, alive: 1, size: 1 };
+    }
+    if (def.speed !== MONSTER_DEFAULTS.speed || def.pause !== MONSTER_DEFAULTS.pause) return `怪物 ${def.id} 的速度或停頓不是預設值`;
+    const walk = new Walk(ring, [this.w / 2, this.h / 2]);
+    if (!walk.ok) return `怪物 ${def.id} 的巡邏路線不是橫平豎直的整格`;
     // the lever-driven doors on its walk make it a mover
     const doors: Cell[] = [];
-    for (let i = 0; i < ring.length && ring.length > 1; i++) {
+    for (let i = 0; i < ring.length; i++) {
       const a = ring[i];
       const b = ring[(i + 1) % ring.length];
       for (const [x, y] of segmentCells([a[0] - 0.5, a[1] - 0.5], [b[0] - 0.5, b[1] - 0.5])) {
@@ -262,46 +266,26 @@ export class Model {
         if (c.def.behavior === 'door' && this.switchChannel.includes(Number(c.props.channel)) && !doors.includes(c)) doors.push(c);
       }
     }
-    if (doors.length) return this.mover(def, home, radius, half, doors);
-    const ms = new MonsterState(def, home, [this.w / 2, this.h / 2]);
+    if (doors.length) return this.mover(def, home, radius, half, doors, walk);
+    const off = this.channelFn(0);
     const blocked = (cx: number, cy: number) => grid.solid(home, cx, cy, off);
+    const start = walk.start();
     const poses: Pose[] = [];
-    const total = (ring.length > 1 ? 2 * MAX_PERIOD : 1) * SUB;
-    for (let i = 0; i <= total; i++) {
-      poses.push({ x: ms.x, y: ms.y, angle: ms.angle });
-      for (let f = 0; f < FRAMES_PER_SUB; f++) ms.update(FRAME, blocked);
+    const starts: Pose[] = [];
+    let s = start;
+    for (let t = 0; t <= MAX_PERIOD; t++) {
+      if (t && walk.key(s) === walk.key(start))
+        return { id: def.id, home, radius, half, period: t, poses, mover: null, ...deathClasses(starts), base: 0, alive: 1, size: 1 };
+      const step = walk.step(s, blocked);
+      starts.push(step.poses[0]);
+      poses.push(...step.poses.slice(0, SUB));
+      s = step.next;
     }
-    let period = 1;
-    if (ring.length > 1) {
-      const same = (a: Pose, b: Pose) => Math.hypot(a.x - b.x, a.y - b.y) < 0.02 && Math.abs(angleDiff(a.angle, b.angle)) < 0.05;
-      period = 0;
-      for (let T = 1; T <= MAX_PERIOD && !period; T++) {
-        let ok = true;
-        for (let i = 0; i + T * SUB < poses.length && ok; i++) ok = same(poses[i], poses[i + T * SUB]);
-        if (ok) period = T;
-      }
-      if (!period) return `怪物 ${def.id} 的巡邏週期對不上 ${TICK} 秒的時間格`;
-    }
-    const one = poses.slice(0, period * SUB);
-    const deadPoses: Pose[] = [];
-    const deadAt: number[] = [];
-    const classKey = new Map<string, number>();
-    for (let t = 0; t < period; t++) {
-      const p = one[t * SUB];
-      const key = `${Math.floor(p.x)},${Math.floor(p.y)},${Math.round(p.angle / (Math.PI / 4)) & 7}`;
-      let c = classKey.get(key);
-      if (c === undefined) {
-        c = deadPoses.length;
-        classKey.set(key, c);
-        deadPoses.push(p);
-      }
-      deadAt.push(c);
-    }
-    return { id: def.id, home, radius, half, period, poses: one, mover: null, deadPoses, deadAt, base: 0, alive: 1, size: 1 };
+    return `怪物 ${def.id} 的巡邏回不到起點`;
   }
 
-  /** A patrol across lever-driven doors: every state it can be in at a tick's start, under every setting of its doors. */
-  private mover(def: MonsterDef, home: DimIndex, radius: number, half: number, doors: Cell[]): Mon | string {
+  /** A patrol across lever-driven doors: every state it can be in at a unit's start, under every setting of its doors. */
+  private mover(def: MonsterDef, home: DimIndex, radius: number, half: number, doors: Cell[], walk: Walk): Mon | string {
     const grid = this.grid;
     // door settings: which of its doors are shut, for each lever setting
     const variantOf = new Int32Array(this.LM);
@@ -323,53 +307,28 @@ export class Model {
       const ch = this.channelFn(lm);
       return (cx: number, cy: number) => grid.solid(home, cx, cy, ch);
     });
-    // the engine's own monster, copied at each tick start; its private fields are its state
-    type Raw = Record<string, number | boolean>;
-    const copy = (s: MonsterState) => Object.assign(Object.create(Object.getPrototypeOf(s)), s) as MonsterState;
-    const keyOf = (s: MonsterState) => {
-      const r = s as unknown as Raw;
-      const n = (v: number | boolean, k = 1e4) => Math.round(Number(v) * k);
-      return [n(s.x), n(s.y), n(Math.cos(s.angle)), n(Math.sin(s.angle)), n(r.seg, 1), n(r.t), n(r.dir, 1), n(r.stopped, 1), n(r.pauseT), n(r.turnSign, 1)].join(',');
-    };
-    const states = [new MonsterState(def, home, [this.w / 2, this.h / 2])];
-    const index = new Map([[keyOf(states[0]), 0]]);
+    const states = [walk.start()];
+    const index = new Map([[walk.key(states[0]), 0]]);
     const next: number[] = [];
     const poses: Pose[] = [];
     for (let q = 0; q < states.length; q++)
       for (let v = 0; v < V; v++) {
-        const ms = copy(states[q]);
-        poses.push({ x: ms.x, y: ms.y, angle: ms.angle });
-        for (let sub = 1; sub <= SUB; sub++) {
-          for (let f = 0; f < FRAMES_PER_SUB; f++) ms.update(FRAME, blocked[v]);
-          poses.push({ x: ms.x, y: ms.y, angle: ms.angle });
-        }
-        const k = keyOf(ms);
+        const step = walk.step(states[q], blocked[v]);
+        poses.push(...step.poses);
+        const k = walk.key(step.next);
         let nq = index.get(k);
         if (nq === undefined) {
-          if (states.length >= MAX_MOVER_STATES) return `怪物 ${def.id} 的巡邏狀態超過 ${MAX_MOVER_STATES} 個（速度或停頓對不上 ${TICK} 秒的時間格）`;
+          if (states.length >= MAX_MOVER_STATES) return `怪物 ${def.id} 的巡邏狀態超過 ${MAX_MOVER_STATES} 個`;
           nq = states.length;
           index.set(k, nq);
-          states.push(ms);
+          states.push(step.next);
         }
         next.push(nq);
       }
-    const deadPoses: Pose[] = [];
-    const deadAt: number[] = [];
-    const classKey = new Map<string, number>();
-    for (const s of states) {
-      const key = `${Math.floor(s.x)},${Math.floor(s.y)},${Math.round(s.angle / (Math.PI / 4)) & 7}`;
-      let c = classKey.get(key);
-      if (c === undefined) {
-        c = deadPoses.length;
-        classKey.set(key, c);
-        deadPoses.push({ x: s.x, y: s.y, angle: s.angle });
-      }
-      deadAt.push(c);
-    }
     return {
       id: def.id, home, radius, half, period: 1, poses: [],
       mover: { V, variantOf, next: Int32Array.from(next), poses },
-      deadPoses, deadAt, base: 0, alive: states.length, size: 1,
+      ...deathClasses(states.map((q) => walk.pose(q))), base: 0, alive: states.length, size: 1,
     };
   }
 
@@ -823,6 +782,148 @@ export class Model {
       q.push(p);
     }
     return { reached, alive, kills };
+  }
+}
+
+/** The poses a troll can die in, to 45 degrees per cell, and which one each given pose falls in. */
+function deathClasses(at: Pose[]): { deadPoses: Pose[]; deadAt: number[] } {
+  const deadPoses: Pose[] = [];
+  const deadAt: number[] = [];
+  const classKey = new Map<string, number>();
+  for (const p of at) {
+    const key = `${Math.floor(p.x)},${Math.floor(p.y)},${Math.round(p.angle / (Math.PI / 4)) & 7}`;
+    let c = classKey.get(key);
+    if (c === undefined) {
+      c = deadPoses.length;
+      classKey.set(key, c);
+      deadPoses.push(p);
+    }
+    deadAt.push(c);
+  }
+  return { deadPoses, deadAt };
+}
+
+/** A patrol's state at the start of a unit: on segment `seg` at whole cell `t` from its start, walking with (+1) or
+ *  against it, facing `angle`; `stopped`: it spends this unit turning to its heading, the way `sign` says. */
+interface WalkState {
+  seg: number;
+  t: number;
+  dir: number;
+  stopped: boolean;
+  angle: number;
+  sign: number;
+}
+
+/**
+ * The engine's patrol (MonsterState.update) in whole cells and whole units, at the default speed and pause: a unit
+ * walks one cell or makes one turn. A corner of the ring, or the cell before one it cannot enter, makes it stop and
+ * turn; an about-face swings the way that passes the map centre, as the engine's does.
+ */
+class Walk {
+  readonly ok: boolean;
+  private readonly len: number[] = [];
+  private readonly ux: number[] = [];
+  private readonly uy: number[] = [];
+  private readonly corner: boolean[] = [];
+
+  constructor(private readonly ring: [number, number][], private readonly centre: [number, number]) {
+    const n = ring.length;
+    let ok = true;
+    for (let i = 0; i < n; i++) {
+      const [ax, ay] = ring[i];
+      const [bx, by] = ring[(i + 1) % n];
+      const len = Math.abs(bx - ax) + Math.abs(by - ay);
+      if (ax !== bx && ay !== by) ok = false;
+      this.len.push(len);
+      this.ux.push(Math.sign(bx - ax));
+      this.uy.push(Math.sign(by - ay));
+    }
+    for (let i = 0; i < n; i++) {
+      const j = (i - 1 + n) % n;
+      this.corner.push(this.ux[i] !== this.ux[j] || this.uy[i] !== this.uy[j]);
+    }
+    this.ok = ok;
+  }
+
+  private heading(seg: number, dir: number): number {
+    return Math.atan2(this.uy[seg] * dir, this.ux[seg] * dir);
+  }
+
+  private at(seg: number, t: number): [number, number] {
+    return [this.ring[seg][0] + this.ux[seg] * t, this.ring[seg][1] + this.uy[seg] * t];
+  }
+
+  pose(s: WalkState): Pose {
+    const [x, y] = this.at(s.seg, s.t);
+    return { x, y, angle: s.angle };
+  }
+
+  start(): WalkState {
+    return { seg: 0, t: 0, dir: 1, stopped: false, angle: this.heading(0, 1), sign: 1 };
+  }
+
+  key(s: WalkState): string {
+    const a = Math.round(Math.atan2(Math.sin(s.angle), Math.cos(s.angle)) * 1000);
+    // the swing's way only matters while it turns
+    return `${s.seg},${s.t},${s.dir},${a},${s.stopped ? s.sign : 0}`;
+  }
+
+  /** Stop to turn towards the heading: the shorter way, or for an about-face the way that sweeps past the map centre. */
+  private stop(s: WalkState): WalkState {
+    const d = angleDiff(this.heading(s.seg, s.dir), s.angle);
+    let sign = Math.sign(d) || 1;
+    if (Math.abs(d) >= Math.PI - 1e-3) {
+      const [x, y] = this.at(s.seg, s.t);
+      const cross = Math.cos(s.angle) * (this.centre[1] - y) - Math.sin(s.angle) * (this.centre[0] - x);
+      sign = cross < 0 ? -1 : 1;
+    }
+    return { ...s, stopped: true, sign };
+  }
+
+  /** At the end of its segment, facing out of it: onto the next segment (walking against the ring, the previous one),
+   *  stopping when the node there is a corner. */
+  private across(s: WalkState): WalkState {
+    const n = this.ring.length;
+    let v: number;
+    let r: WalkState;
+    if (s.dir > 0 && s.t === this.len[s.seg]) {
+      v = (s.seg + 1) % n;
+      r = { ...s, seg: v, t: 0 };
+    } else if (s.dir < 0 && s.t === 0) {
+      v = s.seg;
+      const seg = (s.seg - 1 + n) % n;
+      r = { ...s, seg, t: this.len[seg] };
+    } else return s;
+    return this.corner[v] ? this.stop(r) : r;
+  }
+
+  /** One unit from s, `blocked` saying which cells it cannot enter: the state after it and its poses (SUB + 1). */
+  step(s: WalkState, blocked: (cx: number, cy: number) => boolean): { next: WalkState; poses: Pose[] } {
+    if (!s.stopped) {
+      // turned back on a node: it goes on along the segment there, which may be a turn of its own
+      const a = this.across(s);
+      if (a.stopped) return this.step(a, blocked);
+      s = a;
+    }
+    const [x, y] = this.at(s.seg, s.t);
+    const poses: Pose[] = [];
+    if (s.stopped) {
+      const h = this.heading(s.seg, s.dir);
+      let d = angleDiff(h, s.angle);
+      if (Math.abs(d) >= Math.PI - 1e-3) d = s.sign * Math.abs(d);
+      for (let k = 0; k <= SUB; k++) {
+        const swing = Math.min(Math.abs(d), (TUNING.monsterTurnSpeed * TICK * k) / SUB);
+        poses.push({ x, y, angle: s.angle + Math.sign(d) * swing });
+      }
+      return { next: { ...s, stopped: false, angle: h }, poses };
+    }
+    const ux = this.ux[s.seg] * s.dir;
+    const uy = this.uy[s.seg] * s.dir;
+    // the next cell is shut: turn back here, the turn taking this unit
+    if (blocked(Math.floor(x + ux), Math.floor(y + uy))) return this.step(this.stop({ ...s, dir: -s.dir }), blocked);
+    const angle = this.heading(s.seg, s.dir);
+    for (let k = 0; k <= SUB; k++) poses.push({ x: x + (ux * k) / SUB, y: y + (uy * k) / SUB, angle });
+    return { next: this.across({ ...s, t: s.t + s.dir, angle }), poses };
   }
 }
 

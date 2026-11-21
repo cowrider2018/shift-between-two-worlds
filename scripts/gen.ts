@@ -3,20 +3,29 @@
  * `npm run gen -- --check levels/a.json ...` — run the uniqueness model on existing levels instead.
  *
  * Options: --rooms 3 | 3x4 (rows x cols), --tries 20000, --evolve <tries>, --keep 40, --seed 1, --levers 3, --trolls 2, --ghosts 1,
- *          --patrol 0.5 (chance a new monster patrols), --min-kills 0 (keep and evolve only levels whose route has at least this many takedowns), --min-patrols 0 (likewise for patrolling monsters), --out levels-gen
+ *          --patrol 0.5 (chance a new monster patrols), --min-kills 0 (keep and evolve only levels whose route has at least this many takedowns), --min-patrols 0 (likewise for patrolling monsters), --out levels-gen,
+ *          --jobs <threads> (worker threads, default half the logical cores)
+ *
+ * The work runs on worker threads (this same file, run as a worker) as a queue of small jobs: sampling in batches of
+ * SAMPLE_BATCH tries, and each evolution round as one climb per seed level (evolve's pool slots climb independently
+ * anyway). Every job has its own random stream from the seed and its number, and finds are merged in job order, so a
+ * seed gives the same levels whatever the number of threads.
  */
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { getChar, parseLevel, serializeLevel, type DimIndex, type Level } from '../src/core/level';
-import { DEFAULT_OPTIONS, evolve, generateOne, rng, type Candidate } from '../src/gen/generate';
+import { DEFAULT_OPTIONS, evolve, generateOne, rng, type Candidate, type GenOptions } from '../src/gen/generate';
 import { analyze, describeRoute, type Action, type Analysis } from '../src/gen/model';
 import { replay } from '../src/gen/replay';
 
 const args = process.argv.slice(2);
-const FLAGS = ['rooms', 'tries', 'evolve', 'keep', 'seed', 'levers', 'trolls', 'ghosts', 'patrol', 'min-kills', 'min-patrols', 'out'];
+const FLAGS = ['rooms', 'tries', 'evolve', 'keep', 'seed', 'levers', 'trolls', 'ghosts', 'patrol', 'min-kills', 'min-patrols', 'out', 'jobs'];
 /** --name value or --name=value. An unknown option stops the run: a typo must not silently fall back to a default. */
 const given = new Map<string, string>();
-if (args[0] !== '--check') {
+if (isMainThread && args[0] !== '--check') {
   for (let i = 0; i < args.length; i++) {
     const m = /^--([a-z-]+)(?:=(.*))?$/.exec(args[i]);
     if (!m || !FLAGS.includes(m[1])) {
@@ -74,7 +83,31 @@ function report(a: Analysis): string {
   return `步 ${m.moves}  轉移 ${m.shifts}  拉桿 ${m.pulls}（${m.leverStates} 種狀態）  擊殺 ${m.kills}  回頭 ${m.revisits}  陷阱狀態 ${m.traps}/${m.states}  鐵鍊門 ${m.chained}  門/拉桿 ${m.doorsPerLever.toFixed(1)}  怪 ${m.standing} 站 ${m.patrolling} 巡${m.throughDoors ? `（${m.throughDoors} 穿門）` : ''}`;
 }
 
-if (args[0] === '--check') {
+/** Takedowns and patrols counted up to their targets: more is better until then, after that the score decides. */
+const ranking = (minKills: number, minPatrols: number) => {
+  const progress = (c: Candidate) => Math.min(minKills, c.analysis.metrics!.kills) + Math.min(minPatrols, c.analysis.metrics!.patrolling);
+  return (a: Candidate, b: Candidate) => progress(b) - progress(a) || b.score - a.score;
+};
+
+type Job = { kind: 'sample'; seed: number; tries: number } | { kind: 'evolve'; seed: number; from: Candidate; iterations: number };
+const SAMPLE_BATCH = 25;
+
+if (!isMainThread) {
+  const { opts, minKills, minPatrols } = workerData as { opts: GenOptions; minKills: number; minPatrols: number };
+  const rank = ranking(minKills, minPatrols);
+  parentPort!.on('message', (job: Job) => {
+    const r = rng(job.seed);
+    const found: Candidate[] = [];
+    if (job.kind === 'sample')
+      for (let i = 0; i < job.tries; i++) {
+        const c = generateOne(r, opts);
+        if (c) found.push(c);
+      }
+    // a child climbs one takedown or patrol at a time toward the targets, never giving one up
+    else evolve([job.from], r, opts, job.iterations, (c) => found.push(c), rank);
+    parentPort!.postMessage(found);
+  });
+} else if (args[0] === '--check') {
   const files = args.slice(1).length ? args.slice(1) : readdirSync('levels').filter((f) => f.endsWith('.json') && f !== 'order.json').map((f) => join('levels', f));
   for (const f of files) {
     const { level } = parseLevel(JSON.parse(readFileSync(f, 'utf8')));
@@ -85,88 +118,125 @@ if (args[0] === '--check') {
     if (a.route) console.log(`    引擎重播：${replay(level, a.route).ok ? '通關' : replay(level, a.route).reason}`);
   }
   process.exit(0);
+} else {
+  await main();
 }
 
-const [rows, cols] = flag('rooms', '3').split('x').map(Number);
-const minKills = Number(flag('min-kills', '0'));
-const minPatrols = Number(flag('min-patrols', '0'));
-const opts = {
-  ...DEFAULT_OPTIONS,
-  rows, cols: cols ?? rows,
-  maxLevers: Number(flag('levers', String(DEFAULT_OPTIONS.maxLevers))),
-  // n takedowns need at least n trolls
-  maxTrolls: Math.max(minKills, Number(flag('trolls', String(DEFAULT_OPTIONS.maxTrolls)))),
-  maxGhosts: Number(flag('ghosts', String(DEFAULT_OPTIONS.maxGhosts))),
-  // chasing patrols: almost every new monster walks
-  patrol: minPatrols > 0 ? 0.9 : Number(flag('patrol', String(DEFAULT_OPTIONS.patrol))),
-  // chasing takedowns or patrols: a third of mutations add an aimed (and maybe walking) troll
-  addTroll: minKills > 0 || minPatrols > 0 ? 0.3 : 0,
-  // chasing patrols: a third of mutations lay one across the route
-  routePatrol: minPatrols > 0 ? 0.35 : DEFAULT_OPTIONS.routePatrol,
-};
-const tries = Number(flag('tries', '20000'));
-const keep = Number(flag('keep', '40'));
-const seed = Number(flag('seed', String(Date.now() % 1e9)));
-const out = resolve(flag('out', 'levels-gen'));
-
-const evolveIters = Number(flag('evolve', String(tries)));
-/** Takedowns and patrols counted up to their targets: more is better until then, after that the score decides. */
-const progress = (c: Candidate) => Math.min(minKills, c.analysis.metrics!.kills) + Math.min(minPatrols, c.analysis.metrics!.patrolling);
-const meets = (c: Candidate) => c.analysis.metrics!.kills >= minKills && c.analysis.metrics!.patrolling >= minPatrols;
-const rank = (a: Candidate, b: Candidate) => progress(b) - progress(a) || b.score - a.score;
-
-const r = rng(seed);
-const found = new Map<string, Candidate>();
-const t0 = Date.now();
-let made = 0;
-const add = (c: Candidate) => {
-  made++;
-  const old = found.get(c.key);
-  if (!old || c.score > old.score) found.set(c.key, c);
-};
-for (let i = 0; i < tries; i++) {
-  const c = generateOne(r, opts);
-  if (c) add(c);
-  if ((i + 1) % 1000 === 0) process.stdout.write(`\r抽樣 ${i + 1}/${tries}  成功 ${made}  不重複 ${found.size}   `);
-}
-// hill-climb from the best distinct seeds, a few rounds so improvements build on each other
-const rounds = 4;
-for (let k = 0; k < rounds; k++) {
-  const seeds = [...found.values()].sort(rank).slice(0, Math.max(keep, 20));
-  // a child climbs one takedown or patrol at a time toward the targets, never giving one up
-  evolve(seeds, r, opts, Math.ceil(evolveIters / rounds), add, rank);
-  process.stdout.write(`\r演化 ${k + 1}/${rounds}  成功 ${made}  不重複 ${found.size}   `);
-}
-// near-duplicates (one evolved family) share their shifts, pulls and kills: keep the best of each
-const family = (route: Action[]) => route.filter((a) => a.type !== 'move' && a.type !== 'wait').map((a) => `${a.type}${a.dim}${a.x},${a.y}`).join(' ');
-const families = new Set<string>();
-const best = [...found.values()].sort(rank).filter((c) => {
-  if (!meets(c)) return false;
-  const f = family(c.analysis.route!);
-  if (families.has(f)) return false;
-  families.add(f);
-  return true;
-}).slice(0, keep);
-rmSync(out, { recursive: true, force: true });
-mkdirSync(out, { recursive: true });
-const options = [...given].map(([k, v]) => `--${k} ${v}`).join(' ') || '（預設）';
-const index: string[] = [`seed ${seed}  ${options}  成功 ${made}  不重複 ${found.size}  不同解法 ${families.size}  ${((Date.now() - t0) / 1000).toFixed(1)}s`,
-  '圖例：數字 = 門的頻道，字母 = 反相門（a=1），= 鐵鍊門，L 拉桿，> v < ^ 怪物朝向，S 出生，E 出口', ''];
-best.forEach((c, i) => {
-  const id = `gen_${seed}_${String(i + 1).padStart(2, '0')}`;
-  c.level.id = id;
-  c.level.name = id;
-  writeFileSync(join(out, `${id}.json`), serializeLevel(c.level), 'utf8');
-  index.push(`## ${id}  分數 ${c.score.toFixed(1)}`, report(c.analysis), ascii(c.level), describeRoute(c.analysis.route!), '');
-});
-writeFileSync(join(out, 'index.txt'), index.join('\n'), 'utf8');
-console.log(`\n${index[0]}\n→ ${out}（${best.length} 關）`);
-if (best.length < keep && (minKills > 0 || minPatrols > 0)) {
-  const spread = (what: (c: Candidate) => number, unit: string) => {
-    const by = new Map<number, number>();
-    for (const c of found.values()) by.set(what(c), (by.get(what(c)) ?? 0) + 1);
-    return [...by].sort((a, b) => a[0] - b[0]).map(([k, n]) => `${k} ${unit} ${n} 關`).join('、');
+async function main(): Promise<void> {
+  const [rows, cols] = flag('rooms', '3').split('x').map(Number);
+  const minKills = Number(flag('min-kills', '0'));
+  const minPatrols = Number(flag('min-patrols', '0'));
+  const opts = {
+    ...DEFAULT_OPTIONS,
+    rows, cols: cols ?? rows,
+    maxLevers: Number(flag('levers', String(DEFAULT_OPTIONS.maxLevers))),
+    // n takedowns need at least n trolls
+    maxTrolls: Math.max(minKills, Number(flag('trolls', String(DEFAULT_OPTIONS.maxTrolls)))),
+    maxGhosts: Number(flag('ghosts', String(DEFAULT_OPTIONS.maxGhosts))),
+    // chasing patrols: almost every new monster walks
+    patrol: minPatrols > 0 ? 0.9 : Number(flag('patrol', String(DEFAULT_OPTIONS.patrol))),
+    // chasing takedowns or patrols: a third of mutations add an aimed (and maybe walking) troll
+    addTroll: minKills > 0 || minPatrols > 0 ? 0.3 : 0,
+    // chasing patrols: a third of mutations lay one across the route
+    routePatrol: minPatrols > 0 ? 0.35 : DEFAULT_OPTIONS.routePatrol,
   };
-  const goal = [minKills > 0 ? `${minKills} 次擊殺` : '', minPatrols > 0 ? `${minPatrols} 隻巡邏怪` : ''].filter(Boolean).join('、');
-  console.log(`⚠ 只有 ${best.length} 關達到 ${goal}（要 ${keep} 關）。找到的不重複關卡：${spread((c) => c.analysis.metrics!.kills, '殺')}；${spread((c) => c.analysis.metrics!.patrolling, '巡')}。加大 --tries / --evolve，或放大 --rooms`);
+  const tries = Number(flag('tries', '20000'));
+  const keep = Number(flag('keep', '40'));
+  const seed = Number(flag('seed', String(Date.now() % 1e9)));
+  const out = resolve(flag('out', 'levels-gen'));
+
+  const evolveIters = Number(flag('evolve', String(tries)));
+  // one thread per physical core: a second thread on a core's other hyperthread was slower, not faster
+  const jobs = Math.max(1, Number(flag('jobs', String(Math.max(1, Math.floor(availableParallelism() / 2))))));
+  const meets = (c: Candidate) => c.analysis.metrics!.kills >= minKills && c.analysis.metrics!.patrolling >= minPatrols;
+  const rank = ranking(minKills, minPatrols);
+
+  const found = new Map<string, Candidate>();
+  const t0 = Date.now();
+  let made = 0;
+  const add = (c: Candidate) => {
+    made++;
+    const old = found.get(c.key);
+    if (!old || c.score > old.score) found.set(c.key, c);
+  };
+  const workers = Array.from({ length: jobs }, () => new Worker(fileURLToPath(import.meta.url), { workerData: { opts, minKills, minPatrols } }));
+  /** Run the jobs on the free workers as they come free; then merge the finds in job order. */
+  const runAll = async (list: Job[], show: (done: number) => void) => {
+    const results: Candidate[][] = [];
+    let next = 0;
+    let done = 0;
+    await Promise.all(workers.map((w) => new Promise<void>((finish, fail) => {
+      /** The job this worker is on. */
+      let slot = -1;
+      const give = () => {
+        if (next >= list.length) {
+          w.off('message', take);
+          w.off('error', fail);
+          finish();
+          return;
+        }
+        slot = next++;
+        w.postMessage(list[slot]);
+      };
+      const take = (found: Candidate[]) => {
+        results[slot] = found;
+        show(++done);
+        give();
+      };
+      w.on('message', take);
+      w.on('error', fail);
+      give();
+    })));
+    for (const found of results) for (const c of found) add(c);
+  };
+  // every job its own random stream, from the seed, the phase and the job's number
+  const streamSeed = (phase: number, k: number) => (seed + Math.imul(0x9e3779b1, phase * 1_000_003 + k + 1)) >>> 0;
+  const share = (n: number, k: number, parts: number) => Math.floor(n / parts) + (k < n % parts ? 1 : 0);
+  const batches = Math.ceil(tries / SAMPLE_BATCH);
+  await runAll(Array.from({ length: batches }, (_, k) => ({ kind: 'sample', seed: streamSeed(0, k), tries: share(tries, k, batches) })), (n) => {
+    if (n % 20 === 0 || n === batches) process.stdout.write(`\r抽樣 ${Math.min(tries, n * SAMPLE_BATCH)}/${tries}（${jobs} 執行緒）  成功 ${made}   `);
+  });
+  process.stdout.write(`\r抽樣 ${tries}/${tries}  成功 ${made}  不重複 ${found.size}   `);
+  // hill-climb from the best distinct seeds, a few rounds so improvements build on each other
+  const rounds = 4;
+  for (let k = 0; k < rounds; k++) {
+    const seeds = [...found.values()].sort(rank).slice(0, Math.max(keep, 20));
+    const iterations = Math.ceil(evolveIters / rounds);
+    await runAll(seeds.map((from, j) => ({ kind: 'evolve', seed: streamSeed(k + 1, j), from, iterations: share(iterations, j, seeds.length) })), () => {});
+    process.stdout.write(`\r演化 ${k + 1}/${rounds}  成功 ${made}  不重複 ${found.size}   `);
+  }
+  await Promise.all(workers.map((w) => w.terminate()));
+  // near-duplicates (one evolved family) share their shifts, pulls and kills: keep the best of each
+  const family = (route: Action[]) => route.filter((a) => a.type !== 'move' && a.type !== 'wait').map((a) => `${a.type}${a.dim}${a.x},${a.y}`).join(' ');
+  const families = new Set<string>();
+  const best = [...found.values()].sort(rank).filter((c) => {
+    if (!meets(c)) return false;
+    const f = family(c.analysis.route!);
+    if (families.has(f)) return false;
+    families.add(f);
+    return true;
+  }).slice(0, keep);
+  rmSync(out, { recursive: true, force: true });
+  mkdirSync(out, { recursive: true });
+  const options = [...given].map(([k, v]) => `--${k} ${v}`).join(' ') || '（預設）';
+  const index: string[] = [`seed ${seed}  ${options}  成功 ${made}  不重複 ${found.size}  不同解法 ${families.size}  ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+    '圖例：數字 = 門的頻道，字母 = 反相門（a=1），= 鐵鍊門，L 拉桿，> v < ^ 怪物朝向，S 出生，E 出口', ''];
+  best.forEach((c, i) => {
+    const id = `gen_${seed}_${String(i + 1).padStart(2, '0')}`;
+    c.level.id = id;
+    c.level.name = id;
+    writeFileSync(join(out, `${id}.json`), serializeLevel(c.level), 'utf8');
+    index.push(`## ${id}  分數 ${c.score.toFixed(1)}`, report(c.analysis), ascii(c.level), describeRoute(c.analysis.route!), '');
+  });
+  writeFileSync(join(out, 'index.txt'), index.join('\n'), 'utf8');
+  console.log(`\n${index[0]}\n→ ${out}（${best.length} 關）`);
+  if (best.length < keep && (minKills > 0 || minPatrols > 0)) {
+    const spread = (what: (c: Candidate) => number, unit: string) => {
+      const by = new Map<number, number>();
+      for (const c of found.values()) by.set(what(c), (by.get(what(c)) ?? 0) + 1);
+      return [...by].sort((a, b) => a[0] - b[0]).map(([k, n]) => `${k} ${unit} ${n} 關`).join('、');
+    };
+    const goal = [minKills > 0 ? `${minKills} 次擊殺` : '', minPatrols > 0 ? `${minPatrols} 隻巡邏怪` : ''].filter(Boolean).join('、');
+    console.log(`⚠ 只有 ${best.length} 關達到 ${goal}（要 ${keep} 關）。找到的不重複關卡：${spread((c) => c.analysis.metrics!.kills, '殺')}；${spread((c) => c.analysis.metrics!.patrolling, '巡')}。加大 --tries / --evolve，或放大 --rooms`);
+  }
 }

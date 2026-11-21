@@ -32,11 +32,13 @@ export interface GenOptions {
   patrol: number;
   /** Chance a mutation adds a patrol across the current route (see patrolAcross). */
   routePatrol: number;
+  /** Chance a mutation locks a connector on the current route with a door (see addLock). */
+  lock: number;
   /** Chained doors sampling and mutation may lay (minimizing a lever away can still chain its doors). */
   maxChained: number;
 }
 
-export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, patrol: 0.5, routePatrol: 0.1, maxChained: Infinity, addTroll: 0.1 };
+export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, patrol: 0.5, routePatrol: 0.1, lock: 0.2, maxChained: Infinity, addTroll: 0.1 };
 
 export type Rng = () => number;
 
@@ -161,6 +163,64 @@ function patrolAcross(l: Level, r: Rng, o: GenOptions): boolean {
   l.dimensions[d].monsters.push(m);
   return true;
 }
+
+/**
+ * Lock a connector the current (strict) route walks through: a door there, shut when the route comes by. Its lever is
+ * either a new one on a new channel, in a free room off the route (the route has to go and get it), or one already
+ * there (chance REUSE_LOCK, or always at maxLevers): the door is then set so that the route has to pull that lever
+ * again, or once more, before passing, and the levers start to work together instead of side by side.
+ */
+function addLock(l: Level, r: Rng, o: GenOptions, channels: number[]): boolean {
+  let route: Action[] | null;
+  let start = '';
+  try {
+    const m = new Model(l);
+    if (m.unsupported) return false;
+    route = m.route('strict');
+    start = m.spawn ? `${m.spawn.dim},${m.spawn.x},${m.spawn.y}` : '';
+  } catch (e) {
+    if (e instanceof StateLimit) return false;
+    throw e;
+  }
+  if (!route) return false;
+  const key = (d: number, x: number, y: number) => `${d},${x},${y}`;
+  const onRoute = new Set([start, ...route.map((a) => key(a.dim, a.x, a.y))]);
+  // connectors the route steps onto, with the lever settings (channel → on) it has there
+  const on = new Map<number, boolean>();
+  const spots: { d: DimIndex; x: number; y: number; on: Map<number, boolean> }[] = [];
+  for (const a of route) {
+    if (a.type === 'lever') {
+      const ch = Number(getProp(l, a.dim, a.x, a.y, 'channel'));
+      on.set(ch, !on.get(ch));
+    } else if (a.type === 'move' && (a.x + a.y) % 2 === 1 && getChar(l, a.dim, a.x, a.y) === '.') spots.push({ d: a.dim, x: a.x, y: a.y, on: new Map(on) });
+  }
+  if (!spots.length) return false;
+  const spot = pick(r, spots);
+  let ch: number;
+  if (channels.length && (channels.length >= o.maxLevers || r() < REUSE_LOCK)) ch = pick(r, channels);
+  else {
+    // a new lever in a free room off the route, in either dimension
+    const rooms: [DimIndex, number, number][] = [];
+    for (let y = 1; y < l.size.h; y += 2)
+      for (let x = 1; x < l.size.w; x += 2)
+        for (const d of [0, 1] as DimIndex[])
+          if (getChar(l, 0, x, y) === '.' && getChar(l, 1, x, y) === '.' && !onRoute.has(key(0, x, y)) && !onRoute.has(key(1, x, y))
+            && !l.dimensions.some((dd) => dd.monsters.some((mm) => mm.path[0][0] === x && mm.path[0][1] === y))) rooms.push([d, x, y]);
+    if (!rooms.length) return false;
+    const [ld, lx, ly] = pick(r, rooms);
+    ch = Math.max(0, ...channels) + 1;
+    setCell(l, ld, lx, ly, 'L');
+    setProp(l, ld, lx, ly, 'channel', ch);
+  }
+  // shut when the route gets there: a plain door is shut while its channel is off, an inverted one while it is on
+  setCell(l, spot.d, spot.x, spot.y, 'D');
+  setProp(l, spot.d, spot.x, spot.y, 'channel', ch);
+  setProp(l, spot.d, spot.x, spot.y, 'inverted', !!spot.on.get(ch));
+  setProp(l, spot.d, spot.x, spot.y, 'vertical', spot.x % 2 === 0);
+  return true;
+}
+
+const REUSE_LOCK = 0.4;
 
 /** Back to standing still where the patrol starts, looking the way it set out. */
 function standStill(m: MonsterDef): void {
@@ -598,6 +658,7 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
   const roomFree = (x: number, y: number) => ['.'].includes(getChar(l, 0, x, y)) && getChar(l, 1, x, y) === '.' && !monsterAt(x, y);
   const rx = () => 2 * int(r, 0, o.cols - 1) + 1;
   const ry = () => 2 * int(r, 0, o.rows - 1) + 1;
+  if (r() < o.lock && addLock(l, r, o, channels)) return l;
   if (r() < o.routePatrol && patrolAcross(l, r, o)) return l;
   if (r() < o.addTroll && l.dimensions[0].monsters.length < o.maxTrolls) {
     // try a few rooms: a troll needs a free one

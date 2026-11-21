@@ -60,6 +60,9 @@ copies a level into `levels/` and opens it in the editor (`editor.html?file=<ste
 6. Hill-climb from the best levels with random edits, then keep the top-scoring one per family (same shifts, pulls
    and kills). One edit lays a patrol across a cell of the current route: patrols never block a way for good (they
    always turn away at some point), so they are load-bearing only where the route has to time itself around them.
+   Another edit locks a connector the route walks through with a door, shut when the route gets there: its lever is a
+   new one off the route (the route has to go and get it) or one already there (the route has to pull it again). This
+   is what grows chains of pulls that need each other.
 
 `--min-kills N` / `--min-patrols N` / `--min-standing N` climb toward and keep only levels with that many takedowns /
 patrolling monsters / monsters standing still. `--max-chained N` keeps only levels with at most N chained doors (sampling

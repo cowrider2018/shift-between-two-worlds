@@ -498,7 +498,7 @@ export function canonicalKey(level: Level): string {
 export function score(m: Metrics): number {
   // shifts score with diminishing returns (1 → 2, 4 → 4, 9 → 6): stacking them is not a puzzle. One down a straight
   // run of them is no decision: it scores nothing and costs STRAIGHT_SHIFT_COST
-  const base = 3 * m.pulls + 2 * Math.sqrt(m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + KILL_POINTS * m.kills + INTERLEAVE_POINTS * m.interleaves + 2 * (m.leverStates - 1) + 2 * m.revisits + 2 * Math.log2(1 + m.traps)
+  const base = 3 * m.pulls + 2 * Math.sqrt(m.shifts - m.straightShifts) - STRAIGHT_SHIFT_COST * m.straightShifts + KILL_POINTS * m.kills + INTERLEAVE_POINTS * m.interleaves + 2 * (m.leverStates - 1) + 2 * m.revisits + TRAP_POINTS * Math.min(m.trapEntrances, TRAP_CAP)
     - 2 * m.chained - 0.1 * m.cells
     // every monster left after minimizing is load-bearing; one on patrol counts PATROL_BONUS times one standing still
     + MONSTER_POINTS * (m.standing + PATROL_BONUS * m.patrolling)
@@ -513,6 +513,9 @@ export const MONSTER_POINTS = 2;
 export const KILL_POINTS = 6;
 /** The route has to time itself around a patrol: without its waits it does not win. */
 export const TIMING_POINTS = 4;
+/** Per way into a trap (a wrong move that loses the level), up to TRAP_CAP of them. */
+export const TRAP_POINTS = 2;
+export const TRAP_CAP = 5;
 export const STRAIGHT_SHIFT_COST = 1;
 /** Per change of decision kind along the route (shift → pull, pull → takedown, ...): the route asks for different things. */
 export const INTERLEAVE_POINTS = 2;

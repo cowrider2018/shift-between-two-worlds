@@ -779,13 +779,15 @@ export class Model {
   }
 
   /**
-   * Every reachable state: how many, how many can no longer reach the exit (traps), and the kill edges with the troll
-   * killed and whether the exit can still be reached after it (from both ends).
+   * Every reachable state: how many, how many can no longer reach the exit (traps), the ways into them (trap
+   * entrances: a step from a state that can still win to one that cannot, told apart by where and with which levers it
+   * starts and ends, not by the clock or the monsters), and the kill edges with the troll killed and whether the exit
+   * can still be reached after it (from both ends).
    */
-  explore(mode: Mode): { states: number; traps: number; kills: { s: number; troll: number; alive: boolean }[] } {
+  explore(mode: Mode): { states: number; traps: number; trapEntrances: number; kills: { s: number; troll: number; alive: boolean }[] } {
     const strict = mode === 'strict';
     const start = this.startState(mode);
-    if (start < 0) return { states: 0, traps: 0, kills: [] };
+    if (start < 0) return { states: 0, traps: 0, trapEntrances: 0, kills: [] };
     // state number → index among the reached: in the shared tables while they fit, else a map
     const dense = this.stateCount <= MAX_DENSE;
     const tb = dense ? this.bfsBuffers() : null;
@@ -847,10 +849,18 @@ export class Model {
     }
     let traps = 0;
     for (let i = 0; i < N; i++) if (!alive[i]) traps++;
+    const PL = this.P * this.LM;
+    const place = (s: number) => (Math.floor(s / this.P) % this.LM) * this.P + (s % this.P);
+    const entrances = new Set<number>();
+    for (let e = 0; e < E; e++) {
+      const a = edges.at(2 * e);
+      const b = edges.at(2 * e + 1);
+      if (alive[a] && !alive[b]) entrances.add(place(reached.at(a)) * PL + place(reached.at(b)));
+    }
     const kills: { s: number; troll: number; alive: boolean }[] = [];
     for (let k = 0; k < killEdges.length; k += 3)
       kills.push({ s: reached.at(killEdges[k]), troll: killEdges[k + 2], alive: !!(alive[killEdges[k]] && alive[killEdges[k + 1]]) });
-    return { states: N, traps, kills };
+    return { states: N, traps, trapEntrances: entrances.size, kills };
   }
 }
 
@@ -1068,6 +1078,8 @@ export interface Metrics {
   revisits: number;
   /** Reachable states (loose reading) from which the exit can no longer be reached: the traps. */
   traps: number;
+  /** Ways into the traps (see Model.explore): the wrong moves a player can make, not the states they lead to. */
+  trapEntrances: number;
   /** Reachable states in all (loose reading). */
   states: number;
   chained: number;
@@ -1119,7 +1131,7 @@ export function check(m: Model, route: Action[]): Analysis {
   }
   // every kill that still lets you win is the route's kill, made from the route's cell (at any moment)
   const routeKills = new Set(route.filter((a) => a.type === 'kill').map((a) => `${a.monster}@${a.x},${a.y}`));
-  const { states, traps, kills } = m.explore('loose');
+  const { states, traps, trapEntrances, kills } = m.explore('loose');
   for (const { s, troll, alive } of kills) {
     if (!alive) continue;
     const { x, y } = m.parts(s);
@@ -1156,6 +1168,7 @@ export function check(m: Model, route: Action[]): Analysis {
       leverStates: masks.size,
       revisits,
       traps,
+      trapEntrances,
       states,
       chained: all.filter((c) => m.grid.chained(c)).length,
       standing: monsters - m.patrolling,

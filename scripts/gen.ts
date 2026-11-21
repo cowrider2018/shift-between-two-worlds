@@ -84,7 +84,7 @@ function ascii(level: Level): string {
 function report(a: Analysis): string {
   if (!a.metrics) return `${a.status}${a.reason ? `：${a.reason}` : ''}`;
   const m = a.metrics;
-  return `步 ${m.moves}  轉移 ${m.shifts}${m.straightShifts ? `（${m.straightShifts} 直行）` : ''}  拉桿 ${m.pulls}（${m.leverStates} 種狀態）  擊殺 ${m.kills}  穿插 ${m.interleaves}  回頭 ${m.revisits}  陷阱狀態 ${m.traps}/${m.states}  鐵鍊門 ${m.chained}  門/拉桿 ${m.doorsPerLever.toFixed(1)}  怪 ${m.standing} 站 ${m.patrolling} 巡${m.throughDoors ? `（${m.throughDoors} 穿門）` : ''}${m.timed ? '  需算時機' : ''}`;
+  return `步 ${m.moves}  轉移 ${m.shifts}${m.straightShifts ? `（${m.straightShifts} 直行）` : ''}  拉桿 ${m.pulls}（${m.leverStates} 種狀態）  擊殺 ${m.kills}  穿插 ${m.interleaves}  回頭 ${m.revisits}  陷阱入口 ${m.trapEntrances}（狀態 ${m.traps}/${m.states}）  鐵鍊門 ${m.chained}  門/拉桿 ${m.doorsPerLever.toFixed(1)}  怪 ${m.standing} 站 ${m.patrolling} 巡${m.throughDoors ? `（${m.throughDoors} 穿門）` : ''}${m.timed ? '  需算時機' : ''}`;
 }
 
 type Count = { [K in keyof Metrics]-?: Metrics[K] extends number ? K : never }[keyof Metrics];

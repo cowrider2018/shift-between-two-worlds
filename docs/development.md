@@ -27,7 +27,7 @@ Level JSON keeps one row per line for readable diffs; the format is in DESIGN.md
 
 ## Generating levels
 
-`npm run gen -- [--rooms 3|3x4] [--tries 20000] [--evolve N] [--keep 40] [--seed N] [--levers 3] [--trolls 2] [--ghosts 1] [--min-kills 1]`
+`npm run gen -- [--rooms 3|3x4] [--tries 20000] [--evolve N] [--keep 40] [--seed N] [--levers 3] [--trolls 2] [--ghosts 1] [--patrol 0.5] [--min-kills 1] [--min-patrols 1]`
 writes the best candidates to `levels-gen/` (one JSON per level plus `index.txt` with both maps, metrics and the route).
 `npm run gen -- --check [files]` runs the same checks on existing levels.
 
@@ -38,18 +38,25 @@ playtest, ←→ step, ↑↓ next level, 1/2/3 sections; `gallery.html#picks/<i
 copies a level into `levels/` and opens it in the editor (`editor.html?file=<stem>`).
 
 1. Sample a room lattice (rooms on odd cells, connectors between them, pillars on even cells): per dimension each
-   connector is floor, a door or a chained door; one lever per channel; standing monsters; an exit on the border.
-2. Model it as a graph of states (dimension, cell, levers, kills) and read it twice: *strict* (the intended route:
-   no stepping on a monster, unseen everywhere in a cell, takedowns from a neighbouring cell) and *loose* (what the
-   engine lets a player get away with). The shortest strict route is the solution.
+   connector is floor, a door or a chained door; one lever per channel; standing or patrolling monsters; an exit on
+   the border. A patrol walks a straight line of open cells, timed so each leg is a whole number of ticks.
+2. Model it as a graph of states (dimension, cell, levers, monster states, tick) and read it twice: *strict* (the
+   intended route: unseen everywhere in a cell for the whole tick, off monster bodies, takedowns from a neighbouring
+   cell) and *loose* (what the engine lets a player get away with: sight only at the tick, running, bodies walkable).
+   Time runs in 0.6 s ticks (one sneaking step); monster motion is the engine's own patrol code, sampled four times a
+   tick. The shortest strict route (in ticks, with waits) is the solution.
 3. Unique: banning any cell of the route leaves the loose reading without a win, and every winning kill is the
    route's own.
 4. Minimize: drop any monster, door, lever or cell whose removal leaves the level unique with the same route.
-5. Crop, dig out rock that touches nothing, validate, and replay the route in the real simulation.
+5. Crop, dig out rock that touches nothing, validate, and replay the route in the real simulation on the model's
+   clock. A patrol only counts when the waiting is real: if the route also wins with its waits taken out, the
+   patrols stand still and the level is made again.
 6. Hill-climb from the best levels with random edits, then keep the top-scoring one per family (same shifts, pulls
    and kills).
 
-Monsters are standing only: patrols have no discrete model yet, and `--check` reports levels with them as unsupported.
+`--min-kills N` / `--min-patrols N` climb toward and keep only levels with that many takedowns / patrols.
+`--check` reports a level as unsupported when a patrol crosses a lever-driven door (its route would depend on the
+levers) or its round does not come out to a whole number of ticks.
 
 ## Architecture
 

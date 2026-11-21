@@ -11,7 +11,7 @@ import { parseLevel, type DimIndex, type Level } from '../core/level';
 import { Pane, type Overlays } from '../editor/pane';
 import { storePlaytest } from '../game/playtest';
 import { score } from '../gen/generate';
-import { Model, analyze, type Action, type Analysis } from '../gen/model';
+import { Model, TICK, analyze, type Action, type Analysis } from '../gen/model';
 
 type Section = 'batch' | 'picks' | 'rejected';
 const SECTIONS: { id: Section; label: string; key: string }[] = [
@@ -45,9 +45,10 @@ interface Frame {
   dim: DimIndex;
   x: number;
   y: number;
-  /** Lever switches and killed trolls, as the model numbers them. */
+  /** Lever switches and monster states, as the model numbers them, and ticks since the start. */
   lm: number;
-  km: number;
+  mc: number;
+  tick: number;
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -177,20 +178,17 @@ function buildFrames(e: Entry): void {
   const spawn = model.spawn;
   frames = [];
   if (!spawn) return;
-  let f: Frame = { dim: spawn.dim, x: spawn.x, y: spawn.y, lm: 0, km: 0 };
-  frames.push(f);
+  frames.push({ dim: spawn.dim, x: spawn.x, y: spawn.y, lm: 0, mc: 0, tick: 0 });
   for (const a of e.analysis.route ?? []) {
-    f = { ...f };
-    if (a.type === 'move' || a.type === 'shift') Object.assign(f, { dim: a.dim, x: a.x, y: a.y });
-    else if (a.type === 'lever') f.lm ^= 1 << model.switchOf.get(model.grid.cell(a.dim, a.x, a.y))!;
-    else f.km |= 1 << model.trolls.findIndex((t) => t.id === a.monster);
-    frames.push(f);
+    const p = model.parts(a.state ?? 0);
+    frames.push({ dim: p.d, x: p.x, y: p.y, lm: p.lm, mc: p.mc, tick: a.tick ?? 0 });
   }
 }
 
 function actionText(a: Action): string {
   const at = `${'AB'[a.dim]}(${a.x},${a.y})`;
   if (a.type === 'move') return `走 ${at}`;
+  if (a.type === 'wait') return `等（${at}）`;
   if (a.type === 'shift') return `轉移 → ${at}`;
   if (a.type === 'lever') return `拉 ${at} ${a.on ? '開' : '關'}`;
   return `在 ${at} 殺 ${a.monster}`;
@@ -272,19 +270,18 @@ function drawRoute(pane: Pane, e: Entry, c: number): void {
   ctx.globalAlpha = 1;
   ctx.textAlign = 'center';
 
-  // trolls killed by now: a cross over the body in A, the ghost watching in B
-  model!.trolls.forEach((t, i) => {
-    if (!((now.km >> i) & 1)) return;
-    const [x, y] = [t.x * c, t.y * c];
-    ctx.strokeStyle = dim === 0 ? '#ff6b6b' : '#bff6ff';
+  // every monster where it is at this tick: a ring and a facing line; the dead troll's ghost watches from B
+  for (const mo of model!.monstersAt(now.mc, now.tick)) {
+    if (mo.dim !== dim) continue;
+    const [x, y] = [mo.x * c, mo.y * c];
+    ctx.strokeStyle = mo.dead || dim === 1 ? '#bff6ff' : '#ff8a3d';
     ctx.lineWidth = Math.max(2, c * 0.08);
     ctx.beginPath();
-    if (dim === 0) {
-      ctx.moveTo(x - c * 0.3, y - c * 0.3); ctx.lineTo(x + c * 0.3, y + c * 0.3);
-      ctx.moveTo(x + c * 0.3, y - c * 0.3); ctx.lineTo(x - c * 0.3, y + c * 0.3);
-    } else ctx.arc(x, y, c * 0.34, 0, Math.PI * 2);
+    ctx.arc(x, y, c * 0.36, 0, Math.PI * 2);
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(mo.angle) * c * 0.6, y + Math.sin(mo.angle) * c * 0.6);
     ctx.stroke();
-  });
+  }
 
   // the player: solid where they are, an outline at the same cell on the other side
   const [px, py] = center(now.x, now.y);
@@ -419,7 +416,8 @@ function drawPanes(e: Entry): void {
   const slider = $<HTMLInputElement>('step');
   slider.max = String(route.length);
   slider.value = String(step);
-  $('step-label').textContent = step === 0 ? `0 / ${route.length}  起點` : `${step} / ${route.length}  ${actionText(route[step - 1])}`;
+  const tick = frames[step]?.tick ?? 0;
+  $('step-label').textContent = `${step} / ${route.length}  第 ${tick} 拍（${(tick * TICK).toFixed(1)}s）  ${step === 0 ? '起點' : actionText(route[step - 1])}`;
 }
 
 function render(): void {

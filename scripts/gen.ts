@@ -3,7 +3,7 @@
  * `npm run gen -- --check levels/a.json ...` — run the uniqueness model on existing levels instead.
  *
  * Options: --rooms 3 | 3x4 (rows x cols), --tries 20000, --evolve <tries>, --keep 40, --seed 1, --levers 3, --trolls 2, --ghosts 1,
- *          --min-kills 0 (keep and evolve only levels whose route has at least this many takedowns), --out levels-gen
+ *          --patrol 0.5 (chance a new monster patrols), --min-kills 0 (keep and evolve only levels whose route has at least this many takedowns), --min-patrols 0 (likewise for patrolling monsters), --out levels-gen
  */
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -13,7 +13,7 @@ import { analyze, describeRoute, type Action, type Analysis } from '../src/gen/m
 import { replay } from '../src/gen/replay';
 
 const args = process.argv.slice(2);
-const FLAGS = ['rooms', 'tries', 'evolve', 'keep', 'seed', 'levers', 'trolls', 'ghosts', 'min-kills', 'out'];
+const FLAGS = ['rooms', 'tries', 'evolve', 'keep', 'seed', 'levers', 'trolls', 'ghosts', 'patrol', 'min-kills', 'min-patrols', 'out'];
 /** --name value or --name=value. An unknown option stops the run: a typo must not silently fall back to a default. */
 const given = new Map<string, string>();
 if (args[0] !== '--check') {
@@ -89,6 +89,7 @@ if (args[0] === '--check') {
 
 const [rows, cols] = flag('rooms', '3').split('x').map(Number);
 const minKills = Number(flag('min-kills', '0'));
+const minPatrols = Number(flag('min-patrols', '0'));
 const opts = {
   ...DEFAULT_OPTIONS,
   rows, cols: cols ?? rows,
@@ -96,8 +97,10 @@ const opts = {
   // n takedowns need at least n trolls
   maxTrolls: Math.max(minKills, Number(flag('trolls', String(DEFAULT_OPTIONS.maxTrolls)))),
   maxGhosts: Number(flag('ghosts', String(DEFAULT_OPTIONS.maxGhosts))),
-  // chasing takedowns: a third of mutations add an aimed troll
-  addTroll: minKills > 0 ? 0.3 : 0,
+  // chasing patrols: almost every new monster walks
+  patrol: minPatrols > 0 ? 0.9 : Number(flag('patrol', String(DEFAULT_OPTIONS.patrol))),
+  // chasing takedowns or patrols: a third of mutations add an aimed (and maybe walking) troll
+  addTroll: minKills > 0 || minPatrols > 0 ? 0.3 : 0,
 };
 const tries = Number(flag('tries', '20000'));
 const keep = Number(flag('keep', '40'));
@@ -105,9 +108,10 @@ const seed = Number(flag('seed', String(Date.now() % 1e9)));
 const out = resolve(flag('out', 'levels-gen'));
 
 const evolveIters = Number(flag('evolve', String(tries)));
-/** Takedowns counted up to --min-kills: more is better until the target, then the score decides. */
-const kills = (c: Candidate) => Math.min(minKills, c.analysis.metrics!.kills);
-const rank = (a: Candidate, b: Candidate) => kills(b) - kills(a) || b.score - a.score;
+/** Takedowns and patrols counted up to their targets: more is better until then, after that the score decides. */
+const progress = (c: Candidate) => Math.min(minKills, c.analysis.metrics!.kills) + Math.min(minPatrols, c.analysis.metrics!.patrolling);
+const meets = (c: Candidate) => c.analysis.metrics!.kills >= minKills && c.analysis.metrics!.patrolling >= minPatrols;
+const rank = (a: Candidate, b: Candidate) => progress(b) - progress(a) || b.score - a.score;
 
 const r = rng(seed);
 const found = new Map<string, Candidate>();
@@ -127,15 +131,15 @@ for (let i = 0; i < tries; i++) {
 const rounds = 4;
 for (let k = 0; k < rounds; k++) {
   const seeds = [...found.values()].sort(rank).slice(0, Math.max(keep, 20));
-  // a child climbs one takedown at a time toward the target, never giving one up
+  // a child climbs one takedown or patrol at a time toward the targets, never giving one up
   evolve(seeds, r, opts, Math.ceil(evolveIters / rounds), add, rank);
   process.stdout.write(`\r演化 ${k + 1}/${rounds}  成功 ${made}  不重複 ${found.size}   `);
 }
 // near-duplicates (one evolved family) share their shifts, pulls and kills: keep the best of each
-const family = (route: Action[]) => route.filter((a) => a.type !== 'move').map((a) => `${a.type}${a.dim}${a.x},${a.y}`).join(' ');
+const family = (route: Action[]) => route.filter((a) => a.type !== 'move' && a.type !== 'wait').map((a) => `${a.type}${a.dim}${a.x},${a.y}`).join(' ');
 const families = new Set<string>();
 const best = [...found.values()].sort(rank).filter((c) => {
-  if (c.analysis.metrics!.kills < minKills) return false;
+  if (!meets(c)) return false;
   const f = family(c.analysis.route!);
   if (families.has(f)) return false;
   families.add(f);
@@ -155,9 +159,12 @@ best.forEach((c, i) => {
 });
 writeFileSync(join(out, 'index.txt'), index.join('\n'), 'utf8');
 console.log(`\n${index[0]}\n→ ${out}（${best.length} 關）`);
-if (best.length < keep && minKills > 0) {
-  const byKills = new Map<number, number>();
-  for (const c of found.values()) byKills.set(c.analysis.metrics!.kills, (byKills.get(c.analysis.metrics!.kills) ?? 0) + 1);
-  const dist = [...byKills].sort((a, b) => a[0] - b[0]).map(([k, n]) => `${k} 殺 ${n} 關`).join('、');
-  console.log(`⚠ 只有 ${best.length} 關達到 ${minKills} 次擊殺（要 ${keep} 關）。找到的不重複關卡：${dist}。加大 --tries / --evolve，或放大 --rooms`);
+if (best.length < keep && (minKills > 0 || minPatrols > 0)) {
+  const spread = (what: (c: Candidate) => number, unit: string) => {
+    const by = new Map<number, number>();
+    for (const c of found.values()) by.set(what(c), (by.get(what(c)) ?? 0) + 1);
+    return [...by].sort((a, b) => a[0] - b[0]).map(([k, n]) => `${k} ${unit} ${n} 關`).join('、');
+  };
+  const goal = [minKills > 0 ? `${minKills} 次擊殺` : '', minPatrols > 0 ? `${minPatrols} 隻巡邏怪` : ''].filter(Boolean).join('、');
+  console.log(`⚠ 只有 ${best.length} 關達到 ${goal}（要 ${keep} 關）。找到的不重複關卡：${spread((c) => c.analysis.metrics!.kills, '殺')}；${spread((c) => c.analysis.metrics!.patrolling, '巡')}。加大 --tries / --evolve，或放大 --rooms`);
 }

@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { LEVEL_FORMAT, type Level, type MonsterDef } from '../src/core/level';
+import { LEVEL_FORMAT, parseLevel, type Level, type MonsterDef } from '../src/core/level';
 import { validateLevel } from '../src/core/validate';
-import { DEFAULT_OPTIONS, canonicalKey, generateOne, rng, transform } from '../src/gen/generate';
+import { DEFAULT_OPTIONS, canonicalKey, generateOne, rng, timingMatters, transform } from '../src/gen/generate';
 import { analyze } from '../src/gen/model';
 import { replay } from '../src/gen/replay';
 
@@ -55,6 +57,19 @@ describe('generator model', () => {
     expect(a.status).toBe('unique');
     expect(a.route!.find((s) => s.type === 'kill')).toMatchObject({ x: 2, y: 1, monster: 'm1' });
     expect(replay(level, a.route!).ok).toBe(true);
+  });
+
+  it('times a route around a patrol and replays it on the same clock', () => {
+    // a generated level: the ghost walks B's bottom corridor and, turning about at its east end, sweeps up the shaft
+    // the route shifts into, so the player waits three ticks first
+    const level = parseLevel(JSON.parse(readFileSync(resolve(import.meta.dirname, 'fixtures', 'gen-patrol-gate.json'), 'utf8'))).level!;
+    const a = analyze(level);
+    expect(a.status).toBe('unique');
+    expect(a.metrics!.patrolling).toBe(1);
+    expect(a.route!.slice(0, 4).map((s) => s.type)).toEqual(['wait', 'wait', 'wait', 'shift']);
+    expect(replay(level, a.route!).ok).toBe(true);
+    // shifting straight away walks into its sweep: the waiting is real, not the model being careful
+    expect(timingMatters(level, a.route!)).toBe(true);
   });
 
   it('generates levels that validate, are unique and win in the engine', () => {

@@ -9,9 +9,9 @@
 import { BLOCK_BY_CHAR } from '../core/blocks';
 import { EXIT_DIRS } from '../core/grid';
 import { LEVEL_FORMAT, cellKey, getChar, nextMonsterId, parseCellKey, setCell, setProp, type DimIndex, type Level, type MonsterDef } from '../core/level';
-import { validateLevel } from '../core/validate';
+import { segmentCells, validateLevel } from '../core/validate';
 import { replay } from './replay';
-import { Model, analyze, check, type Analysis, type Metrics } from './model';
+import { Model, TICK, analyze, check, type Action, type Analysis, type Metrics } from './model';
 
 export const CHAINED_CHANNEL = 9;
 
@@ -28,9 +28,11 @@ export interface GenOptions {
   connWall: number;
   /** Chance a mutation adds a troll aimed down a passage (raised when takedowns are the goal). */
   addTroll: number;
+  /** Chance a new monster patrols instead of standing still. */
+  patrol: number;
 }
 
-export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, addTroll: 0 };
+export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, addTroll: 0, patrol: 0.5 };
 
 export type Rng = () => number;
 
@@ -52,6 +54,40 @@ const int = (r: Rng, lo: number, hi: number) => lo + Math.floor(r() * (hi - lo +
 function monster(id: string, x: number, y: number, facing: number, span: number): MonsterDef {
   // radius big enough that sneaking (half radius) still sees across the whole level: sight is about lines, not range
   return { id, path: [[x, y]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: Math.min(15, 2 * span), viewAngle: 70, facing };
+}
+
+/** Cells a patrol may walk: open floor, a lever or the spawn; never a door (a patrol must not hang on the levers). */
+const PATROL_FLOOR = ['.', 'L', 'S'];
+
+/**
+ * Turn the monster into a back-and-forth patrol from its cell along one straight line of open cells, timed to the
+ * model's clock: each leg takes a whole number of ticks (near the default 1.6 cells/s) and each turn two ticks (the
+ * engine spends one frame more than the pause at a turn, hence the 1.5 frames off). False when no line fits.
+ */
+function makePatrol(level: Level, d: DimIndex, m: MonsterDef, r: Rng): boolean {
+  const [x, y] = m.path[0];
+  const legs: [number, number, number][] = [];
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]])
+    for (const n of [2, 4]) {
+      let ok = true;
+      for (let k = 1; k <= n && ok; k++) ok = PATROL_FLOOR.includes(getChar(level, d, x + dx * k, y + dy * k));
+      if (ok) legs.push([dx, dy, n]);
+    }
+  if (!legs.length) return false;
+  const [dx, dy, n] = pick(r, legs);
+  const k = Math.max(1, Math.round(n / (1.6 * TICK)));
+  m.path = [[x, y], [x + dx * n, y + dy * n]];
+  m.speed = n / (k * TICK);
+  m.pause = 2 * TICK - 1.5 / 60;
+  m.facing = (Math.round((Math.atan2(dy, dx) * 180) / Math.PI) + 360) % 360;
+  return true;
+}
+
+/** Back to standing still where the patrol starts, looking the way it set out. */
+function standStill(m: MonsterDef): void {
+  m.path = [m.path[0]];
+  m.speed = 1.6;
+  m.pause = 0.6;
 }
 
 /** One random lattice level. Not checked. */
@@ -104,14 +140,14 @@ export function sample(r: Rng, o: GenOptions): Level {
   }
   const span = Math.max(W, H);
   let n = 0;
-  for (let i = int(r, 0, o.maxTrolls); i > 0 && free.length; i--) {
+  const add = (d: DimIndex) => {
     const [x, y] = take();
-    level.dimensions[0].monsters.push(monster(`m${++n}`, x, y, aim(level, 0, x, y, r), span));
-  }
-  for (let i = int(r, 0, o.maxGhosts); i > 0 && free.length; i--) {
-    const [x, y] = take();
-    level.dimensions[1].monsters.push(monster(`m${++n}`, x, y, aim(level, 1, x, y, r), span));
-  }
+    const m = monster(`m${++n}`, x, y, aim(level, d, x, y, r), span);
+    if (r() < o.patrol) makePatrol(level, d, m, r);
+    level.dimensions[d].monsters.push(m);
+  };
+  for (let i = int(r, 0, o.maxTrolls); i > 0 && free.length; i--) add(0);
+  for (let i = int(r, 0, o.maxGhosts); i > 0 && free.length; i--) add(1);
 
   // exit: a border cell next to a room, rock in the other dimension
   const mouths: [number, number, number][] = [];
@@ -162,14 +198,25 @@ const clone = (l: Level): Level => ({
 function simplifications(level: Level): ((l: Level) => boolean)[] {
   const out: ((l: Level) => boolean)[] = [];
   const { w, h } = level.size;
-  const monsterAt = (l: Level, x: number, y: number) => l.dimensions.some((d) => d.monsters.some((m) => m.path.some(([px, py]) => px === x && py === y)));
+  // a monster's cells: where it stands, or every cell its patrol walks through
+  const monsterAt = (l: Level, x: number, y: number) => l.dimensions.some((d) => d.monsters.some((m) =>
+    m.path.length < 2 ? m.path[0][0] === x && m.path[0][1] === y : m.path.slice(1).some((b, i) => segmentCells(m.path[i], b).some(([px, py]) => px === x && py === y))));
   level.dimensions.forEach((dim, di) => {
-    for (const { id } of dim.monsters)
+    for (const { id, path } of dim.monsters) {
       out.push((l) => {
         const before = l.dimensions[di].monsters.length;
         l.dimensions[di].monsters = l.dimensions[di].monsters.filter((m) => m.id !== id);
         return l.dimensions[di].monsters.length < before;
       });
+      // a patrol whose walking changes nothing stands still
+      if (path.length > 1)
+        out.push((l) => {
+          const m = l.dimensions[di].monsters.find((mm) => mm.id === id);
+          if (!m || m.path.length < 2) return false;
+          standStill(m);
+          return true;
+        });
+    }
   });
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++)
@@ -219,7 +266,9 @@ function simplifications(level: Level): ((l: Level) => boolean)[] {
 export function minimize(level: Level, r: Rng): { level: Level; analysis: Analysis } {
   let cur = level;
   let best = analyze(cur);
-  const want = JSON.stringify(best.route);
+  // what the player does and when, not how the model numbers its states (that changes with every lever or monster)
+  const routeKey = (route: Action[] | null | undefined) => JSON.stringify(route?.map(({ state: _s, ...a }) => a));
+  const want = routeKey(best.route);
   for (let changed = true; changed;) {
     changed = false;
     const ops = simplifications(cur);
@@ -234,7 +283,7 @@ export function minimize(level: Level, r: Rng): { level: Level; analysis: Analys
       const m = new Model(l);
       if (m.unsupported) continue;
       const route = m.route('strict');
-      if (JSON.stringify(route) !== want) continue;
+      if (routeKey(route) !== want) continue;
       const a = check(m, route!);
       if (a.status !== 'unique') continue;
       cur = l;
@@ -394,7 +443,19 @@ export function finish(raw: Level, r: Rng): Candidate | null {
   if (a.status !== 'unique' || !a.metrics) return null;
   if (!validateLevel(tidied).ok) return null;
   if (!replay(tidied, a.route!).ok) return null;
+  // the strict reading waits more than the game needs: when the route also wins without any waiting, the patrols only
+  // decorate (A1: idle), so they stand still and the level is made again
+  if (a.metrics.patrolling > 0 && !timingMatters(tidied, a.route!)) {
+    const still = clone(raw);
+    for (const d of still.dimensions) for (const m of d.monsters) if (m.path.length > 1) standStill(m);
+    return finish(still, r);
+  }
   return { level: tidied, lattice: raw, analysis: a, key: canonicalKey(tidied), score: score(a.metrics) };
+}
+
+/** The route has to wait for a patrol: without its waits it does not win in the engine. */
+export function timingMatters(level: Level, route: Action[]): boolean {
+  return route.some((s) => s.type === 'wait') && !replay(level, route.filter((s) => s.type !== 'wait')).ok;
 }
 
 export function generateOne(r: Rng, o: GenOptions): Candidate | null {
@@ -419,7 +480,9 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
       const x = rx();
       const y = ry();
       if (!roomFree(x, y)) continue;
-      l.dimensions[0].monsters.push(monster(nextMonsterId(l), x, y, aim(l, 0, x, y, r), span));
+      const m = monster(nextMonsterId(l), x, y, aim(l, 0, x, y, r), span);
+      if (r() < o.patrol) makePatrol(l, 0, m, r);
+      l.dimensions[0].monsters.push(m);
       return l;
     }
   }
@@ -464,12 +527,17 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
     setCell(l, d, x, y, 'L');
     setProp(l, d, x, y, 'channel', Math.max(0, ...channels) + 1);
   } else if (kind < 0.9) {
-    // a monster: add, turn or remove
+    // a monster: turn, set walking or standing, remove, or add
     const all = l.dimensions.flatMap((d, di) => d.monsters.map((m) => [di, m] as const));
     const c = r();
-    if (c < 0.4 && all.length) {
+    if (c < 0.25 && all.length) {
       const [di, m] = pick(r, all);
-      m.facing = r() < 0.8 ? aim(l, di as DimIndex, m.path[0][0], m.path[0][1], r) : pick(r, [0, 90, 180, 270]);
+      if (m.path.length > 1) makePatrol(l, di as DimIndex, m, r);
+      else m.facing = r() < 0.8 ? aim(l, di as DimIndex, m.path[0][0], m.path[0][1], r) : pick(r, [0, 90, 180, 270]);
+    } else if (c < 0.45 && all.length) {
+      const [di, m] = pick(r, all);
+      if (m.path.length > 1) standStill(m);
+      else makePatrol(l, di as DimIndex, m, r);
     } else if (c < 0.6 && all.length) {
       const [di, m] = pick(r, all);
       l.dimensions[di].monsters = l.dimensions[di].monsters.filter((mm) => mm !== m);
@@ -480,7 +548,9 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
       const x = rx();
       const y = ry();
       if (!roomFree(x, y)) return l;
-      l.dimensions[di].monsters.push(monster(nextMonsterId(l), x, y, aim(l, di as DimIndex, x, y, r), span));
+      const m = monster(nextMonsterId(l), x, y, aim(l, di as DimIndex, x, y, r), span);
+      if (r() < o.patrol) makePatrol(l, di as DimIndex, m, r);
+      l.dimensions[di].monsters.push(m);
     }
   } else {
     // the exit: to another border cell next to a room, in either dimension

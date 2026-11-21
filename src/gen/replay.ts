@@ -1,63 +1,72 @@
 /**
- * Play a model route in the real simulation: walk cell centre to cell centre (sneaking), shift, pull, cut throats.
- * A generated level only counts when this wins without anyone spotting the player, so the discrete model never
- * promises a route the engine does not allow.
+ * Play a model route in the real simulation, on the model's clock: every action starts on a tick boundary (TICK
+ * seconds apart) and the player idles out the rest of its ticks, so patrols are where the model expects them. A
+ * generated level only counts when this wins without anyone spotting the player.
  */
 import type { Level } from '../core/level';
 import { NO_INPUT, Sim, TUNING, type SimInput } from '../core/sim';
-import type { Action } from './model';
+import { TAKEDOWN_TICKS, TICK, type Action } from './model';
 
 const DT = 1 / 60;
+const FRAMES = Math.round(TICK / DT);
 
 export function replay(level: Level, route: Action[]): { ok: boolean; reason?: string } {
   const sim = new Sim(level);
-  let frames = 0;
+  let frame = 0;
   const step = (input: Partial<SimInput>) => {
     sim.update({ ...NO_INPUT, sneak: true, ...input }, DT);
     sim.drainEvents();
-    frames++;
+    frame++;
   };
-  const fail = () => (sim.status === 'caught' || sim.hunter ? '被發現' : frames > 60 * 600 ? '逾時' : null);
-  /** Walk until the centre is within `stop` of (tx, ty). */
-  const walkTo = (tx: number, ty: number, stop = 0.02) => {
-    for (let guard = 0; guard < 60 * 10; guard++) {
-      if (fail() || sim.status === 'won') return;
+  const spotted = () => sim.status === 'caught' || !!sim.hunter;
+  /** Walk (sneaking unless told to run) toward (tx, ty) until within `stop`, or until frame `until`. */
+  const walkTo = (tx: number, ty: number, until: number, stop = 0.02, run = false) => {
+    while (frame < until && !spotted() && sim.status === 'playing') {
       const dx = tx - sim.x;
       const dy = ty - sim.y;
       const d = Math.hypot(dx, dy);
-      if (d <= stop) return;
-      const v = TUNING.playerSpeed * TUNING.sneakSpeedMul * DT;
+      if (d <= stop) return true;
+      const v = TUNING.playerSpeed * (run ? 1 : TUNING.sneakSpeedMul) * DT;
       const k = d < v ? d / v : 1;
-      step({ moveX: (dx / d) * k, moveY: (dy / d) * k });
+      step({ moveX: (dx / d) * k, moveY: (dy / d) * k, sneak: !run });
     }
+    return Math.hypot(tx - sim.x, ty - sim.y) <= stop;
   };
-  const idle = (seconds: number) => {
-    for (let i = 0; i < seconds / DT; i++) step({});
+  const idleUntil = (until: number) => {
+    while (frame < until && sim.status === 'playing') step({});
   };
 
+  let tick = 0;
   for (const a of route) {
-    const err = fail();
-    if (err) return { ok: false, reason: err };
-    if (a.type === 'move') walkTo(a.x + 0.5, a.y + 0.5);
-    else if (a.type === 'shift') {
-      step({ shift: true });
-      idle(TUNING.shiftCooldown + DT);
-    } else if (a.type === 'lever') step({ interact: true });
-    else {
+    if (spotted()) return { ok: false, reason: `第 ${tick} 拍被發現` };
+    const start = tick * FRAMES;
+    const ticks = a.type === 'kill' ? TAKEDOWN_TICKS : 1;
+    const end = (tick + ticks) * FRAMES;
+    if (a.type === 'move') walkTo(a.x + 0.5, a.y + 0.5, end);
+    else if (a.type === 'shift') step({ shift: true });
+    else if (a.type === 'lever') step({ interact: true });
+    else if (a.type === 'kill') {
       const m = sim.monsters.find((mm) => mm.def.id === a.monster);
       if (!m) return { ok: false, reason: `找不到 ${a.monster}` };
-      const hx = sim.x;
-      const hy = sim.y;
-      walkTo(m.x, m.y, TUNING.attackRange - 0.05);
+      // close in (running: a patrolling troll walks nearly as fast as a sneak), cut, then back to the cell's centre
+      const reached = (() => {
+        while (frame < start + FRAMES && !spotted()) {
+          if (Math.hypot(m.x - sim.x, m.y - sim.y) <= TUNING.attackRange - 0.05) return true;
+          walkTo(m.x, m.y, frame + 1, TUNING.attackRange - 0.05, true);
+        }
+        return false;
+      })();
+      if (!reached) return { ok: false, reason: `第 ${tick} 拍搆不到 ${a.monster}` };
       step({ attack: true });
       if (m.alive) return { ok: false, reason: `沒殺到 ${a.monster}` };
-      idle(TUNING.takedownTime + DT);
-      walkTo(hx, hy);
+      idleUntil(frame + Math.ceil(TUNING.takedownTime / DT) + 1);
+      walkTo(a.x + 0.5, a.y + 0.5, end);
     }
+    idleUntil(end);
+    tick += ticks;
+    if (sim.status === 'won') break;
   }
-  // the last move ends in the exit cell; carry on into the cave if that did not already win
   for (let i = 0; i < 30 && sim.status === 'playing'; i++) step({});
-  const err = fail();
-  if (err) return { ok: false, reason: err };
+  if (spotted()) return { ok: false, reason: `第 ${tick} 拍被發現` };
   return sim.status === 'won' ? { ok: true } : { ok: false, reason: '沒走到出口' };
 }

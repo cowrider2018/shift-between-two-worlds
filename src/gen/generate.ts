@@ -11,7 +11,7 @@ import { EXIT_DIRS } from '../core/grid';
 import { LEVEL_FORMAT, cellKey, getChar, nextMonsterId, parseCellKey, setCell, setProp, type DimIndex, type Level, type MonsterDef } from '../core/level';
 import { segmentCells, validateLevel } from '../core/validate';
 import { replay } from './replay';
-import { Model, TICK, analyze, check, type Action, type Analysis, type Metrics } from './model';
+import { Model, StateLimit, TICK, analyze, check, type Action, type Analysis, type Metrics } from './model';
 
 export const CHAINED_CHANNEL = 9;
 
@@ -30,9 +30,11 @@ export interface GenOptions {
   addTroll: number;
   /** Chance a new monster patrols instead of standing still. */
   patrol: number;
+  /** Chance a mutation adds a patrol across the current route (see patrolAcross). */
+  routePatrol: number;
 }
 
-export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, addTroll: 0, patrol: 0.5 };
+export const DEFAULT_OPTIONS: GenOptions = { rows: 3, cols: 3, maxLevers: 3, maxTrolls: 2, maxGhosts: 1, roomHole: 0.1, connWall: 0.2, addTroll: 0, patrol: 0.5, routePatrol: 0.1 };
 
 export type Rng = () => number;
 
@@ -56,30 +58,106 @@ function monster(id: string, x: number, y: number, facing: number, span: number)
   return { id, path: [[x, y]], mode: 'pingpong', speed: 1.6, pause: 0.6, viewRadius: Math.min(15, 2 * span), viewAngle: 70, facing };
 }
 
-/** Cells a patrol may walk: open floor, a lever or the spawn; never a door (a patrol must not hang on the levers). */
+/** Cells a patrol may walk: open floor, a lever, the spawn, or a door a lever drives (it turns back while that is shut). */
 const PATROL_FLOOR = ['.', 'L', 'S'];
 
 /**
  * Turn the monster into a back-and-forth patrol from its cell along one straight line of open cells, timed to the
  * model's clock: each leg takes a whole number of ticks (near the default 1.6 cells/s) and each turn two ticks (the
- * engine spends one frame more than the pause at a turn, hence the 1.5 frames off). False when no line fits.
+ * engine spends one frame more than the pause at a turn, hence the 1.5 frames off). A line may run through doors that
+ * levers drive; such lines are preferred, since a patrol the levers confine or release is a puzzle piece where a free
+ * one is mostly a timing gate. False when no line fits.
  */
 function makePatrol(level: Level, d: DimIndex, m: MonsterDef, r: Rng): boolean {
   const [x, y] = m.path[0];
   const legs: [number, number, number][] = [];
+  const throughDoor: [number, number, number][] = [];
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]])
     for (const n of [2, 4]) {
-      let ok = true;
-      for (let k = 1; k <= n && ok; k++) ok = PATROL_FLOOR.includes(getChar(level, d, x + dx * k, y + dy * k));
-      if (ok) legs.push([dx, dy, n]);
+      const line = patrolLine(level, d, x, y, dx, dy, n);
+      if (line) (line.door ? throughDoor : legs).push([dx, dy, n]);
     }
+  if (throughDoor.length && (!legs.length || r() < 0.75)) legs.splice(0, legs.length, ...throughDoor);
   if (!legs.length) return false;
   const [dx, dy, n] = pick(r, legs);
+  setPatrol(m, dx, dy, n);
+  return true;
+}
+
+/** Can a patrol walk n cells from (x, y) in direction (dx, dy)? Null if not; else whether it passes a lever door. */
+function patrolLine(level: Level, d: DimIndex, x: number, y: number, dx: number, dy: number, n: number): { door: boolean } | null {
+  let door = false;
+  for (let k = 1; k <= n; k++) {
+    const [cx, cy] = [x + dx * k, y + dy * k];
+    const ch = getChar(level, d, cx, cy);
+    if (ch === 'D' && getProp(level, d, cx, cy, 'channel') !== CHAINED_CHANNEL) door = true;
+    else if (!PATROL_FLOOR.includes(ch)) return null;
+  }
+  return { door };
+}
+
+/** Walk n cells from the monster's cell in direction (dx, dy) and back, on the model's clock (see makePatrol). */
+function setPatrol(m: MonsterDef, dx: number, dy: number, n: number): void {
+  const [x, y] = m.path[0];
   const k = Math.max(1, Math.round(n / (1.6 * TICK)));
   m.path = [[x, y], [x + dx * n, y + dy * n]];
   m.speed = n / (k * TICK);
   m.pause = 2 * TICK - 1.5 / 60;
   m.facing = (Math.round((Math.atan2(dy, dx) * 180) / Math.PI) + 360) % 360;
+}
+
+/** View radius of a patrol laid across the route (sneaking halves it): it watches its stretch, not the whole level. */
+const ROUTE_PATROL_SIGHT = 6;
+
+/**
+ * A new patrol whose line runs through a cell of the level's current (strict) route: from a free room in the same row
+ * or column, across that cell. A patrol only stays after minimizing when the route has to time itself around it (it
+ * never blocks a way for good: it always turns away at some point), so this is where patrols can be load-bearing.
+ */
+function patrolAcross(l: Level, r: Rng, o: GenOptions, span: number): boolean {
+  let route: Action[] | null;
+  try {
+    const m = new Model(l);
+    if (m.unsupported) return false;
+    route = m.route('strict');
+  } catch (e) {
+    if (e instanceof StateLimit) return false;
+    throw e;
+  }
+  if (!route) return false;
+  const cells = route.filter((a) => a.type === 'move' || a.type === 'shift');
+  const key = (d: number, x: number, y: number) => `${d},${x},${y}`;
+  const spawn = l.dimensions.flatMap((dd, di) => dd.rows.flatMap((row, y) => [...row].flatMap((ch, x) => (ch === 'S' ? [key(di, x, y)] : []))));
+  const seq = [...spawn, ...cells.map((a) => key(a.dim, a.x, a.y))];
+  // every way to lay a patrol across a route cell: from a free room k cells before it, n cells long (n ≥ k), never
+  // along the route's steps into and out of that cell
+  const through: [DimIndex, number, number, number, number, number][] = [];
+  const turning: typeof through = [];
+  cells.forEach(({ dim: d, x, y }, i) => {
+    if (l.dimensions[d].monsters.length >= (d === 0 ? o.maxTrolls : o.maxGhosts)) return;
+    const beside = new Set([seq[i], seq[i + 2]]);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]])
+      for (let k = 1; k <= 4; k++) {
+        const [sx, sy] = [x - dx * k, y - dy * k];
+        if (sx % 2 !== 1 || sy % 2 !== 1 || getChar(l, d, sx, sy) !== '.') continue;
+        if (l.dimensions.some((dd) => dd.monsters.some((mm) => mm.path[0][0] === sx && mm.path[0][1] === sy))) continue;
+        for (const n of [2, 4]) {
+          if (n < k || !patrolLine(l, d, sx, sy, dx, dy, n)) continue;
+          let along = false;
+          for (let j = 0; j <= n; j++) if (beside.has(key(d, sx + dx * j, sy + dy * j))) along = true;
+          // walking through the cell leaves more moments to pass than turning about on it
+          if (!along) (n > k ? through : turning).push([d, sx, sy, dx, dy, n]);
+        }
+      }
+  });
+  const ways = through.length && (!turning.length || r() < 0.7) ? through : turning;
+  if (!ways.length) return false;
+  const [d, sx, sy, dx, dy, n] = pick(r, ways);
+  const m = monster(nextMonsterId(l), sx, sy, 0, span);
+  setPatrol(m, dx, dy, n);
+  // a patrol that sees the whole map down its line leaves no moment to cross it
+  m.viewRadius = ROUTE_PATROL_SIGHT;
+  l.dimensions[d].monsters.push(m);
   return true;
 }
 
@@ -282,9 +360,15 @@ export function minimize(level: Level, r: Rng): { level: Level; analysis: Analys
       // one search tells whether the route survived; only then pay for the full uniqueness check
       const m = new Model(l);
       if (m.unsupported) continue;
-      const route = m.route('strict');
-      if (routeKey(route) !== want) continue;
-      const a = check(m, route!);
+      let a: Analysis;
+      try {
+        const route = m.route('strict');
+        if (routeKey(route) !== want) continue;
+        a = check(m, route!);
+      } catch (e) {
+        if (e instanceof StateLimit) continue;
+        throw e;
+      }
       if (a.status !== 'unique') continue;
       cur = l;
       best = a;
@@ -443,14 +527,29 @@ export function finish(raw: Level, r: Rng): Candidate | null {
   if (a.status !== 'unique' || !a.metrics) return null;
   if (!validateLevel(tidied).ok) return null;
   if (!replay(tidied, a.route!).ok) return null;
-  // the strict reading waits more than the game needs: when the route also wins without any waiting, the patrols only
-  // decorate (A1: idle), so they stand still and the level is made again
-  if (a.metrics.patrolling > 0 && !timingMatters(tidied, a.route!)) {
+  // the strict reading waits more than the game needs: when the route waits but also wins without waiting, patrols
+  // that only time the route decorate (A1: idle), so they stand still and the level is made again. A patrol the doors
+  // confine needs no waiting to matter: minimizing already showed that standing still changes the level
+  const waits = a.route!.some((s) => s.type === 'wait');
+  if (a.metrics.patrolling > a.metrics.throughDoors && waits && !timingMatters(tidied, a.route!)) {
     const still = clone(raw);
-    for (const d of still.dimensions) for (const m of d.monsters) if (m.path.length > 1) standStill(m);
+    let stood = 0;
+    for (const d of still.dimensions) for (const m of d.monsters) if (m.path.length > 1 && !crossesDoor(still, d, m)) {
+      standStill(m);
+      stood++;
+    }
+    // the door it crossed was minimized away: no patrol here is confined, so none stays
+    if (!stood) for (const d of still.dimensions) for (const m of d.monsters) if (m.path.length > 1) standStill(m);
     return finish(still, r);
   }
   return { level: tidied, lattice: raw, analysis: a, key: canonicalKey(tidied), score: score(a.metrics) };
+}
+
+/** The patrol walks through a door a lever drives. */
+function crossesDoor(level: Level, d: Level['dimensions'][0], m: MonsterDef): boolean {
+  const di = level.dimensions.indexOf(d) as DimIndex;
+  return m.path.slice(1).some((b, i) => segmentCells(m.path[i], b).some(([x, y]) =>
+    getChar(level, di, x, y) === 'D' && getProp(level, di, x, y, 'channel') !== CHAINED_CHANNEL));
 }
 
 /** The route has to wait for a patrol: without its waits it does not win in the engine. */
@@ -474,6 +573,7 @@ export function mutate(level: Level, r: Rng, o: GenOptions): Level {
   const roomFree = (x: number, y: number) => ['.'].includes(getChar(l, 0, x, y)) && getChar(l, 1, x, y) === '.' && !monsterAt(x, y);
   const rx = () => 2 * int(r, 0, o.cols - 1) + 1;
   const ry = () => 2 * int(r, 0, o.rows - 1) + 1;
+  if (r() < o.routePatrol && patrolAcross(l, r, o, span)) return l;
   if (r() < o.addTroll && l.dimensions[0].monsters.length < o.maxTrolls) {
     // try a few rooms: a troll needs a free one
     for (let k = 0; k < 6; k++) {

@@ -4,17 +4,26 @@
  * Time runs in ticks of TICK seconds: one sneaking step, a wait, a shift or a pull per tick, a takedown over
  * TAKEDOWN_TICKS. A state is (position, lever switches, monster states, tick mod the level's period). Monster motion is
  * the engine's own (MonsterState stepped at the simulation's frame rate) sampled SUB times per tick, so a patrol here is
- * exactly the patrol in the game. A patrol must come back to its start in a whole number of ticks and must not cross a
- * lever-driven door; otherwise the level is unsupported.
+ * exactly the patrol in the game. A patrol that stays clear of lever-driven doors must come back to its start in a whole
+ * number of ticks; its pose is then a function of the tick.
+ *
+ * A patrol across a lever-driven door turns back at the door while it is shut, so where it is depends on when the
+ * levers were pulled. Such a patrol is a *mover*: its state at the start of each tick (the engine's MonsterState
+ * itself: position, leg, direction, pause left, facing) is part of the monster states, and one tick of it is the
+ * engine's update under that tick's doors. Everything runs in whole frames, so the states it can reach form a finite
+ * set, listed up front for every setting of its doors. A lever press acts on the tick's first frame, before monsters
+ * move, so the tick after a pull runs under the new doors.
  *
  * Monster states: a surface (A) troll is alive or dead; a dead one watches from the underside (B) in the pose it died
  * in, so a patrolling troll's death is kept as its pose class (cell and facing to 45°). Underside monsters are ghosts:
  * never killed.
  *
  * Two readings of the same level:
- *  - strict: what the intended route may use. A cell must be out of sight at every sub-step of the tick and at every
- *    point the player's body can take in it; cells a monster's body passes through are blocked; a takedown is made from
- *    a 4-neighbouring cell and the player must stay unseen for its whole length.
+ *  - strict: what the intended route may use. Every action is checked over its own tick, on the cells the player is in
+ *    during it (a step: both cells; a shift: the landing cell, as it happens on the tick's first frame; a pull or a
+ *    wait: its cell): each must be out of sight at every sub-step of the tick and at every point the player's body can
+ *    take in it, and no monster's body may pass through it; a takedown is made from a 4-neighbouring cell and the
+ *    player must stay unseen through all of its ticks.
  *  - loose: what a player could get away with in the engine: sight checked only at the tick itself and only when all of
  *    the cell is in view, bodies walkable, running (two cells a tick), a shorter takedown, also from a diagonal cell.
  *    Alternatives are searched for in this reading, so any route it finds is a real risk.
@@ -36,6 +45,28 @@ const FRAMES_PER_SUB = Math.round(TICK / SUB / FRAME);
 export const TAKEDOWN_TICKS = Math.ceil((TUNING.takedownTime + 0.25) / TICK);
 const LOOSE_TAKEDOWN_TICKS = Math.floor(TUNING.takedownTime / TICK);
 const MAX_PERIOD = 120;
+/** Most tick-start states a mover may have. */
+const MAX_MOVER_STATES = 2000;
+/** Searches keep tables indexed by state number up to this many states; past it only the states reached. */
+const MAX_DENSE = 1 << 22;
+/** Most states a search may reach before the level counts as too big. */
+const MAX_REACHED = 3_000_000;
+
+const MONSTER_CACHE = new Map<string, Mon | string>();
+
+/** A search ran past MAX_REACHED states. */
+export class StateLimit extends Error {
+  constructor() {
+    super('狀態空間過大');
+  }
+}
+
+interface Search {
+  goal: number;
+  parent: (s: number) => number;
+  via: (s: number) => number;
+  viaArg: (s: number) => number;
+}
 
 export type Action = (
   | { type: 'move'; dim: DimIndex; x: number; y: number }
@@ -60,15 +91,31 @@ interface Mon {
   home: DimIndex;
   radius: number;
   half: number;
-  /** Ticks per round of its patrol; 1 when it stands still. */
+  /** Ticks per round of its patrol; 1 when it stands still or is a mover. */
   period: number;
   /** Pose at every sub-step of one period. */
   poses: Pose[];
-  /** Surface trolls: the poses it can die in (one when standing), which one each tick of the period gives, and where
-   *  its state sits in the monster-state number. */
+  /** A patrol across lever-driven doors (see the header), else null. */
+  mover: Mover | null;
+  /** Surface trolls: the poses it can die in (one when standing), which one each tick of the period (a mover: each of
+   *  its states) gives. */
   deadPoses: Pose[];
   deadAt: number[];
+  /** Its digit in the monster-state number: values below `alive` are alive (a mover's state), the rest its death
+   *  poses. Standing, periodic and ghost-without-door monsters have one alive value. */
   base: number;
+  alive: number;
+  size: number;
+}
+
+interface Mover {
+  /** Door settings it can meet (distinct patterns of its doors over all lever settings), and which one each gives. */
+  V: number;
+  variantOf: Int32Array;
+  /** State q under door setting v: the state a tick later at next[q * V + v], its poses through the tick (SUB + 1,
+   *  the last being the next state's) at poses[(q * V + v) * (SUB + 1) + sub]. */
+  next: Int32Array;
+  poses: Pose[];
 }
 
 const MOVE = 0;
@@ -95,8 +142,10 @@ export class Model {
   readonly ghosts: Mon[] = [];
   readonly spawn: Cell | null;
   readonly S: number;
-  /** Number of monster-state values (product over trolls of 1 + their death poses). */
+  /** Number of monster-state values (product over monsters of their digit sizes). */
   readonly M: number;
+  /** Monsters whose state moves on with the ticks (movers). */
+  private readonly movers: Mon[] = [];
   /** The level's period in ticks. */
   readonly L: number;
   private readonly LM: number;
@@ -141,11 +190,11 @@ export class Model {
           continue;
         }
         L = (L / gcd(L, mon.period)) * mon.period;
-        if (di === 0) {
-          mon.base = base;
-          base *= 1 + mon.deadPoses.length;
-          this.trolls.push(mon);
-        } else this.ghosts.push(mon);
+        mon.size = mon.alive + (di === 0 ? mon.deadPoses.length : 0);
+        mon.base = base;
+        base *= mon.size;
+        if (mon.mover) this.movers.push(mon);
+        (di === 0 ? this.trolls : this.ghosts).push(mon);
       }
     });
     this.M = base;
@@ -169,22 +218,51 @@ export class Model {
   }
 
   /** A monster's motion over one period, from the engine's own patrol code; a string says why it cannot be modelled. */
+  /**
+   * A monster's motion, cached across models: it depends only on its definition, the level's size (an about-face
+   * swings past the centre) and, per lever setting, which cells of its walk are shut. Minimizing builds many models of
+   * nearly the same level, and simulating a patrol is most of what building one costs.
+   */
   private monster(def: MonsterDef, home: DimIndex): Mon | string {
+    const ring = patrolRing(def);
+    const cells: [number, number][] = [];
+    for (let i = 0; i < ring.length && ring.length > 1; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      cells.push(...segmentCells([a[0] - 0.5, a[1] - 0.5], [b[0] - 0.5, b[1] - 0.5]));
+    }
+    const shut: string[] = [];
+    for (let lm = 0; lm < this.LM; lm++) {
+      const ch = this.channelFn(lm);
+      shut.push(cells.map(([x, y]) => (this.grid.solid(home, x, y, ch) ? 1 : 0)).join(''));
+    }
+    const key = `${JSON.stringify(def)}|${home}|${this.w}x${this.h}|${shut.join(',')}`;
+    let hit = MONSTER_CACHE.get(key);
+    if (hit === undefined) {
+      hit = this.buildMonster(def, home);
+      if (MONSTER_CACHE.size > 20000) MONSTER_CACHE.clear();
+      MONSTER_CACHE.set(key, hit);
+    }
+    return typeof hit === 'string' ? hit : { ...hit };
+  }
+
+  private buildMonster(def: MonsterDef, home: DimIndex): Mon | string {
     const grid = this.grid;
     const off = this.channelFn(0);
     const radius = def.viewRadius * TUNING.sneakRadiusMul;
     const half = ((def.viewAngle / 2) * Math.PI) / 180;
     const ring = patrolRing(def);
-    // a door a lever drives would make the patrol depend on the levers
+    // the lever-driven doors on its walk make it a mover
+    const doors: Cell[] = [];
     for (let i = 0; i < ring.length && ring.length > 1; i++) {
       const a = ring[i];
       const b = ring[(i + 1) % ring.length];
       for (const [x, y] of segmentCells([a[0] - 0.5, a[1] - 0.5], [b[0] - 0.5, b[1] - 0.5])) {
         const c = grid.cell(home, x, y);
-        if (c.def.behavior === 'door' && !grid.chained(c) && !(c.props.inverted && !this.switchChannel.includes(Number(c.props.channel))))
-          return `怪物 ${def.id} 的巡邏穿過拉桿控制的門`;
+        if (c.def.behavior === 'door' && this.switchChannel.includes(Number(c.props.channel)) && !doors.includes(c)) doors.push(c);
       }
     }
+    if (doors.length) return this.mover(def, home, radius, half, doors);
     const ms = new MonsterState(def, home, [this.w / 2, this.h / 2]);
     const blocked = (cx: number, cy: number) => grid.solid(home, cx, cy, off);
     const poses: Pose[] = [];
@@ -219,7 +297,80 @@ export class Model {
       }
       deadAt.push(c);
     }
-    return { id: def.id, home, radius, half, period, poses: one, deadPoses, deadAt, base: 0 };
+    return { id: def.id, home, radius, half, period, poses: one, mover: null, deadPoses, deadAt, base: 0, alive: 1, size: 1 };
+  }
+
+  /** A patrol across lever-driven doors: every state it can be in at a tick's start, under every setting of its doors. */
+  private mover(def: MonsterDef, home: DimIndex, radius: number, half: number, doors: Cell[]): Mon | string {
+    const grid = this.grid;
+    // door settings: which of its doors are shut, for each lever setting
+    const variantOf = new Int32Array(this.LM);
+    const reps: number[] = [];
+    const seen = new Map<string, number>();
+    for (let lm = 0; lm < this.LM; lm++) {
+      const ch = this.channelFn(lm);
+      const k = doors.map((c) => (grid.solid(home, c.x, c.y, ch) ? 1 : 0)).join('');
+      let v = seen.get(k);
+      if (v === undefined) {
+        v = reps.length;
+        seen.set(k, v);
+        reps.push(lm);
+      }
+      variantOf[lm] = v;
+    }
+    const V = reps.length;
+    const blocked = reps.map((lm) => {
+      const ch = this.channelFn(lm);
+      return (cx: number, cy: number) => grid.solid(home, cx, cy, ch);
+    });
+    // the engine's own monster, copied at each tick start; its private fields are its state
+    type Raw = Record<string, number | boolean>;
+    const copy = (s: MonsterState) => Object.assign(Object.create(Object.getPrototypeOf(s)), s) as MonsterState;
+    const keyOf = (s: MonsterState) => {
+      const r = s as unknown as Raw;
+      const n = (v: number | boolean, k = 1e4) => Math.round(Number(v) * k);
+      return [n(s.x), n(s.y), n(Math.cos(s.angle)), n(Math.sin(s.angle)), n(r.seg, 1), n(r.t), n(r.dir, 1), n(r.stopped, 1), n(r.pauseT), n(r.turnSign, 1)].join(',');
+    };
+    const states = [new MonsterState(def, home, [this.w / 2, this.h / 2])];
+    const index = new Map([[keyOf(states[0]), 0]]);
+    const next: number[] = [];
+    const poses: Pose[] = [];
+    for (let q = 0; q < states.length; q++)
+      for (let v = 0; v < V; v++) {
+        const ms = copy(states[q]);
+        poses.push({ x: ms.x, y: ms.y, angle: ms.angle });
+        for (let sub = 1; sub <= SUB; sub++) {
+          for (let f = 0; f < FRAMES_PER_SUB; f++) ms.update(FRAME, blocked[v]);
+          poses.push({ x: ms.x, y: ms.y, angle: ms.angle });
+        }
+        const k = keyOf(ms);
+        let nq = index.get(k);
+        if (nq === undefined) {
+          if (states.length >= MAX_MOVER_STATES) return `怪物 ${def.id} 的巡邏狀態超過 ${MAX_MOVER_STATES} 個（速度或停頓對不上 ${TICK} 秒的時間格）`;
+          nq = states.length;
+          index.set(k, nq);
+          states.push(ms);
+        }
+        next.push(nq);
+      }
+    const deadPoses: Pose[] = [];
+    const deadAt: number[] = [];
+    const classKey = new Map<string, number>();
+    for (const s of states) {
+      const key = `${Math.floor(s.x)},${Math.floor(s.y)},${Math.round(s.angle / (Math.PI / 4)) & 7}`;
+      let c = classKey.get(key);
+      if (c === undefined) {
+        c = deadPoses.length;
+        classKey.set(key, c);
+        deadPoses.push({ x: s.x, y: s.y, angle: s.angle });
+      }
+      deadAt.push(c);
+    }
+    return {
+      id: def.id, home, radius, half, period: 1, poses: [],
+      mover: { V, variantOf, next: Int32Array.from(next), poses },
+      deadPoses, deadAt, base: 0, alive: states.length, size: 1,
+    };
   }
 
   get switches(): number {
@@ -231,7 +382,12 @@ export class Model {
   }
 
   get patrolling(): number {
-    return [...this.trolls, ...this.ghosts].filter((m) => m.period > 1).length;
+    return [...this.trolls, ...this.ghosts].filter((m) => m.period > 1 || m.mover).length;
+  }
+
+  /** How many of the patrols cross a lever-driven door. */
+  get movingThroughDoors(): number {
+    return this.movers.length;
   }
 
   channelFn(lm: number): (ch: number) => boolean {
@@ -258,23 +414,50 @@ export class Model {
   /** Troll i's state in mc: -1 alive, else the pose class it died in. */
   deadClass(mc: number, i: number): number {
     const t = this.trolls[i];
-    return (Math.floor(mc / t.base) % (1 + t.deadPoses.length)) - 1;
+    const v = this.digit(mc, t);
+    return v < t.alive ? -1 : v - t.alive;
   }
 
-  /** Where every monster is at tick t (and sub-step), as the gallery draws them. */
-  monstersAt(mc: number, t: number, sub = 0): { id: string; dim: DimIndex; x: number; y: number; angle: number; dead: boolean }[] {
+  private digit(mc: number, m: Mon): number {
+    return Math.floor(mc / m.base) % m.size;
+  }
+
+  /** Where every monster is at tick t (and sub-step, under lever setting lm), as the gallery draws them. */
+  monstersAt(mc: number, t: number, sub = 0, lm = 0): { id: string; dim: DimIndex; x: number; y: number; angle: number; dead: boolean }[] {
     const out: { id: string; dim: DimIndex; x: number; y: number; angle: number; dead: boolean }[] = [];
     this.trolls.forEach((m, i) => {
       const c = this.deadClass(mc, i);
-      const p = c < 0 ? this.pose(m, t, sub) : m.deadPoses[c];
+      const p = c < 0 ? this.pose(m, mc, lm, t, sub) : m.deadPoses[c];
       out.push({ id: m.id, dim: c < 0 ? 0 : 1, ...p, dead: c >= 0 });
     });
-    for (const g of this.ghosts) out.push({ id: g.id, dim: 1, ...this.pose(g, t, sub), dead: false });
+    for (const g of this.ghosts) out.push({ id: g.id, dim: 1, ...this.pose(g, mc, lm, t, sub), dead: false });
     return out;
   }
 
-  private pose(m: Mon, t: number, sub: number): Pose {
+  /** A live monster's pose at sub-step `sub` of tick t. */
+  private pose(m: Mon, mc: number, lm: number, t: number, sub: number): Pose {
+    const mv = m.mover;
+    if (mv) return mv.poses[(this.digit(mc, m) * mv.V + mv.variantOf[lm]) * (SUB + 1) + sub];
     return m.poses[((t % m.period) * SUB + sub) % m.poses.length];
+  }
+
+  /** Watcher key of a live monster's pose (for the sight-mask cache). */
+  private poseKey(m: Mon, mc: number, lm: number, t: number, sub: number): string {
+    const mv = m.mover;
+    if (mv) return `${m.id}|q${this.digit(mc, m)}v${mv.variantOf[lm]}s${sub}`;
+    return `${m.id}|${((t % m.period) * SUB + sub) % m.poses.length}`;
+  }
+
+  /** The monster states a tick later, the tick running under lever setting lm: the living movers walk on. */
+  advance(mc: number, lm: number): number {
+    let out = mc;
+    for (const m of this.movers) {
+      const q = this.digit(mc, m);
+      if (q >= m.alive) continue;
+      const mv = m.mover!;
+      out += (mv.next[q * mv.V + mv.variantOf[lm]] - q) * m.base;
+    }
+    return out;
   }
 
   private solid(lm: number): Uint8Array {
@@ -364,15 +547,15 @@ export class Model {
           watch(`${m.id}|d${c}`, 1, m.deadPoses[c], m, sub);
           body(1, m.deadPoses[c]);
         } else {
-          const ph = ((t % m.period) * SUB + sub) % m.poses.length;
-          watch(`${m.id}|${ph}`, 0, m.poses[ph], m, sub);
-          body(0, m.poses[ph]);
+          const p = this.pose(m, mc, lm, t, sub);
+          watch(this.poseKey(m, mc, lm, t, sub), 0, p, m, sub);
+          body(0, p);
         }
       });
       for (const g of this.ghosts) {
-        const ph = ((t % g.period) * SUB + sub) % g.poses.length;
-        watch(`${g.id}|${ph}`, 1, g.poses[ph], g, sub);
-        body(1, g.poses[ph]);
+        const p = this.pose(g, mc, lm, t, sub);
+        watch(this.poseKey(g, mc, lm, t, sub), 1, p, g, sub);
+        body(1, p);
       }
     }
     for (let k = 0; k < this.P; k++) if (loose[k] === ALL) out[k] |= 1;
@@ -384,12 +567,13 @@ export class Model {
     return this.exitAt[d * this.wh + y * this.w + x] === 1;
   }
 
-  /** The player may be on pos through tick t (strict: also through the tick before, which they are coming in from). */
-  private ok(pos: number, lm: number, mc: number, t: number, strict: boolean, banned: Uint8Array | null, from = -1): boolean {
+  /**
+   * The player may be on pos in tick t: loose, not all of the cell in sight at the tick's start; strict, nothing of it
+   * in sight and no monster body in it at any point of the tick.
+   */
+  private ok(pos: number, lm: number, mc: number, t: number, strict: boolean, banned: Uint8Array | null): boolean {
     if (this.solid(lm)[pos] || (banned && banned[pos])) return false;
-    const bad = strict ? 6 : 1;
-    if (this.view(lm, mc, t)[pos] & bad) return false;
-    return !(strict && from >= 0 && this.view(lm, mc, from)[pos] & bad);
+    return !(this.view(lm, mc, t)[pos] & (strict ? 6 : 1));
   }
 
   startState(mode: Mode): number {
@@ -400,7 +584,7 @@ export class Model {
   }
 
   /** Successors of s into the out arrays; returns how many. `banned` marks positions the player may not enter. */
-  expand(s: number, strict: boolean, banned: Uint8Array | null, to: Int32Array, kind: Uint8Array, arg: Int32Array): number {
+  expand(s: number, strict: boolean, banned: Uint8Array | null, to: Float64Array, kind: Uint8Array, arg: Int32Array): number {
     const { pos, d, x, y, lm, mc, t } = this.parts(s);
     if (this.exitAt[pos]) return 0;
     const { wh, w, L } = this;
@@ -413,46 +597,77 @@ export class Model {
       n++;
     };
     const dirs = [1, -1, w, -w];
-    if (this.ok(pos, lm, mc, t1, strict, banned)) push(pos, lm, mc, t1, WAIT);
-    for (let k = 0; k < 4; k++) {
-      if (this.stepShut[pos * 4 + k]) continue;
-      const np = pos + dirs[k];
-      if (this.ok(np, lm, mc, t1, strict, banned, t)) push(np, lm, mc, t1, MOVE);
-      // loose: running covers two cells in a tick
-      if (!strict && !this.solid(lm)[np] && !(banned && banned[np]) && !(this.view(lm, mc, t1)[np] & 1))
-        for (let k2 = 0; k2 < 4; k2++) {
-          if (this.stepShut[np * 4 + k2]) continue;
-          const np2 = np + dirs[k2];
-          if (np2 !== pos && this.ok(np2, lm, mc, t1, false, banned)) push(np2, lm, mc, t1, RUN);
-        }
-    }
-    const op = d ? pos - wh : pos + wh;
-    if (!this.exitAt[op] && this.ok(op, lm, mc, t1, strict, banned, t)) push(op, lm, mc, t1, SHIFT);
+    // the monster states once this tick is over (a pull changes the doors for the whole tick)
+    const nmc = this.advance(mc, lm);
     const sw = this.leverAt[pos];
-    if (sw >= 0) {
-      const nlm = lm ^ (1 << sw);
-      // pulling can open a door onto a watcher
-      if (this.ok(pos, nlm, mc, t1, strict, banned, t)) push(pos, nlm, mc, t1, LEVER);
+    const op = d ? pos - wh : pos + wh;
+    if (strict) {
+      // every action is checked over its own tick, on the cells the player is in during it: a step's both cells, a
+      // shift's landing cell (it happens on the tick's first frame), a pull's or a wait's own cell
+      const safe = (p: number, l: number, m: number, tt: number) => !this.solid(l)[p] && !(banned && banned[p]) && !(this.view(l, m, tt)[p] & 6);
+      const here = safe(pos, lm, mc, t);
+      if (here) {
+        push(pos, lm, nmc, t1, WAIT);
+        for (let k = 0; k < 4; k++) {
+          if (this.stepShut[pos * 4 + k]) continue;
+          const np = pos + dirs[k];
+          if (safe(np, lm, mc, t)) push(np, lm, nmc, t1, MOVE);
+        }
+      }
+      if (!this.exitAt[op] && safe(op, lm, mc, t)) push(op, lm, nmc, t1, SHIFT);
+      if (sw >= 0) {
+        const nlm = lm ^ (1 << sw);
+        // pulling can open a door onto a watcher
+        if (safe(pos, nlm, mc, t)) push(pos, nlm, this.advance(mc, nlm), t1, LEVER);
+      }
+    } else {
+      if (this.ok(pos, lm, nmc, t1, false, banned)) push(pos, lm, nmc, t1, WAIT);
+      for (let k = 0; k < 4; k++) {
+        if (this.stepShut[pos * 4 + k]) continue;
+        const np = pos + dirs[k];
+        if (this.ok(np, lm, nmc, t1, false, banned)) push(np, lm, nmc, t1, MOVE);
+        // running covers two cells in a tick
+        if (!this.solid(lm)[np] && !(banned && banned[np]) && !(this.view(lm, nmc, t1)[np] & 1))
+          for (let k2 = 0; k2 < 4; k2++) {
+            if (this.stepShut[np * 4 + k2]) continue;
+            const np2 = np + dirs[k2];
+            if (np2 !== pos && this.ok(np2, lm, nmc, t1, false, banned)) push(np2, lm, nmc, t1, RUN);
+          }
+      }
+      if (!this.exitAt[op] && this.ok(op, lm, nmc, t1, false, banned)) push(op, lm, nmc, t1, SHIFT);
+      if (sw >= 0) {
+        const nlm = lm ^ (1 << sw);
+        const pmc = this.advance(mc, nlm);
+        if (this.ok(pos, nlm, pmc, t1, false, banned)) push(pos, nlm, pmc, t1, LEVER);
+      }
     }
     if (d === 0)
       this.trolls.forEach((m, i) => {
         if (this.deadClass(mc, i) >= 0) return;
-        const p = this.pose(m, t, 0);
+        const p = this.pose(m, mc, lm, t, 0);
         const ax = Math.abs(Math.floor(p.x) - x);
         const ay = Math.abs(Math.floor(p.y) - y);
         if (strict ? ax + ay !== 1 : ax > 1 || ay > 1 || ax + ay === 0) return;
-        const nmc = mc + (m.deadAt[t % m.period] + 1) * m.base;
+        const q = this.digit(mc, m);
+        const cls = m.mover ? m.deadAt[q] : m.deadAt[t % m.period];
+        let kmc = mc + (m.alive + cls - q) * m.base;
         const ticks = strict ? TAKEDOWN_TICKS : LOOSE_TAKEDOWN_TICKS;
-        // the player stays where they are, and must stay unseen, until the takedown is over
-        for (let k = 1; k <= ticks; k++) if (!this.ok(pos, lm, nmc, (t + k) % L, strict, banned)) return;
-        push(pos, lm, nmc, (t + ticks) % L, KILL, i);
+        // the player stays where they are, and must stay unseen, until the takedown is over (strict: through each of
+        // its ticks; loose: at each tick that follows)
+        for (let k = strict ? 0 : 1; k <= (strict ? ticks - 1 : ticks); k++) {
+          if (!strict) kmc = this.advance(kmc, lm);
+          if (!this.ok(pos, lm, kmc, (t + k) % L, strict, banned)) return;
+          if (strict) kmc = this.advance(kmc, lm);
+        }
+        push(pos, lm, kmc, (t + ticks) % L, KILL, i);
       });
     return n;
   }
 
   private buffers() {
     const m = 32 + this.trolls.length;
-    return { to: new Int32Array(m), kind: new Uint8Array(m), arg: new Int32Array(m) };
+    // state numbers can pass 2^31 when the monster states multiply up
+    return { to: new Float64Array(m), kind: new Uint8Array(m), arg: new Int32Array(m) };
   }
 
   private bfsBuffers() {
@@ -462,48 +677,93 @@ export class Model {
     return this.buf;
   }
 
-  /** Breadth-first search from the start; the exit state reached first, or -1. */
-  private bfs(strict: boolean, banned: Uint8Array | null) {
-    const b = this.bfsBuffers();
+  /**
+   * Breadth-first search from the start: the exit state reached first (or -1) and how each state was reached. Tables
+   * indexed by state number while they fit (MAX_DENSE); beyond that only the states reached are kept, up to MAX_REACHED.
+   */
+  private bfs(strict: boolean, banned: Uint8Array | null): Search {
     const start = this.startState(strict ? 'strict' : 'loose');
-    if (start < 0) return { goal: -1, b };
     const { to, kind, arg } = this.buffers();
-    let head = 0;
-    let tail = 0;
-    b.queue[tail++] = start;
-    b.stamp[start] = b.gen;
-    b.parent[start] = start;
-    while (head < tail) {
-      const s = b.queue[head++];
-      if (this.exitAt[s % this.P]) return { goal: s, b };
+    if (this.stateCount <= MAX_DENSE) {
+      const b = this.bfsBuffers();
+      const found: Search = { goal: -1, parent: (s) => b.parent[s], via: (s) => b.via[s], viaArg: (s) => b.viaArg[s] };
+      if (start < 0) return found;
+      let head = 0;
+      let tail = 0;
+      b.queue[tail++] = start;
+      b.stamp[start] = b.gen;
+      b.parent[start] = start;
+      while (head < tail) {
+        const s = b.queue[head++];
+        if (this.exitAt[s % this.P]) {
+          found.goal = s;
+          return found;
+        }
+        const n = this.expand(s, strict, banned, to, kind, arg);
+        for (let i = 0; i < n; i++) {
+          const t = to[i];
+          if (b.stamp[t] === b.gen) continue;
+          b.stamp[t] = b.gen;
+          b.parent[t] = s;
+          b.via[t] = kind[i];
+          b.viaArg[t] = arg[i];
+          b.queue[tail++] = t;
+        }
+      }
+      return found;
+    }
+    const slot = new Map<number, number>();
+    const states: number[] = [];
+    const parent: number[] = [];
+    const via: number[] = [];
+    const viaArg: number[] = [];
+    const found: Search = {
+      goal: -1,
+      parent: (s) => states[parent[slot.get(s)!]],
+      via: (s) => via[slot.get(s)!],
+      viaArg: (s) => viaArg[slot.get(s)!],
+    };
+    if (start < 0) return found;
+    slot.set(start, 0);
+    states.push(start);
+    parent.push(0);
+    via.push(0);
+    viaArg.push(0);
+    for (let head = 0; head < states.length; head++) {
+      const s = states[head];
+      if (this.exitAt[s % this.P]) {
+        found.goal = s;
+        return found;
+      }
+      if (states.length > MAX_REACHED) throw new StateLimit();
       const n = this.expand(s, strict, banned, to, kind, arg);
       for (let i = 0; i < n; i++) {
         const t = to[i];
-        if (b.stamp[t] === b.gen) continue;
-        b.stamp[t] = b.gen;
-        b.parent[t] = s;
-        b.via[t] = kind[i];
-        b.viaArg[t] = arg[i];
-        b.queue[tail++] = t;
+        if (slot.has(t)) continue;
+        slot.set(t, states.length);
+        states.push(t);
+        parent.push(head);
+        via.push(kind[i]);
+        viaArg.push(arg[i]);
       }
     }
-    return { goal: -1, b };
+    return found;
   }
 
   /** Shortest route (in ticks), as the actions taken, or null when the exit cannot be reached. */
   route(mode: Mode, banned?: Uint8Array): Action[] | null {
-    const { goal, b } = this.bfs(mode === 'strict', banned ?? null);
-    if (goal < 0) return null;
+    const b = this.bfs(mode === 'strict', banned ?? null);
+    if (b.goal < 0) return null;
     const acts: Action[] = [];
-    for (let s = goal; b.parent[s] !== s; s = b.parent[s]) {
+    for (let s = b.goal; b.parent(s) !== s; s = b.parent(s)) {
       const { d: dim, x, y, lm } = this.parts(s);
-      const k = b.via[s];
+      const k = b.via(s);
       let a: Action;
       if (k === MOVE || k === RUN) a = { type: 'move', dim, x, y };
       else if (k === WAIT) a = { type: 'wait', dim, x, y };
       else if (k === SHIFT) a = { type: 'shift', dim, x, y };
       else if (k === LEVER) a = { type: 'lever', dim, x, y, on: !!((lm >> this.leverAt[s % this.P]) & 1) };
-      else a = { type: 'kill', dim, x, y, monster: this.trolls[b.viaArg[s]].id };
+      else a = { type: 'kill', dim, x, y, monster: this.trolls[b.viaArg(s)].id };
       a.state = s;
       acts.push(a);
     }
@@ -542,6 +802,7 @@ export class Model {
         let ti = index.get(t);
         if (ti === undefined) {
           ti = reached.length;
+          if (ti > MAX_REACHED) throw new StateLimit();
           index.set(t, ti);
           reached.push(t);
           back.push([]);
@@ -592,23 +853,28 @@ export interface Metrics {
   /** Monsters standing still and monsters on patrol. */
   standing: number;
   patrolling: number;
+  /** Patrols that walk through a door a lever drives (they turn back while it is shut). */
+  throughDoors: number;
   /** Doors per lever, averaged over the levers (1 when there are none). */
   doorsPerLever: number;
   /** Walkable cells in both dimensions. */
   cells: number;
 }
 
-/** States above this are not searched (memory and time). */
-const MAX_STATES = 1 << 22;
 
 /** A1 + A2 in the discrete model: one way to win, and no kill on a shared cell. */
 export function analyze(level: Level): Analysis {
   const m = new Model(level);
   if (m.unsupported) return { status: 'unsupported', reason: m.unsupported };
-  if (m.switches > 12 || m.stateCount > MAX_STATES) return { status: 'unsupported', reason: '狀態空間過大' };
-  const route = m.route('strict');
-  if (!route) return { status: 'unsolvable', reason: m.solvable('loose') ? '只有靠引擎漏洞（同格、擦邊、跑步）才過得去' : '出口無法抵達' };
-  return check(m, route);
+  if (m.switches > 12) return { status: 'unsupported', reason: '狀態空間過大' };
+  try {
+    const route = m.route('strict');
+    if (!route) return { status: 'unsolvable', reason: m.solvable('loose') ? '只有靠引擎漏洞（同格、擦邊、跑步）才過得去' : '出口無法抵達' };
+    return check(m, route);
+  } catch (e) {
+    if (e instanceof StateLimit) return { status: 'unsupported', reason: e.message };
+    throw e;
+  }
 }
 
 /** The uniqueness checks and metrics for a level whose strict route is already known. */
@@ -671,6 +937,7 @@ export function check(m: Model, route: Action[]): Analysis {
       chained: all.filter((c) => m.grid.chained(c)).length,
       standing: monsters - m.patrolling,
       patrolling: m.patrolling,
+      throughDoors: m.movingThroughDoors,
       doorsPerLever: m.switches
         ? m.switchChannel.reduce((s, ch) => s + all.filter((c) => c.def.behavior === 'door' && Number(c.props.channel) === ch).length, 0) / m.switches
         : 1,

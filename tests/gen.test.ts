@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { LEVEL_FORMAT, parseLevel, type Level, type MonsterDef } from '../src/core/level';
+import { LEVEL_FORMAT, createEmptyLevel, parseLevel, setCell, setProp, type Level, type MonsterDef } from '../src/core/level';
+import { NO_INPUT, Sim } from '../src/core/sim';
 import { validateLevel } from '../src/core/validate';
 import { DEFAULT_OPTIONS, canonicalKey, generateOne, rng, timingMatters, transform } from '../src/gen/generate';
-import { analyze } from '../src/gen/model';
+import { Model, TICK, analyze } from '../src/gen/model';
 import { replay } from '../src/gen/replay';
 
 /** A one-row level: rows for A and B, props per dimension. */
@@ -70,6 +71,35 @@ describe('generator model', () => {
     expect(replay(level, a.route!).ok).toBe(true);
     // shifting straight away walks into its sweep: the waiting is real, not the model being careful
     expect(timingMatters(level, a.route!)).toBe(true);
+  });
+
+  it('follows a patrol through a lever door tick by tick, as the engine moves it', () => {
+    // corridor y=2, door at (5, 2) on channel 1 (lever in B), patrol 2 ↔ 8 one cell a tick; the player is out of the way
+    const l = createEmptyLevel('t', 11, 5);
+    setCell(l, 0, 5, 2, 'D');
+    setProp(l, 0, 5, 2, 'vertical', true);
+    setCell(l, 1, 5, 2, 'L');
+    setProp(l, 1, 5, 2, 'channel', 1);
+    l.dimensions[0].monsters.push({ id: 'm', path: [[2, 2], [8, 2]], mode: 'pingpong', speed: 1 / TICK, pause: 2 * TICK - 1.5 / 60, viewRadius: 1, viewAngle: 10, facing: 0 });
+    const model = new Model(l);
+    expect(model.unsupported).toBeNull();
+    expect(model.movingThroughDoors).toBe(1);
+    const sim = new Sim(l);
+    sim.x = 1.5;
+    sim.y = 4.5;
+    const channels = (sim as unknown as { channels: Map<number, boolean> }).channels;
+    // shut for 7 ticks (it paces 2 ↔ 4), open for 12, shut again: the pull lands on a tick's first frame
+    const open = (t: number) => t >= 7 && t < 19;
+    let mc = 0;
+    for (let t = 0; t < 30; t++) {
+      const [m] = model.monstersAt(mc, t);
+      expect(m.x).toBeCloseTo(sim.monsters[0].x, 4);
+      expect(m.y).toBeCloseTo(sim.monsters[0].y, 4);
+      const lm = open(t) ? 1 : 0;
+      channels.set(1, !!lm);
+      for (let f = 0; f < Math.round(TICK * 60); f++) sim.update(NO_INPUT, 1 / 60);
+      mc = model.advance(mc, lm);
+    }
   });
 
   it('generates levels that validate, are unique and win in the engine', () => {

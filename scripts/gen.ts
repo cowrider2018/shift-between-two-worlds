@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { getChar, parseLevel, serializeLevel, type DimIndex, type Level } from '../src/core/level';
 import { DEFAULT_OPTIONS, evolve, generateOne, rng, type Candidate, type GenOptions } from '../src/gen/generate';
-import { analyze, describeRoute, type Action, type Analysis } from '../src/gen/model';
+import { analyze, describeRoute, type Action, type Analysis, type Metrics } from '../src/gen/model';
 import { replay } from '../src/gen/replay';
 
 const args = process.argv.slice(2);
@@ -83,18 +83,27 @@ function report(a: Analysis): string {
   return `步 ${m.moves}  轉移 ${m.shifts}  拉桿 ${m.pulls}（${m.leverStates} 種狀態）  擊殺 ${m.kills}  回頭 ${m.revisits}  陷阱狀態 ${m.traps}/${m.states}  鐵鍊門 ${m.chained}  門/拉桿 ${m.doorsPerLever.toFixed(1)}  怪 ${m.standing} 站 ${m.patrolling} 巡${m.throughDoors ? `（${m.throughDoors} 穿門）` : ''}`;
 }
 
-/** Takedowns and patrols counted up to their targets: more is better until then, after that the score decides. */
-const ranking = (minKills: number, minPatrols: number) => {
-  const progress = (c: Candidate) => Math.min(minKills, c.analysis.metrics!.kills) + Math.min(minPatrols, c.analysis.metrics!.patrolling);
-  return (a: Candidate, b: Candidate) => progress(b) - progress(a) || b.score - a.score;
-};
+type Count = { [K in keyof Metrics]: Metrics[K] extends number ? K : never }[keyof Metrics];
+/** What a kept level must have: at least each minimum, at most each maximum. */
+interface Goals {
+  min: Partial<Record<Count, number>>;
+  max: Partial<Record<Count, number>>;
+}
+const entries = (r: Partial<Record<Count, number>>) => Object.entries(r).filter(([, v]) => v !== undefined) as [Count, number][];
+const meets = (g: Goals, m: Metrics) => entries(g.min).every(([k, v]) => m[k] >= v) && entries(g.max).every(([k, v]) => m[k] <= v);
+/** Minimums counted up to their targets, maximums counted down from any excess: more progress is better until every
+ *  goal is met, after that the score decides. */
+const progress = (g: Goals, m: Metrics) =>
+  entries(g.min).reduce((s, [k, v]) => s + Math.min(v, m[k]), 0) - entries(g.max).reduce((s, [k, v]) => s + Math.max(0, m[k] - v), 0);
+const ranking = (g: Goals) => (a: Candidate, b: Candidate) =>
+  progress(g, b.analysis.metrics!) - progress(g, a.analysis.metrics!) || b.score - a.score;
 
 type Job = { kind: 'sample'; seed: number; tries: number } | { kind: 'evolve'; seed: number; from: Candidate; iterations: number };
 const SAMPLE_BATCH = 25;
 
 if (!isMainThread) {
-  const { opts, minKills, minPatrols } = workerData as { opts: GenOptions; minKills: number; minPatrols: number };
-  const rank = ranking(minKills, minPatrols);
+  const { opts, goals } = workerData as { opts: GenOptions; goals: Goals };
+  const rank = ranking(goals);
   parentPort!.on('message', (job: Job) => {
     const r = rng(job.seed);
     const found: Candidate[] = [];
@@ -126,6 +135,7 @@ async function main(): Promise<void> {
   const [rows, cols] = flag('rooms', '3').split('x').map(Number);
   const minKills = Number(flag('min-kills', '0'));
   const minPatrols = Number(flag('min-patrols', '0'));
+  const goals: Goals = { min: { kills: minKills, patrolling: minPatrols }, max: {} };
   const opts = {
     ...DEFAULT_OPTIONS,
     rows, cols: cols ?? rows,
@@ -148,8 +158,7 @@ async function main(): Promise<void> {
   const evolveIters = Number(flag('evolve', String(tries)));
   // one thread per physical core: a second thread on a core's other hyperthread was slower, not faster
   const jobs = Math.max(1, Number(flag('jobs', String(Math.max(1, Math.floor(availableParallelism() / 2))))));
-  const meets = (c: Candidate) => c.analysis.metrics!.kills >= minKills && c.analysis.metrics!.patrolling >= minPatrols;
-  const rank = ranking(minKills, minPatrols);
+  const rank = ranking(goals);
 
   const found = new Map<string, Candidate>();
   const t0 = Date.now();
@@ -159,7 +168,7 @@ async function main(): Promise<void> {
     const old = found.get(c.key);
     if (!old || c.score > old.score) found.set(c.key, c);
   };
-  const workers = Array.from({ length: jobs }, () => new Worker(fileURLToPath(import.meta.url), { workerData: { opts, minKills, minPatrols } }));
+  const workers = Array.from({ length: jobs }, () => new Worker(fileURLToPath(import.meta.url), { workerData: { opts, goals } }));
   /** Run the jobs on the free workers as they come free; then merge the finds in job order. */
   const runAll = async (list: Job[], show: (done: number) => void) => {
     const results: Candidate[][] = [];
@@ -210,7 +219,7 @@ async function main(): Promise<void> {
   const family = (route: Action[]) => route.filter((a) => a.type !== 'move' && a.type !== 'wait').map((a) => `${a.type}${a.dim}${a.x},${a.y}`).join(' ');
   const families = new Set<string>();
   const best = [...found.values()].sort(rank).filter((c) => {
-    if (!meets(c)) return false;
+    if (!meets(goals, c.analysis.metrics!)) return false;
     const f = family(c.analysis.route!);
     if (families.has(f)) return false;
     families.add(f);

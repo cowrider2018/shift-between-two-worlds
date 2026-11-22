@@ -20,7 +20,7 @@ import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim'
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE, MOUTH_UP } from './cutaway';
-import { occluders } from './terrain';
+import { cornersHiding, occluders } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -181,7 +181,7 @@ export class GameView {
   private readonly world = new Group();
   private dims: [Group, Group] = [new Group(), new Group()];
   private blocks: BlockView[] = [];
-  /** Each dimension's blocks, and the outermost walls (occluders) last cut down there, as a sorted key. */
+  /** Each dimension's blocks, and the outermost walls last cut down there (see cutOccluders), as a sorted key. */
   private dimBlocks: [BlockView[], BlockView[]] = [[], []];
   private lowKeys = ['', ''];
   private readonly holeAt = new Vector3();
@@ -366,12 +366,12 @@ export class GameView {
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Cut every outermost wall that hides any floor from the camera down to WALL_H (see occluders), in both
-   *  dimensions (the other one shows in the reflection). */
+  /** Cut every corner of the outermost wall that hides any floor from the camera down to WALL_H (see occluders,
+   *  cornersHiding), in both dimensions (the other one shows in the reflection). */
   private cutOccluders(): void {
     const { x, y, z } = this.follow.camera.position;
     for (const dim of [0, 1] as DimIndex[]) {
-      const low = occluders(this.sim.grid, dim, x, y, z);
+      const low = cornersHiding(this.sim.grid, dim, occluders(this.sim.grid, dim, x, y, z));
       const key = [...low].sort((a, b) => a - b).join(',');
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;

@@ -511,6 +511,94 @@ export function occluders(grid: LevelGrid, dim: DimIndex, cx: number, cy: number
   return out;
 }
 
+const cornerCache = new WeakMap<LevelGrid, number[][][]>();
+
+/**
+ * The outermost rock of a dimension (in-grid, see isOuterRock) split into corners, as lists of cells (z * w + x).
+ * The outline turns at the room's corners and round every dug-out (void) corner. Each straight run of wall along
+ * the outline, i.e. rock with nothing (no cell, or a dug-out one) on the same side, is cut in half, and each half
+ * goes with the corner at its end; a run that ends at an opening (floor on the border) ends a corner of its own
+ * there. Rock behind the outline (rock that only backs it) goes with the nearest of it. A cell can be in two corners.
+ */
+export function outerCorners(grid: LevelGrid, dim: DimIndex): number[][] {
+  let sets = cornerCache.get(grid);
+  if (!sets) cornerCache.set(grid, (sets = []));
+  const cached = sets[dim];
+  if (cached) return cached;
+  const key = (x: number, z: number) => z * grid.w + x;
+  const outer = (x: number, z: number) => grid.inBounds(x, z) && isOuterRock(grid, dim, x, z);
+  const nothing = (x: number, z: number) => !grid.inBounds(x, z) || isVoid(grid, dim, x, z);
+  const faces = (x: number, z: number, dx: number, dz: number) => outer(x, z) && nothing(x + dx, z + dz);
+  const facesAny = (x: number, z: number) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => faces(x, z, dx, dz));
+  const corners = new Map<number, Set<number>>();
+  const join = (corner: number, cells: number[]) => {
+    let c = corners.get(corner);
+    if (!c) corners.set(corner, (c = new Set([corner])));
+    for (const k of cells) c.add(k);
+  };
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const [ax, az] = [dz, dx]; // along the run
+    for (let z = 0; z < grid.h; z++) {
+      for (let x = 0; x < grid.w; x++) {
+        // start a run at its first cell
+        if (!faces(x, z, dx, dz) || faces(x - ax, z - az, dx, dz)) continue;
+        const run: [number, number][] = [];
+        for (let rx = x, rz = z; faces(rx, rz, dx, dz); rx += ax, rz += az) run.push([rx, rz]);
+        // the corner at each end: a dug-out corner turns on the rock just past the end, facing nothing itself
+        const end = ([ex, ez]: [number, number], sx: number, sz: number) => {
+          const nx = ex + sx;
+          const nz = ez + sz;
+          return outer(nx, nz) && !facesAny(nx, nz) ? key(nx, nz) : key(ex, ez);
+        };
+        const first = end(run[0], -ax, -az);
+        const last = end(run[run.length - 1], ax, az);
+        const half = run.length / 2;
+        join(first, run.slice(0, Math.ceil(half)).map(([cx, cz]) => key(cx, cz)));
+        join(last, run.slice(Math.floor(half)).map(([cx, cz]) => key(cx, cz)));
+      }
+    }
+  }
+  const groups = [...corners.values()].map((c) => [...c]);
+  // the rest of the outermost rock joins the corners of the nearest rock already in one (8-connected steps)
+  const of = new Map<number, number[]>();
+  groups.forEach((g, i) => g.forEach((k) => of.set(k, [...(of.get(k) ?? []), i])));
+  let front = [...of.keys()];
+  while (front.length) {
+    const next = new Map<number, Set<number>>();
+    for (const k of front) {
+      const fx = k % grid.w;
+      const fz = Math.floor(k / grid.w);
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = fx + dx;
+          const nz = fz + dz;
+          if (!outer(nx, nz) || of.has(key(nx, nz))) continue;
+          let into = next.get(key(nx, nz));
+          if (!into) next.set(key(nx, nz), (into = new Set()));
+          for (const i of of.get(k)!) into.add(i);
+        }
+      }
+    }
+    for (const [k, into] of next) {
+      of.set(k, [...into]);
+      for (const i of into) groups[i].push(k);
+    }
+    front = [...next.keys()];
+  }
+  sets[dim] = groups;
+  return groups;
+}
+
+/** The outermost rock to cut down to WALL_H: every corner (see outerCorners) with any rock in `hiding` (see
+ *  occluders), whole. */
+export function cornersHiding(grid: LevelGrid, dim: DimIndex, hiding: ReadonlySet<number>): Set<number> {
+  const low = new Set<number>();
+  for (const corner of outerCorners(grid, dim)) {
+    if (corner.some((k) => hiding.has(k))) for (const k of corner) low.add(k);
+  }
+  return low;
+}
+
 /** Rounded inner-corner tops at height y: where this wall's two neighbours are walls but the diagonal cell is
  *  open, the corner spills into that open cell; its sides come from the neighbours' faces. */
 function fillets(b: MeshBuilder, isWall: IsWall, cx: number, cz: number, y: number): void {

@@ -468,20 +468,18 @@ export function cutOf(grid: LevelGrid, dim: DimIndex, low: ReadonlySet<number> =
 const GROUND_SAMPLES: [number, number][] = [[0.5, 0.5], [0.05, 0.05], [0.95, 0.05], [0.05, 0.95], [0.95, 0.95]];
 
 /**
- * The in-grid outermost rock (indices z * w + x) whose part above WALL_H stands between the camera at (cx, cy, cz)
- * and any ground (a cell that is neither rock nor dug out): a sight line from the camera to the ground passes
- * through the cell while still higher than WALL_H. Cut down to WALL_H, the cliff then never hides the floor.
+ * The in-grid outermost rock (indices z * w + x) standing between the camera at (cx, ·, cz) and any ground (a cell
+ * that is neither rock nor dug out), from its foot up: a sight line from the camera to the ground passes over the
+ * cell at all, so the whole wall there, not just the cliff above WALL_H, counts as in the way. (The sight line runs
+ * below the camera, and the camera stays below OUTER_H, so its height never matters.)
  */
-export function occluders(grid: LevelGrid, dim: DimIndex, cx: number, cy: number, cz: number): Set<number> {
+export function occluders(grid: LevelGrid, dim: DimIndex, cx: number, cz: number): Set<number> {
   const out = new Set<number>();
-  if (cy <= WALL_H) return out;
-  // a sight line from height cy down to the floor is above WALL_H over the first tMax of its run
-  const tMax = 1 - WALL_H / cy;
   for (let gz = 0; gz < grid.h; gz++) {
     for (let gx = 0; gx < grid.w; gx++) {
       if (isRock(grid, dim, gx, gz) || isVoid(grid, dim, gx, gz)) continue;
       for (const [ox, oz] of GROUND_SAMPLES) {
-        // walk the grid cells along the line from the camera to the sample (Amanatides & Woo), up to tMax
+        // walk the grid cells along the line from the camera to the sample (Amanatides & Woo)
         const dx = gx + ox - cx;
         const dz = gz + oz - cz;
         let x = Math.floor(cx);
@@ -493,7 +491,7 @@ export function occluders(grid: LevelGrid, dim: DimIndex, cx: number, cy: number
         let tX = stepX > 0 ? (x + 1 - cx) * dtX : stepX < 0 ? (cx - x) * dtX : Infinity;
         let tZ = stepZ > 0 ? (z + 1 - cz) * dtZ : stepZ < 0 ? (cz - z) * dtZ : Infinity;
         let t = 0;
-        while (t < tMax) {
+        while (t < 1) {
           if (grid.inBounds(x, z) && isOuterRock(grid, dim, x, z)) out.add(z * grid.w + x);
           if (tX < tZ) {
             t = tX;

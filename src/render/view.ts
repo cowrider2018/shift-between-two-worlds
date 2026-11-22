@@ -369,9 +369,9 @@ export class GameView {
   /** Cut every corner of the outermost wall that hides any floor from the camera down to WALL_H (see occluders,
    *  cornersHiding), in both dimensions (the other one shows in the reflection). */
   private cutOccluders(): void {
-    const { x, y, z } = this.follow.camera.position;
+    const { x, z } = this.follow.camera.position;
     for (const dim of [0, 1] as DimIndex[]) {
-      const low = cornersHiding(this.sim.grid, dim, occluders(this.sim.grid, dim, x, y, z));
+      const low = cornersHiding(this.sim.grid, dim, occluders(this.sim.grid, dim, x, z));
       const key = [...low].sort((a, b) => a - b).join(',');
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;

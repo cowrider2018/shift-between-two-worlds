@@ -375,7 +375,7 @@ export class GameView {
       const { grid } = this.sim;
       const near = nearRow(grid, dim, fx, fz);
       for (const k of rowFill(grid, dim, near)) near.add(k);
-      const heights = hiddenHeights(grid, dim, near);
+      const heights = hiddenHeights(near);
       const key = [...heights].sort((a, b) => a[0] - b[0]).join(';');
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;

@@ -426,13 +426,6 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     const [dx, dz] = ctx.grid.exitMouth(cell);
     const mouth = { dx, dz, floor: ctx.theme.floor[0] };
     const stone = withHole(cobble('#ffffff', true));
-    const rock = rockByHeight(cell, ctx, (cut) => {
-      const r = new Group();
-      r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, mouth, cut), stone));
-      addOuterWall(r, cell, ctx, cut);
-      return r;
-    });
-    // the tunnel takes no shadow from the rock over it: its light comes from inside
     // everything inside shows only through the arch, so it hides like the wall round it from any other angle
     // (e.g. through the camera hole cut into a neighbouring wall)
     const arch: Mouth = {
@@ -442,9 +435,19 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       half: CAVE.half,
       spring: CAVE.spring,
     };
-    const tunnel = m(caveGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, mouth),
-      throughMouth(whitening(stone), arch), 0, 0, 0, false);
-    tunnel.receiveShadow = false;
+    // hidden from the camera (see hiddenHeights), none of its stone is drawn, the tunnel and floor included: only its light
+    const rock = rockByHeight(cell, ctx, (cut) => {
+      const r = new Group();
+      if (cut.height(cell.x, cell.y) <= 0) return r;
+      r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, mouth, cut), stone));
+      addOuterWall(r, cell, ctx, cut);
+      // the tunnel takes no shadow from the rock over it: its light comes from inside
+      const tunnel = m(caveGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, mouth),
+        throughMouth(whitening(stone), arch), 0, 0, 0, false);
+      tunnel.receiveShadow = false;
+      r.add(tunnel, ...floorTile(cell, ctx));
+      return r;
+    });
     const inside = new Group();
     inside.rotation.y = Math.atan2(dx, dz); // local +z points out of the open side; the face is at z = 0.5
     // veils of light, so whatever walks in sinks into the glow instead of meeting a flat white board
@@ -460,7 +463,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     light.position.set(0, CAVE.spring * 0.8, 0.5 - CAVE.depth * 0.6);
     inside.add(light);
     const g = new Group();
-    g.add(rock.object, tunnel, inside, ...floorTile(cell, ctx));
+    g.add(rock.object, inside);
     place(g, cell);
     return { object: g, setHeights: rock.setHeights };
   },

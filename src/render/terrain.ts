@@ -474,12 +474,10 @@ export function cutOf(grid: LevelGrid, dim: DimIndex, heights: ReadonlyMap<numbe
   };
 }
 
-/** The height of every cell drawn other than as it stands (see Cut): the cells in `hidden` are not drawn at all,
- *  but the exit, which stays at WALL_H. */
-export function hiddenHeights(grid: LevelGrid, dim: DimIndex, hidden: ReadonlySet<number>): Map<number, number> {
-  const heights = new Map<number, number>();
-  for (const k of hidden) heights.set(k, grid.cell(dim, k % grid.w, Math.floor(k / grid.w)).def.behavior === 'exit' ? WALL_H : 0);
-  return heights;
+/** The height of every cell drawn other than as it stands (see Cut): the cells in `hidden` are not drawn at all
+ *  (the exit keeps only its light). */
+export function hiddenHeights(hidden: ReadonlySet<number>): Map<number, number> {
+  return new Map([...hidden].map((k) => [k, 0]));
 }
 
 const chainCache = new WeakMap<LevelGrid, number[][][]>();
@@ -553,7 +551,8 @@ export const SIDE_ON_DEG = 15;
  * (within SIDE_ON_DEG of a grid axis the camera counts as looking straight along it), so a staircase counts as the
  * slope it makes rather than as its one-cell faces, and stops at the first step facing away. Of what it passes, the
  * cells with every step beside them facing the camera are not drawn; the corners where such a stretch meets one
- * running side-on stay, as does every side-on stretch (the walls between the near side and the far).
+ * running side-on stay, as does every side-on stretch (the walls between the near side and the far), and so does
+ * the wall closing off a corridor one cell wide (a one-cell U-turn).
  */
 export function nearRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Set<number> {
   // looking nearly along an axis, look exactly along it: the walls either side then both count as side-on
@@ -594,9 +593,23 @@ export function nearRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number):
     const d = (cz(b) - cz(a)) * fx - (cx(b) - cx(a)) * fz;
     return d < -1e-6 ? -1 : d > 1e-6 ? 1 : 0;
   };
+  // a one-cell U-turn: the wall closes off a corridor one cell wide, the floor behind it having rock either side
+  const nothing = (x: number, z: number) => !grid.inBounds(x, z) || isVoid(grid, dim, x, z);
+  const uTurn = (k: number) => {
+    const x = k % grid.w;
+    const z = Math.floor(k / grid.w);
+    return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => {
+      const bx = x - dx;
+      const bz = z - dz;
+      return nothing(x + dx, z + dz) && !nothing(bx, bz) && !isRock(grid, dim, bx, bz) &&
+        isRock(grid, dim, bx + dz, bz + dx) && isRock(grid, dim, bx - dz, bz - dx);
+    });
+  };
   // every cell passed, and whether every step beside it faces the camera
   const toward = new Map<number, boolean>();
   const mark = (k: number, f: boolean) => toward.set(k, (toward.get(k) ?? true) && f);
+  // the dug-out corners passed by diagonal steps, and the cells of those steps
+  const passed = new Map<number, number[]>();
   for (const dir of [1, -1]) {
     // the cell after chain[i] going this way, or -1 at the end of an open chain
     const after = (i: number) => (!closed && (i + dir < 0 || i + dir >= n) ? -1 : (i + dir + n) % n);
@@ -612,12 +625,16 @@ export function nearRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number):
       mark(chain[j], f < 0);
       // a diagonal step passes a dug-out corner: its rock, beside both cells, goes with the step
       for (const k of [chain[i] - (chain[i] % grid.w) + (chain[j] % grid.w), chain[j] - (chain[j] % grid.w) + (chain[i] % grid.w)]) {
-        if (k !== chain[i] && k !== chain[j] && isOuterRock(grid, dim, k % grid.w, Math.floor(k / grid.w))) mark(k, f < 0);
+        if (k === chain[i] || k === chain[j] || !isOuterRock(grid, dim, k % grid.w, Math.floor(k / grid.w))) continue;
+        mark(k, f < 0);
+        passed.set(k, [...(passed.get(k) ?? []), chain[i], chain[j]]);
       }
       i = j;
     }
   }
-  for (const [k, f] of toward) if (f) near.add(k);
+  for (const [k, f] of toward) if (f && !passed.has(k) && !uTurn(k)) near.add(k);
+  // a dug-out corner goes with the cells of its step: hidden while one of them is
+  for (const [k, by] of passed) if (toward.get(k) && by.some((c) => near.has(c))) near.add(k);
   return near;
 }
 

@@ -363,7 +363,7 @@ export class GameView {
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Cut the outermost wall on the camera's half of the level down to CUT_H (see cutFor), so it never stands
+  /** Cut the outermost wall on the camera's half of the level down to WALL_H (see cutFor), so it never stands
    *  between the camera and the level. */
   private cutNearSide(): void {
     const [fx, fz] = this.follow.forward();

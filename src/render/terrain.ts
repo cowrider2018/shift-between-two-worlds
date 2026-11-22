@@ -464,32 +464,18 @@ export const OUTER_VIEWS: NearSides[] = [null, [-1, -1], [-1, 1], [1, -1], [1, 1
 /** The OUTER_VIEWS index for a camera looking along grid direction (fx, fz): it stands on the sides opposite. */
 export const nearView = (fx: number, fz: number): number => OUTER_VIEWS.findIndex((v) => v && v[0] === (fx > 0 ? -1 : 1) && v[1] === (fz > 0 ? -1 : 1));
 
-/** Height the outermost wall on the camera's half is cut down to (see cutFor): a little over an ordinary wall, so
- *  the level's edge still reads as its edge. */
-export const CUT_H = 2;
-
 /** How one camera view draws the rock: `low` is the camera's half of the level, past the diagonal between the two
  *  corners it does not face; `top` is how high a cell's rock rises above WALL_H (0 where it stops at WALL_H). */
 export interface Cut { low(x: number, z: number): boolean; top(x: number, z: number): number }
 
 /**
  * The cut for `view` in dimension `dim` (null: no camera, the whole cliff standing). Away from the camera the
- * outermost rock (isOuterRock) rises to OUTER_H. On the camera's half, only the outermost wall between the camera and
- * the level rises, and only to CUT_H: every wall with nothing beside it on a camera-facing side (no cell, or a dug-out
- * one); there the rest of the rock, the exit too, stops at WALL_H.
+ * outermost rock (isOuterRock) rises to OUTER_H; on the camera's half all rock, the outermost wall included, stops at
+ * WALL_H like an ordinary wall.
  */
 export function cutFor(grid: LevelGrid, dim: DimIndex, view: NearSides): Cut {
-  if (!view) return { low: () => false, top: (x, z) => (isOuterRock(grid, dim, x, z) ? OUTER_H : 0) };
-  const [sx, sz] = view;
-  const low = (x: number, z: number) => sx * ((x + 0.5) / grid.w - 0.5) + sz * ((z + 0.5) / grid.h - 0.5) >= 0;
-  const nothing = (x: number, z: number) => !grid.inBounds(x, z) || isVoid(grid, dim, x, z);
-  const top = (x: number, z: number) => {
-    if (!low(x, z)) return isOuterRock(grid, dim, x, z) ? OUTER_H : 0;
-    const edge = grid.inBounds(x, z) && isRock(grid, dim, x, z) && grid.cell(dim, x, z).def.behavior !== 'exit' &&
-      (nothing(x + sx, z) || nothing(x, z + sz));
-    return edge ? CUT_H : 0;
-  };
-  return { low, top };
+  const low = (x: number, z: number) => !!view && view[0] * ((x + 0.5) / grid.w - 0.5) + view[1] * ((z + 0.5) / grid.h - 0.5) >= 0;
+  return { low, top: (x, z) => (!low(x, z) && isOuterRock(grid, dim, x, z) ? OUTER_H : 0) };
 }
 
 /** Rounded inner-corner tops at height y: where this wall's two neighbours are walls but the diagonal cell is
@@ -558,9 +544,8 @@ export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
 }
 
 /**
- * The part of an outermost wall above WALL_H, up to its top in `cut` (OUTER_H, or CUT_H on the camera's half), local
- * to the cell centre like wallGeometry. Its footprint is the rock rising at least as high, so it also rises above
- * the ordinary walls that meet it, and a cliff shows its face above a lower one beside it.
+ * The part of an outermost wall above WALL_H, up to its top in `cut`, local to the cell centre like wallGeometry.
+ * Its footprint is the rock rising at least as high, so it also rises above the ordinary walls that meet it.
  * A separate mesh so it casts no shadow: a cliff that tall would darken half the level.
  */
 export function outerWallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,

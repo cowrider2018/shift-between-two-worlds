@@ -20,7 +20,7 @@ import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim'
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE, MOUTH_UP } from './cutaway';
-import { cameraSide, cornersWith, farRow, rockHeights, rowFill } from './terrain';
+import { hiddenHeights, nearRow, rowFill } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -181,7 +181,7 @@ export class GameView {
   private readonly world = new Group();
   private dims: [Group, Group] = [new Group(), new Group()];
   private blocks: BlockView[] = [];
-  /** Each dimension's blocks, and the rock heights last drawn there (see cutCameraSide), as a sorted key. */
+  /** Each dimension's blocks, and the rock heights last drawn there (see hideNearSide), as a sorted key. */
   private dimBlocks: [BlockView[], BlockView[]] = [[], []];
   private lowKeys = ['', ''];
   private readonly holeAt = new Vector3();
@@ -355,7 +355,7 @@ export class GameView {
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     if (this.takedown) this.updateTakedown(this.takedown, dt);
     this.follow.update(sim, dt);
-    this.cutCameraSide();
+    this.hideNearSide();
     this.snapCharacters();
     this.pipeline.subpixel.x = this.follow.subpixel.x;
     this.pipeline.subpixel.y = this.follow.subpixel.y;
@@ -366,18 +366,16 @@ export class GameView {
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Cut down every corner of the outermost wall reaching the camera's side of the hero, all but the row across the
-   *  far side; and the edge where that row turns back and the rock filled in front of it, wherever they lie. The
-   *  cut-down rock joined to the corners the row turns on is not drawn at all (see cameraSide,
-   *  cornersWith, farRow, rowFill, rockHeights). In both dimensions (the other one shows in the reflection). */
-  private cutCameraSide(): void {
+  /** Hide the outermost wall along the near side of the level and the rock filled in behind it (see nearRow,
+   *  rowFill), so it never stands between the camera and the level; the rest stands as it is. In both dimensions (the
+   *  other one shows in the reflection). */
+  private hideNearSide(): void {
     const [fx, fz] = this.follow.forward();
     for (const dim of [0, 1] as DimIndex[]) {
       const { grid } = this.sim;
-      const { row, turn, corners } = farRow(grid, dim, fx, fz);
-      const low = cornersWith(grid, dim, cameraSide(grid, dim, fx, fz, this.sim.x, this.sim.y), row);
-      for (const k of [...turn, ...rowFill(grid, dim, row)]) low.add(k);
-      const heights = rockHeights(grid, dim, corners, low);
+      const near = nearRow(grid, dim, fx, fz);
+      for (const k of rowFill(grid, dim, near)) near.add(k);
+      const heights = hiddenHeights(grid, dim, near);
       const key = [...heights].sort((a, b) => a[0] - b[0]).join(';');
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;

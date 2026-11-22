@@ -474,128 +474,12 @@ export function cutOf(grid: LevelGrid, dim: DimIndex, heights: ReadonlyMap<numbe
   };
 }
 
-/**
- * The height of every cell drawn other than as it stands (see Cut): the cut-down rock (`low`) joined (8-connected,
- * through cut-down rock) to a corner where the far row turns back (`corners`, which stand as the row does) is not
- * drawn at all; cut-down rock no such corner reaches stays at WALL_H. The exit never drops below WALL_H.
- */
-export function rockHeights(grid: LevelGrid, dim: DimIndex, corners: ReadonlySet<number>, low: ReadonlySet<number>): Map<number, number> {
+/** The height of every cell drawn other than as it stands (see Cut): the cells in `hidden` are not drawn at all,
+ *  but the exit, which stays at WALL_H. */
+export function hiddenHeights(grid: LevelGrid, dim: DimIndex, hidden: ReadonlySet<number>): Map<number, number> {
   const heights = new Map<number, number>();
-  const isExit = (k: number) => grid.cell(dim, k % grid.w, Math.floor(k / grid.w)).def.behavior === 'exit';
-  for (const k of low) heights.set(k, WALL_H);
-  const seen = new Set(corners);
-  for (const queue = [...corners]; queue.length;) {
-    const k = queue.pop()!;
-    const x = k % grid.w;
-    const z = Math.floor(k / grid.w);
-    for (let dz = -1; dz <= 1; dz++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const n = (z + dz) * grid.w + x + dx;
-        if (!grid.inBounds(x + dx, z + dz) || seen.has(n) || !low.has(n)) continue;
-        seen.add(n);
-        queue.push(n);
-        heights.set(n, isExit(n) ? WALL_H : 0);
-      }
-    }
-  }
+  for (const k of hidden) heights.set(k, grid.cell(dim, k % grid.w, Math.floor(k / grid.w)).def.behavior === 'exit' ? WALL_H : 0);
   return heights;
-}
-
-/**
- * The in-grid outermost rock (indices z * w + x) on the camera's side of the level for a camera looking along grid
- * direction (fx, fz) at the hero at (hx, hz): past a line through the hero at the angle of the level's diagonal
- * between the two corners the camera does not face (so, on a square level, at 45° across the view).
- */
-export function cameraSide(grid: LevelGrid, dim: DimIndex, fx: number, fz: number, hx: number, hz: number): Set<number> {
-  const sx = fx > 0 ? -1 : 1;
-  const sz = fz > 0 ? -1 : 1;
-  const out = new Set<number>();
-  for (let z = 0; z < grid.h; z++) {
-    for (let x = 0; x < grid.w; x++) {
-      if (!isOuterRock(grid, dim, x, z)) continue;
-      if (sx * (x + 0.5 - hx) / grid.w + sz * (z + 0.5 - hz) / grid.h >= 0) out.add(z * grid.w + x);
-    }
-  }
-  return out;
-}
-
-const cornerCache = new WeakMap<LevelGrid, number[][][]>();
-
-/**
- * The outermost rock of a dimension (in-grid, see isOuterRock) split into corners, as lists of cells (z * w + x).
- * The outline turns at the room's corners and round every dug-out (void) corner. Each straight run of wall along
- * the outline, i.e. rock with nothing (no cell, or a dug-out one) on the same side, is cut in half, and each half
- * goes with the corner at its end; a run that ends at an opening (floor on the border) ends a corner of its own
- * there. Rock behind the outline (rock that only backs it) goes with the nearest of it. A cell can be in two corners.
- */
-export function outerCorners(grid: LevelGrid, dim: DimIndex): number[][] {
-  let sets = cornerCache.get(grid);
-  if (!sets) cornerCache.set(grid, (sets = []));
-  const cached = sets[dim];
-  if (cached) return cached;
-  const key = (x: number, z: number) => z * grid.w + x;
-  const outer = (x: number, z: number) => grid.inBounds(x, z) && isOuterRock(grid, dim, x, z);
-  const nothing = (x: number, z: number) => !grid.inBounds(x, z) || isVoid(grid, dim, x, z);
-  const faces = (x: number, z: number, dx: number, dz: number) => outer(x, z) && nothing(x + dx, z + dz);
-  const facesAny = (x: number, z: number) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => faces(x, z, dx, dz));
-  const corners = new Map<number, Set<number>>();
-  const join = (corner: number, cells: number[]) => {
-    let c = corners.get(corner);
-    if (!c) corners.set(corner, (c = new Set([corner])));
-    for (const k of cells) c.add(k);
-  };
-  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    const [ax, az] = [dz, dx]; // along the run
-    for (let z = 0; z < grid.h; z++) {
-      for (let x = 0; x < grid.w; x++) {
-        // start a run at its first cell
-        if (!faces(x, z, dx, dz) || faces(x - ax, z - az, dx, dz)) continue;
-        const run: [number, number][] = [];
-        for (let rx = x, rz = z; faces(rx, rz, dx, dz); rx += ax, rz += az) run.push([rx, rz]);
-        // the corner at each end: a dug-out corner turns on the rock just past the end, facing nothing itself
-        const end = ([ex, ez]: [number, number], sx: number, sz: number) => {
-          const nx = ex + sx;
-          const nz = ez + sz;
-          return outer(nx, nz) && !facesAny(nx, nz) ? key(nx, nz) : key(ex, ez);
-        };
-        const first = end(run[0], -ax, -az);
-        const last = end(run[run.length - 1], ax, az);
-        const cells = run.map(([cx, cz]) => key(cx, cz));
-        const half = run.length / 2;
-        join(first, cells.slice(0, Math.ceil(half)));
-        join(last, cells.slice(Math.floor(half)));
-      }
-    }
-  }
-  const groups = [...corners.values()].map((c) => [...c]);
-  // the rest of the outermost rock joins the corners of the nearest rock already in one (8-connected steps)
-  const of = new Map<number, number[]>();
-  groups.forEach((g, i) => g.forEach((k) => of.set(k, [...(of.get(k) ?? []), i])));
-  let front = [...of.keys()];
-  while (front.length) {
-    const next = new Map<number, Set<number>>();
-    for (const k of front) {
-      const fx = k % grid.w;
-      const fz = Math.floor(k / grid.w);
-      for (let dz = -1; dz <= 1; dz++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = fx + dx;
-          const nz = fz + dz;
-          if (!outer(nx, nz) || of.has(key(nx, nz))) continue;
-          let into = next.get(key(nx, nz));
-          if (!into) next.set(key(nx, nz), (into = new Set()));
-          for (const i of of.get(k)!) into.add(i);
-        }
-      }
-    }
-    for (const [k, into] of next) {
-      of.set(k, [...into]);
-      for (const i of into) groups[i].push(k);
-    }
-    front = [...next.keys()];
-  }
-  sets[dim] = groups;
-  return groups;
 }
 
 const chainCache = new WeakMap<LevelGrid, number[][][]>();
@@ -663,16 +547,15 @@ function outlineChains(grid: LevelGrid, dim: DimIndex): number[][] {
 export const SIDE_ON_DEG = 15;
 
 /**
- * The row of the outermost wall across the far side of the level from a camera looking along grid direction (fx, fz),
- * which is never cut down (cells z * w + x). It starts from the wall cell reaching farthest from the camera and follows
- * the outline (outlineChains) both ways, cell centre to cell centre, for as long as each step faces away from the
- * camera or side-on to it (a camera within SIDE_ON_DEG of a grid axis counts as looking straight along it), so a
- * staircase counts as the slope it makes rather than as its one-cell faces. It stops at the first step facing the
- * camera: the outline has turned back there, and what lies past it stands between the camera and floor, so it is
- * left out; the cell it turns on stays. That turned-back edge, the cells straight on from there for as long as the
- * outline keeps that heading, is `turn`: it is cut down wherever it lies. The cells it turns on are `corners`.
+ * The outermost wall along the near side of the level from a camera looking along grid direction (fx, fz), which is
+ * not drawn (cells z * w + x). It starts from the wall cell nearest the camera and follows the outline
+ * (outlineChains) both ways, cell centre to cell centre, through every step facing the camera or side-on to it
+ * (within SIDE_ON_DEG of a grid axis the camera counts as looking straight along it), so a staircase counts as the
+ * slope it makes rather than as its one-cell faces, and stops at the first step facing away. Of what it passes, the
+ * cells with every step beside them facing the camera are not drawn; the corners where such a stretch meets one
+ * running side-on stay, as does every side-on stretch (the walls between the near side and the far).
  */
-export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): { row: Set<number>; turn: Set<number>; corners: Set<number> } {
+export function nearRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Set<number> {
   // looking nearly along an axis, look exactly along it: the walls either side then both count as side-on
   const yaw = Math.atan2(fz, fx);
   const axis = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
@@ -683,21 +566,19 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
   const chains = outlineChains(grid, dim);
   const cx = (k: number) => (k % grid.w) + 0.5;
   const cz = (k: number) => Math.floor(k / grid.w) + 0.5;
-  const row = new Set<number>();
-  const turn = new Set<number>();
-  const corners = new Set<number>();
+  const near = new Set<number>();
   let best: [number[], number] | null = null;
-  let reach = -Infinity;
+  let reach = Infinity;
   for (const chain of chains) {
     chain.forEach((k, i) => {
       const d = cx(k) * fx + cz(k) * fz;
-      if (d > reach) {
+      if (d < reach) {
         reach = d;
         best = [chain, i];
       }
     });
   }
-  if (!best) return { row, turn, corners };
+  if (!best) return near;
   const [chain, start] = best as [number[], number];
   const n = chain.length;
   const closed = (() => {
@@ -705,46 +586,45 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
     const b = chain[n - 1];
     return n > 2 && Math.abs(cx(a) - cx(b)) <= 1 && Math.abs(cz(a) - cz(b)) <= 1;
   })();
-  // the step from chain[i] to chain[i + 1] faces the camera when the nothing on its left (z down) is towards it
+  // which way the step from chain[i] to chain[i + 1] faces, by the nothing on its left (z down): -1 towards the
+  // camera, 0 side-on, 1 away
   const facing = (i: number) => {
     const a = chain[i];
     const b = chain[(i + 1) % n];
-    const tx = cx(b) - cx(a);
-    const tz = cz(b) - cz(a);
-    return tz * fx - tx * fz < -1e-6;
+    const d = (cz(b) - cz(a)) * fx - (cx(b) - cx(a)) * fz;
+    return d < -1e-6 ? -1 : d > 1e-6 ? 1 : 0;
   };
-  row.add(chain[start]);
+  // every cell passed, and whether every step beside it faces the camera
+  const toward = new Map<number, boolean>();
+  const mark = (k: number, f: boolean) => toward.set(k, (toward.get(k) ?? true) && f);
   for (const dir of [1, -1]) {
     // the cell after chain[i] going this way, or -1 at the end of an open chain
     const after = (i: number) => (!closed && (i + dir < 0 || i + dir >= n) ? -1 : (i + dir + n) % n);
-    const faces = (i: number, j: number) => facing(dir > 0 ? i : j);
     for (let i = start, steps = 0; steps < n; steps++) {
-      const jj = after(i);
-      if (jj < 0) break;
-      if (faces(i, jj)) {
-        // the edge turned back: straight on from here, as far as the outline keeps that heading
-        const dir0 = (a: number, b: number) => `${cx(chain[b]) - cx(chain[a])},${cz(chain[b]) - cz(chain[a])}`;
-        const heading = dir0(i, jj);
-        corners.add(chain[i]);
-        for (let a = i, b = jj, k = steps; b >= 0 && k < n && dir0(a, b) === heading; a = b, b = after(b), k++) turn.add(chain[b]);
+      const j = after(i);
+      if (j < 0) break;
+      const f = facing(dir > 0 ? i : j);
+      if (f > 0) {
+        mark(chain[i], false);
         break;
       }
-      row.add(chain[jj]);
-      // a diagonal step passes a dug-out corner: its rock, beside both cells, belongs to the row too
-      for (const k of [chain[i] - (chain[i] % grid.w) + (chain[jj] % grid.w), chain[jj] - (chain[jj] % grid.w) + (chain[i] % grid.w)]) {
-        if (k !== chain[i] && k !== chain[jj] && isOuterRock(grid, dim, k % grid.w, Math.floor(k / grid.w))) row.add(k);
+      mark(chain[i], f < 0);
+      mark(chain[j], f < 0);
+      // a diagonal step passes a dug-out corner: its rock, beside both cells, goes with the step
+      for (const k of [chain[i] - (chain[i] % grid.w) + (chain[j] % grid.w), chain[j] - (chain[j] % grid.w) + (chain[i] % grid.w)]) {
+        if (k !== chain[i] && k !== chain[j] && isOuterRock(grid, dim, k % grid.w, Math.floor(k / grid.w))) mark(k, f < 0);
       }
-      i = jj;
+      i = j;
     }
   }
-  for (const k of row) turn.delete(k);
-  return { row, turn, corners };
+  for (const [k, f] of toward) if (f) near.add(k);
+  return near;
 }
 
 /**
- * The outermost rock filled in on the room side of the far row (see farRow): rock raised with the outline (see
+ * The outermost rock filled in on the room side of `row` (see nearRow): rock raised with the outline (see
  * isOuterRock) that is not on it itself, reached from the row through such rock (8-connected). It would stand as a
- * cliff in front of the row, so it is cut down to WALL_H with the rest of the camera's side.
+ * cliff where the row is gone, so it goes with it.
  */
 export function rowFill(grid: LevelGrid, dim: DimIndex, row: ReadonlySet<number>): Set<number> {
   const onOutline = new Set(outlineChains(grid, dim).flat());
@@ -766,16 +646,6 @@ export function rowFill(grid: LevelGrid, dim: DimIndex, row: ReadonlySet<number>
     }
   }
   return fill;
-}
-
-/** The outermost rock to cut down to WALL_H: every corner (see outerCorners) with any rock in `cells` (see
- *  cameraSide), whole, except the rock in `keep` (see farRow). */
-export function cornersWith(grid: LevelGrid, dim: DimIndex, cells: ReadonlySet<number>, keep: ReadonlySet<number>): Set<number> {
-  const low = new Set<number>();
-  for (const corner of outerCorners(grid, dim)) {
-    if (corner.some((k) => cells.has(k))) for (const k of corner) if (!keep.has(k)) low.add(k);
-  }
-  return low;
 }
 
 /** Rounded inner-corner tops at height y: where this wall's two neighbours are walls but the diagonal cell is

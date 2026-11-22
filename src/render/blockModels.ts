@@ -19,7 +19,7 @@ import {
 export interface BlockView {
   object: Object3D;
   update?(sim: Sim, dt: number, t: number): void;
-  /** Draw the rock with the heights in `heights` (indices z * w + x, see rockHeights). */
+  /** Draw the rock with the heights in `heights` (indices z * w + x, see hiddenHeights). */
   setHeights?(heights: ReadonlyMap<number, number>): void;
 }
 

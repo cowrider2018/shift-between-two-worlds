@@ -20,7 +20,7 @@ import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim'
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE, MOUTH_UP } from './cutaway';
-import { cornersHiding, occluders } from './terrain';
+import { cameraSide, cornersWith } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -355,7 +355,7 @@ export class GameView {
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     if (this.takedown) this.updateTakedown(this.takedown, dt);
     this.follow.update(sim, dt);
-    this.cutOccluders();
+    this.cutCameraSide();
     this.snapCharacters();
     this.pipeline.subpixel.x = this.follow.subpixel.x;
     this.pipeline.subpixel.y = this.follow.subpixel.y;
@@ -366,12 +366,12 @@ export class GameView {
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Cut every corner of the outermost wall that hides any floor from the camera down to WALL_H (see occluders,
-   *  cornersHiding), in both dimensions (the other one shows in the reflection). */
-  private cutOccluders(): void {
-    const { x, z } = this.follow.camera.position;
+  /** Cut every corner of the outermost wall reaching the camera's side of the hero down to WALL_H (see cameraSide,
+   *  cornersWith), in both dimensions (the other one shows in the reflection). */
+  private cutCameraSide(): void {
+    const [fx, fz] = this.follow.forward();
     for (const dim of [0, 1] as DimIndex[]) {
-      const low = cornersHiding(this.sim.grid, dim, occluders(this.sim.grid, dim, x, z));
+      const low = cornersWith(this.sim.grid, dim, cameraSide(this.sim.grid, dim, fx, fz, this.sim.x, this.sim.y));
       const key = [...low].sort((a, b) => a - b).join(',');
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;

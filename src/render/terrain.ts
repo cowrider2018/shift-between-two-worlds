@@ -455,7 +455,7 @@ export function isOuterRock(grid: LevelGrid, dim: DimIndex, x: number, z: number
 }
 
 /** How the rock is drawn for one camera pose: `low` are the in-grid outermost walls cut down to WALL_H (see
- *  occluders); `top` is how high a cell's rock rises above WALL_H (OUTER_H for the rest of the outermost rock, else 0). */
+ *  cornersWith); `top` is how high a cell's rock rises above WALL_H (OUTER_H for the rest of the outermost rock, else 0). */
 export interface Cut { low(x: number, z: number): boolean; top(x: number, z: number): number }
 
 /** The cut lowering the cells in `low` (indices z * w + x); none by default, the whole cliff standing. */
@@ -464,46 +464,19 @@ export function cutOf(grid: LevelGrid, dim: DimIndex, low: ReadonlySet<number> =
   return { low: isLow, top: (x, z) => (!isLow(x, z) && isOuterRock(grid, dim, x, z) ? OUTER_H : 0) };
 }
 
-/** Where a sight line meets the floor, per cell: its centre and four points near its corners. */
-const GROUND_SAMPLES: [number, number][] = [[0.5, 0.5], [0.05, 0.05], [0.95, 0.05], [0.05, 0.95], [0.95, 0.95]];
-
 /**
- * The in-grid outermost rock (indices z * w + x) standing between the camera at (cx, ·, cz) and any ground (a cell
- * that is neither rock nor dug out), from its foot up: a sight line from the camera to the ground passes over the
- * cell at all, so the whole wall there, not just the cliff above WALL_H, counts as in the way. (The sight line runs
- * below the camera, and the camera stays below OUTER_H, so its height never matters.)
+ * The in-grid outermost rock (indices z * w + x) on the camera's side of the level for a camera looking along grid
+ * direction (fx, fz) at the hero at (hx, hz): past a line through the hero at the angle of the level's diagonal
+ * between the two corners the camera does not face (so, on a square level, at 45° across the view).
  */
-export function occluders(grid: LevelGrid, dim: DimIndex, cx: number, cz: number): Set<number> {
+export function cameraSide(grid: LevelGrid, dim: DimIndex, fx: number, fz: number, hx: number, hz: number): Set<number> {
+  const sx = fx > 0 ? -1 : 1;
+  const sz = fz > 0 ? -1 : 1;
   const out = new Set<number>();
-  for (let gz = 0; gz < grid.h; gz++) {
-    for (let gx = 0; gx < grid.w; gx++) {
-      if (isRock(grid, dim, gx, gz) || isVoid(grid, dim, gx, gz)) continue;
-      for (const [ox, oz] of GROUND_SAMPLES) {
-        // walk the grid cells along the line from the camera to the sample (Amanatides & Woo)
-        const dx = gx + ox - cx;
-        const dz = gz + oz - cz;
-        let x = Math.floor(cx);
-        let z = Math.floor(cz);
-        const stepX = Math.sign(dx);
-        const stepZ = Math.sign(dz);
-        const dtX = stepX ? Math.abs(1 / dx) : Infinity;
-        const dtZ = stepZ ? Math.abs(1 / dz) : Infinity;
-        let tX = stepX > 0 ? (x + 1 - cx) * dtX : stepX < 0 ? (cx - x) * dtX : Infinity;
-        let tZ = stepZ > 0 ? (z + 1 - cz) * dtZ : stepZ < 0 ? (cz - z) * dtZ : Infinity;
-        let t = 0;
-        while (t < 1) {
-          if (grid.inBounds(x, z) && isOuterRock(grid, dim, x, z)) out.add(z * grid.w + x);
-          if (tX < tZ) {
-            t = tX;
-            tX += dtX;
-            x += stepX;
-          } else {
-            t = tZ;
-            tZ += dtZ;
-            z += stepZ;
-          }
-        }
-      }
+  for (let z = 0; z < grid.h; z++) {
+    for (let x = 0; x < grid.w; x++) {
+      if (!isOuterRock(grid, dim, x, z)) continue;
+      if (sx * (x + 0.5 - hx) / grid.w + sz * (z + 0.5 - hz) / grid.h >= 0) out.add(z * grid.w + x);
     }
   }
   return out;
@@ -587,12 +560,12 @@ export function outerCorners(grid: LevelGrid, dim: DimIndex): number[][] {
   return groups;
 }
 
-/** The outermost rock to cut down to WALL_H: every corner (see outerCorners) with any rock in `hiding` (see
- *  occluders), whole. */
-export function cornersHiding(grid: LevelGrid, dim: DimIndex, hiding: ReadonlySet<number>): Set<number> {
+/** The outermost rock to cut down to WALL_H: every corner (see outerCorners) with any rock in `cells` (see
+ *  cameraSide), whole. */
+export function cornersWith(grid: LevelGrid, dim: DimIndex, cells: ReadonlySet<number>): Set<number> {
   const low = new Set<number>();
   for (const corner of outerCorners(grid, dim)) {
-    if (corner.some((k) => hiding.has(k))) for (const k of corner) low.add(k);
+    if (corner.some((k) => cells.has(k))) for (const k of corner) low.add(k);
   }
   return low;
 }

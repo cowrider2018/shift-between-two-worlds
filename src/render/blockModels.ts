@@ -19,7 +19,7 @@ import {
 export interface BlockView {
   object: Object3D;
   update?(sim: Sim, dt: number, t: number): void;
-  /** Draw the rock with the outermost walls in `low` (indices z * w + x, see occluders) cut down to WALL_H. */
+  /** Draw the rock with the outermost walls in `low` (indices z * w + x, see cornersWith) cut down to WALL_H. */
   setLow?(low: ReadonlySet<number>): void;
 }
 

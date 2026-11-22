@@ -574,45 +574,43 @@ function outline(grid: LevelGrid, dim: DimIndex): Outline {
 
 /**
  * The row of the outermost wall across the far side of the level from a camera looking along grid direction (fx, fz),
- * which is never cut down (cells z * w + x). It starts from the runs farthest away that have nothing beyond them on
- * the far side (the axis the camera looks along most) and follows the outline both ways, through every 90° turn,
- * until it turns the same way twice running: that U-turn brings the outline back towards the camera, where its last
- * run would hide floor, so that run is left out; the corner it turns on stays with the row. Turning one way and
- * then back (steps out of line, however many) never ends it.
+ * which is never cut down (cells z * w + x). It starts from the run reaching farthest from the camera and follows the
+ * outline both ways for as long as each run faces away from the camera or side-on to it (nothing lies beyond it on
+ * that side), steps out of line included. It stops at the first run facing the camera: the outline has turned back
+ * there, and that run stands between the camera and floor, so it is left out; the corner it turns on stays.
  */
 export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Set<number> {
   const { runs } = outline(grid, dim);
-  const [dx, dz] = Math.abs(fx) >= Math.abs(fz) ? [Math.sign(fx), 0] : [0, Math.sign(fz)];
-  const far = (r: Run) => r.dx === dx && r.dz === dz;
+  const row = new Set<Run>();
+  const corners = new Set<number>();
+  // facing the camera, allowing for rounding so a run exactly side-on stays in
+  const facing = (r: Run) => r.dx * fx + r.dz * fz < -1e-6;
+  let start: Run | undefined;
+  let reach = -Infinity;
+  for (const r of runs) {
+    if (facing(r)) continue;
+    for (const k of r.cells) {
+      const d = (k % grid.w + 0.5) * fx + (Math.floor(k / grid.w) + 0.5) * fz;
+      if (d > reach) {
+        reach = d;
+        start = r;
+      }
+    }
+  }
+  if (!start) return corners;
   const at = new Map<number, Run[]>();
   for (const r of runs) for (const c of r.ends) at.set(c, [...(at.get(c) ?? []), r]);
-  // the way a run is walked when it is left by corner `c` (or, with `from`, entered by it): along its cells, which
-  // run from ends[0] to ends[1] in the grid direction (dz, dx)
-  const heading = (r: Run, c: number, from = false): [number, number] => {
-    const s = (r.ends[1] === c) !== from ? 1 : -1;
-    return [r.dz * s, r.dx * s];
-  };
-  const farthest = Math.max(...runs.filter(far).map((r) => r.at));
-  const row = new Set(runs.filter((r) => far(r) && r.at === farthest));
-  const corners = new Set<number>();
-  for (const start of [...row]) {
-    for (const first of start.ends) {
-      let run = start;
-      let c = first;
-      let turned = 0;
-      for (;;) {
-        corners.add(c);
-        const next = (at.get(c) ?? []).find((q) => q !== run);
-        if (!next || row.has(next)) break;
-        const [ax, az] = heading(run, c);
-        const [bx, bz] = heading(next, c, true);
-        const turn = Math.sign(ax * bz - az * bx);
-        if (turn === 0 || turn === turned) break;
-        row.add(next);
-        turned = turn;
-        run = next;
-        c = next.ends[0] === c ? next.ends[1] : next.ends[0];
-      }
+  row.add(start);
+  for (const first of start.ends) {
+    let run = start;
+    let c = first;
+    for (;;) {
+      corners.add(c);
+      const next = (at.get(c) ?? []).find((q) => q !== run);
+      if (!next || row.has(next) || facing(next)) break;
+      row.add(next);
+      run = next;
+      c = next.ends[0] === c ? next.ends[1] : next.ends[0];
     }
   }
   const cells = new Set(corners);

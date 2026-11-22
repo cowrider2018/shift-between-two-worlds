@@ -13,14 +13,14 @@ import type { DimTheme } from './palette';
 import { cobble, toon, whitening, wood } from './materials';
 import { throughMouth, withHole, type Mouth } from './cutaway';
 import {
-  CAVE, WALL_H, caveGeometry, cutOf, floorGeometry, isOuterRock, outerWallGeometry, wallGeometry, type Cut,
+  CAVE, WALL_H, caveGeometry, cutOf, floorGeometry, outerWallGeometry, wallGeometry, type Cut,
 } from './terrain';
 
 export interface BlockView {
   object: Object3D;
   update?(sim: Sim, dt: number, t: number): void;
-  /** Draw the rock with the outermost walls in `low` (indices z * w + x, see cornersWith) cut down to WALL_H. */
-  setLow?(low: ReadonlySet<number>): void;
+  /** Draw the rock with the heights in `heights` (indices z * w + x, see rockHeights). */
+  setHeights?(heights: ReadonlyMap<number, number>): void;
 }
 
 export interface ModelCtx {
@@ -81,28 +81,22 @@ function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx, cut: Cut): void {
 }
 
 /**
- * The rock of an outermost-rock `cell`, rebuilt for whichever of the outermost walls round it (3 × 3: its faces,
- * fillets and rounded corners reach no further) are cut down; each combination is built once, when first needed, and
- * only the current one is shown. Starts with the whole cliff standing. Other rock never changes.
+ * The rock of `cell`, rebuilt for the heights of the rock round it (3 × 3: its faces, fillets and rounded corners
+ * reach no further) and its own; each combination is built once, when first needed, and only the current one is
+ * shown. Starts with every rock at its own height (see cutOf).
  */
-function rockByLow(cell: Cell, ctx: ModelCtx, build: (cut: Cut) => Object3D): { object: Object3D; setLow?(low: ReadonlySet<number>): void } {
+function rockByHeight(cell: Cell, ctx: ModelCtx, build: (cut: Cut) => Object3D): { object: Object3D; setHeights(heights: ReadonlyMap<number, number>): void } {
   const { grid } = ctx;
-  if (!isOuterRock(grid, cell.dim, cell.x, cell.y)) return { object: build(cutOf(grid, cell.dim)) };
-  const copies = new Map<number, Object3D>();
+  const copies = new Map<string, Object3D>();
   const object = new Group();
   let shown: Object3D | undefined;
-  const setLow = (low: ReadonlySet<number>) => {
-    let key = 0;
-    for (let dz = -1; dz <= 1; dz++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const x = cell.x + dx;
-        const z = cell.y + dz;
-        key = key * 2 + (grid.inBounds(x, z) && low.has(z * grid.w + x) ? 1 : 0);
-      }
-    }
+  const setHeights = (heights: ReadonlyMap<number, number>) => {
+    const cut = cutOf(grid, cell.dim, heights);
+    let key = cut.low(cell.x, cell.y) ? 'L' : '';
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) key += `${cut.height(cell.x + dx, cell.y + dz)},`;
     let o = copies.get(key);
     if (!o) {
-      copies.set(key, (o = build(cutOf(grid, cell.dim, low))));
+      copies.set(key, (o = build(cut)));
       object.add(o);
     }
     if (o === shown) return;
@@ -110,8 +104,8 @@ function rockByLow(cell: Cell, ctx: ModelCtx, build: (cut: Cut) => Object3D): { 
     o.visible = true;
     shown = o;
   };
-  setLow(new Set());
-  return { object, setLow };
+  setHeights(new Map());
+  return { object, setHeights };
 }
 
 /** Underside door: light leaking through the seams between its boards (woodTexture BOARDS = 4). */
@@ -361,14 +355,16 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   void: () => ({ object: new Group() }),
 
   wall: (cell, ctx) => {
-    const rock = rockByLow(cell, ctx, (cut) => {
+    const rock = rockByHeight(cell, ctx, (cut) => {
       const r = new Group();
+      // cut down to nothing: not even the floor in its rounded-off corners
+      if (cut.height(cell.x, cell.y) <= 0) return r;
       r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, undefined, cut), withHole(cobble('#ffffff', true))),
         ...floorTile(cell, ctx));
       addOuterWall(r, cell, ctx, cut);
       return r;
     });
-    return { object: place(rock.object, cell), setLow: rock.setLow };
+    return { object: place(rock.object, cell), setHeights: rock.setHeights };
   },
 
   spawn: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
@@ -430,7 +426,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     const [dx, dz] = ctx.grid.exitMouth(cell);
     const mouth = { dx, dz, floor: ctx.theme.floor[0] };
     const stone = withHole(cobble('#ffffff', true));
-    const rock = rockByLow(cell, ctx, (cut) => {
+    const rock = rockByHeight(cell, ctx, (cut) => {
       const r = new Group();
       r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, mouth, cut), stone));
       addOuterWall(r, cell, ctx, cut);
@@ -466,6 +462,6 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     const g = new Group();
     g.add(rock.object, tunnel, inside, ...floorTile(cell, ctx));
     place(g, cell);
-    return { object: g, setLow: rock.setLow };
+    return { object: g, setHeights: rock.setHeights };
   },
 };

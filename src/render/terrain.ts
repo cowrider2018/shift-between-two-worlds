@@ -454,14 +454,62 @@ export function isOuterRock(grid: LevelGrid, dim: DimIndex, x: number, z: number
   return outerCells(grid, dim).has(z * grid.w + x);
 }
 
-/** How the rock is drawn for one camera pose: `low` are the in-grid outermost walls cut down to WALL_H (see
- *  cornersWith); `top` is how high a cell's rock rises above WALL_H (OUTER_H for the rest of the outermost rock, else 0). */
-export interface Cut { low(x: number, z: number): boolean; top(x: number, z: number): number }
+/** Height of the corner where the far row turns back (see farRow, rockHeights). */
+export const CORNER_H = 2;
+/** How much lower each cut-down cell is than the one before it, going away from such a corner. */
+export const FADE_STEP = 0.4;
 
-/** The cut lowering the cells in `low` (indices z * w + x); none by default, the whole cliff standing. */
-export function cutOf(grid: LevelGrid, dim: DimIndex, low: ReadonlySet<number> = new Set()): Cut {
-  const isLow = (x: number, z: number) => grid.inBounds(x, z) && low.has(z * grid.w + x);
-  return { low: isLow, top: (x, z) => (!isLow(x, z) && isOuterRock(grid, dim, x, z) ? OUTER_H : 0) };
+/** How the rock is drawn for one camera pose: `height` is how high a cell's rock stands (0 for no rock, or rock not
+ *  drawn at all); `low` marks in-grid outermost rock standing below OUTER_H; `top` is how high rock rises above
+ *  WALL_H (0 where it does not). */
+export interface Cut { height(x: number, z: number): number; low(x: number, z: number): boolean; top(x: number, z: number): number }
+
+/** The cut with the heights in `heights` (indices z * w + x); elsewhere the outermost rock stands at OUTER_H and the
+ *  rest at WALL_H. None by default: the whole cliff standing. */
+export function cutOf(grid: LevelGrid, dim: DimIndex, heights: ReadonlyMap<number, number> = new Map()): Cut {
+  const height = (x: number, z: number) => {
+    if (!isRock(grid, dim, x, z)) return 0;
+    if (!grid.inBounds(x, z)) return isOuterRock(grid, dim, x, z) ? OUTER_H : WALL_H;
+    return heights.get(z * grid.w + x) ?? (isOuterRock(grid, dim, x, z) ? OUTER_H : WALL_H);
+  };
+  return {
+    height,
+    low: (x, z) => grid.inBounds(x, z) && isOuterRock(grid, dim, x, z) && height(x, z) < OUTER_H,
+    top: (x, z) => (height(x, z) > WALL_H ? height(x, z) : 0),
+  };
+}
+
+/**
+ * The height of every cell drawn other than as it stands (see Cut): each corner where the far row turns back
+ * (`corners`) at CORNER_H, and the cut-down rock (`low`) falling away from it, FADE_STEP lower each cell further on
+ * (8-connected through the cut-down rock), from WALL_H down to nothing at all; cut-down rock no such corner reaches
+ * stays at WALL_H. The exit never drops below WALL_H.
+ */
+export function rockHeights(grid: LevelGrid, dim: DimIndex, corners: ReadonlySet<number>, low: ReadonlySet<number>): Map<number, number> {
+  const heights = new Map<number, number>();
+  const isExit = (k: number) => grid.cell(dim, k % grid.w, Math.floor(k / grid.w)).def.behavior === 'exit';
+  for (const k of low) heights.set(k, WALL_H);
+  let front = [...corners];
+  for (const k of front) if (!isExit(k)) heights.set(k, CORNER_H);
+  const seen = new Set(front);
+  for (let h = WALL_H; front.length; h -= FADE_STEP) {
+    const next: number[] = [];
+    for (const k of front) {
+      const x = k % grid.w;
+      const z = Math.floor(k / grid.w);
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const n = (z + dz) * grid.w + x + dx;
+          if (!grid.inBounds(x + dx, z + dz) || seen.has(n) || !low.has(n)) continue;
+          seen.add(n);
+          next.push(n);
+          heights.set(n, isExit(n) ? WALL_H : Math.max(0, Math.round(h * 100) / 100));
+        }
+      }
+    }
+    front = next;
+  }
+  return heights;
 }
 
 /**
@@ -633,9 +681,9 @@ export const SIDE_ON_DEG = 15;
  * staircase counts as the slope it makes rather than as its one-cell faces. It stops at the first step facing the
  * camera: the outline has turned back there, and what lies past it stands between the camera and floor, so it is
  * left out; the cell it turns on stays. That turned-back edge, the cells straight on from there for as long as the
- * outline keeps that heading, is `turn`: it is cut down to WALL_H wherever it lies.
+ * outline keeps that heading, is `turn`: it is cut down wherever it lies. The cells it turns on are `corners`.
  */
-export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): { row: Set<number>; turn: Set<number> } {
+export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): { row: Set<number>; turn: Set<number>; corners: Set<number> } {
   // looking nearly along an axis, look exactly along it: the walls either side then both count as side-on
   const yaw = Math.atan2(fz, fx);
   const axis = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
@@ -648,6 +696,7 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
   const cz = (k: number) => Math.floor(k / grid.w) + 0.5;
   const row = new Set<number>();
   const turn = new Set<number>();
+  const corners = new Set<number>();
   let best: [number[], number] | null = null;
   let reach = -Infinity;
   for (const chain of chains) {
@@ -659,7 +708,7 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
       }
     });
   }
-  if (!best) return { row, turn };
+  if (!best) return { row, turn, corners };
   const [chain, start] = best as [number[], number];
   const n = chain.length;
   const closed = (() => {
@@ -687,6 +736,7 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
         // the edge turned back: straight on from here, as far as the outline keeps that heading
         const dir0 = (a: number, b: number) => `${cx(chain[b]) - cx(chain[a])},${cz(chain[b]) - cz(chain[a])}`;
         const heading = dir0(i, jj);
+        corners.add(chain[i]);
         for (let a = i, b = jj, k = steps; b >= 0 && k < n && dir0(a, b) === heading; a = b, b = after(b), k++) turn.add(chain[b]);
         break;
       }
@@ -699,7 +749,7 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
     }
   }
   for (const k of row) turn.delete(k);
-  return { row, turn };
+  return { row, turn, corners };
 }
 
 /**
@@ -768,9 +818,12 @@ function fillets(b: MeshBuilder, isWall: IsWall, cx: number, cz: number, y: numb
  */
 export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
   topColor: string, cave?: CaveMouth, cut = cutOf(grid, dim)): BufferGeometry {
-  // a cut-down border wall shows its outside face: the rock outside the grid counts as open beside it
+  // this part of the wall stands up to `base`: WALL_H, or lower where the rock is cut down below it
+  const base = Math.min(WALL_H, cut.height(cx, cz));
+  // rock lower than that leaves this face open; a cut-down border wall shows its outside face too, the rock
+  // outside the grid counting as open beside it
   const lowered = cut.low(cx, cz);
-  const isWall: IsWall = (x, z) => isRock(grid, dim, x, z) && !(lowered && !grid.inBounds(x, z));
+  const isWall: IsWall = (x, z) => (grid.inBounds(x, z) ? cut.height(x, z) >= base : isRock(grid, dim, x, z) && !lowered);
   const isOuter: IsWall = (x, z) => cut.top(x, z) > 0;
   // an outermost wall stops at WALL_H here (no top, no bevel); outerWallGeometry carries it on up. Where ordinary
   // rock meets it, the two footprints differ at WALL_H (the cliff has no fillet into, and rounds the corner beside,
@@ -786,22 +839,22 @@ export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
     }
   }
   const cliff = new WallShape(isOuter);
-  const shape = new WallShape(isWall, !outer ? WALL_H : !shelf ? rise : (x, z) => (cliff.sdf(x, z) < 1e-3 ? rise : WALL_H));
+  const shape = new WallShape(isWall, !outer ? base : !shelf ? rise : (x, z) => (cliff.sdf(x, z) < 1e-3 ? rise : WALL_H));
   const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor),
     outer ? (x, z) => cliff.sdf(x, z) < 1e-3 : undefined);
   const B = exposed ? FINE : COARSE;
   const n = B.length;
   const topped = !outer || shelf;
-  const H = topped ? HEIGHTS : [0, WALL_H];
+  const H = topped ? (base === WALL_H ? HEIGHTS : faceHeights(0, base)) : [0, WALL_H];
 
-  if (topped) b.patch(n, n, (i, j) => [cx + B[i], WALL_H, cz + B[j]], false, [0, 1, 0]);
+  if (topped) b.patch(n, n, (i, j) => [cx + B[i], base, cz + B[j]], false, [0, 1, 0]);
   const open = (dx: number, dz: number) => !isWall(cx + dx, cz + dz) && !(cave && cave.dx === dx && cave.dz === dz);
   if (cave) caveFace(b, cx, cz, cave, H);
   if (open(1, 0)) b.patch(n, H.length, (i, j) => [cx + 1, H[j], cz + B[i]], true, [1, 0, 0]);
   if (open(-1, 0)) b.patch(n, H.length, (i, j) => [cx, H[j], cz + B[i]], true, [-1, 0, 0]);
   if (open(0, 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz + 1], true, [0, 0, 1]);
   if (open(0, -1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz], true, [0, 0, -1]);
-  if (topped) fillets(b, isWall, cx, cz, WALL_H);
+  if (topped) fillets(b, isWall, cx, cz, base);
   return b.build();
 }
 
@@ -813,7 +866,8 @@ export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
 export function outerWallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
   topColor: string, cut = cutOf(grid, dim)): BufferGeometry {
   const T = cut.top(cx, cz);
-  const isWall: IsWall = (x, z) => cut.top(x, z) >= T;
+  // outside the grid only the full cliff counts as walled in: anything lower shows its outside face
+  const isWall: IsWall = (x, z) => (grid.inBounds(x, z) ? cut.top(x, z) >= T : T === OUTER_H);
   const b = new MeshBuilder(new WallShape(isWall, T), [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
   let exposed = false;
   for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!isWall(cx + dx, cz + dz)) exposed = true;

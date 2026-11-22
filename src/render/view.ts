@@ -20,7 +20,7 @@ import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim'
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE, MOUTH_UP } from './cutaway';
-import { cameraSide, cornersWith, farRow, rowFill } from './terrain';
+import { cameraSide, cornersWith, farRow, rockHeights, rowFill } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -181,7 +181,7 @@ export class GameView {
   private readonly world = new Group();
   private dims: [Group, Group] = [new Group(), new Group()];
   private blocks: BlockView[] = [];
-  /** Each dimension's blocks, and the outermost walls last cut down there (see cutOccluders), as a sorted key. */
+  /** Each dimension's blocks, and the rock heights last drawn there (see cutCameraSide), as a sorted key. */
   private dimBlocks: [BlockView[], BlockView[]] = [[], []];
   private lowKeys = ['', ''];
   private readonly holeAt = new Vector3();
@@ -366,20 +366,22 @@ export class GameView {
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Cut every corner of the outermost wall reaching the camera's side of the hero down to WALL_H, all but the row
-   *  across the far side; and the edge where that row turns back and the rock filled in front of it, wherever they lie
-   *  (see cameraSide, cornersWith, farRow, rowFill), in both dimensions (the other one shows in the reflection). */
+  /** Cut down every corner of the outermost wall reaching the camera's side of the hero, all but the row across the
+   *  far side; and the edge where that row turns back and the rock filled in front of it, wherever they lie. The
+   *  corners the row turns on stand at CORNER_H and the cut-down rock falls away from them (see cameraSide,
+   *  cornersWith, farRow, rowFill, rockHeights). In both dimensions (the other one shows in the reflection). */
   private cutCameraSide(): void {
     const [fx, fz] = this.follow.forward();
     for (const dim of [0, 1] as DimIndex[]) {
       const { grid } = this.sim;
-      const { row, turn } = farRow(grid, dim, fx, fz);
+      const { row, turn, corners } = farRow(grid, dim, fx, fz);
       const low = cornersWith(grid, dim, cameraSide(grid, dim, fx, fz, this.sim.x, this.sim.y), row);
       for (const k of [...turn, ...rowFill(grid, dim, row)]) low.add(k);
-      const key = [...low].sort((a, b) => a - b).join(',');
+      const heights = rockHeights(grid, dim, corners, low);
+      const key = [...heights].sort((a, b) => a[0] - b[0]).join(';');
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;
-      for (const b of this.dimBlocks[dim]) b.setLow?.(low);
+      for (const b of this.dimBlocks[dim]) b.setHeights?.(heights);
     }
   }
 

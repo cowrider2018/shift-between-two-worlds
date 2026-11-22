@@ -12,11 +12,15 @@ import { TUNING, type Sim } from '../core/sim';
 import type { DimTheme } from './palette';
 import { cobble, toon, whitening, wood } from './materials';
 import { throughMouth, withHole, type Mouth } from './cutaway';
-import { CAVE, WALL_H, caveGeometry, floorGeometry, isOuterRock, outerWallGeometry, wallGeometry } from './terrain';
+import {
+  CAVE, OUTER_VIEWS, WALL_H, caveGeometry, floorGeometry, isOuterRock, loweredBy, outerWallGeometry, wallGeometry, type Lowered,
+} from './terrain';
 
 export interface BlockView {
   object: Object3D;
   update?(sim: Sim, dt: number, t: number): void;
+  /** Show the rock as seen from camera view `i` (an index into OUTER_VIEWS); only outermost rock changes. */
+  setView?(i: number): void;
 }
 
 export interface ModelCtx {
@@ -69,11 +73,40 @@ function archShape(grow = 0): Shape {
 /** Haze in the cave: [depth, opacity] of each thin veil of white light, thickening towards the back. */
 const CAVE_HAZE: [number, number][] = [[0.42, 0.3], [0.5, 0.4], [0.58, 0.5], [0.66, 0.6], [0.74, 0.75]];
 
-/** Raise an outermost wall (see isOuterRock) on up to OUTER_H; the upper part casts no shadow. */
-function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx): void {
-  if (!isOuterRock(ctx.grid, cell.dim, cell.x, cell.y)) return;
-  const geo = outerWallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop);
+/** Raise an outermost wall (see isOuterRock) on up to OUTER_H, unless lowered; the upper part casts no shadow. */
+function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx, low: Lowered): void {
+  if (!isOuterRock(ctx.grid, cell.dim, cell.x, cell.y) || low(cell.x, cell.y)) return;
+  const geo = outerWallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, low);
   g.add(m(geo, withHole(cobble('#ffffff', true)), 0, 0, 0, false));
+}
+
+/** How far round a cell lowering a side can change its rock (faces, fillets and the rounded corners' reach). */
+const VIEW_REACH = 2;
+
+/**
+ * The rock of `cell` once per camera view (OUTER_VIEWS) that draws it differently: the sides facing the camera have
+ * their outermost wall lowered to WALL_H. Views that lower the same cells round it share one copy. Only the copy for
+ * the current view is shown; until a view is set, the whole cliff stands (view 0).
+ */
+function rockByView(cell: Cell, ctx: ModelCtx, build: (low: Lowered) => Object3D): { object: Object3D; setView?(i: number): void } {
+  const none: Lowered = () => false;
+  if (!isOuterRock(ctx.grid, cell.dim, cell.x, cell.y)) return { object: build(none) };
+  const copies = new Map<string, Object3D>();
+  const pick = OUTER_VIEWS.map((mask) => {
+    const low = loweredBy(ctx.grid, mask);
+    let key = '';
+    for (let dz = -VIEW_REACH; dz <= VIEW_REACH; dz++) {
+      for (let dx = -VIEW_REACH; dx <= VIEW_REACH; dx++) key += low(cell.x + dx, cell.y + dz) ? '1' : '0';
+    }
+    let o = copies.get(key);
+    if (!o) copies.set(key, (o = build(low)));
+    return o;
+  });
+  const object = new Group();
+  object.add(...copies.values());
+  const setView = (i: number) => { for (const o of copies.values()) o.visible = o === pick[i]; };
+  setView(0);
+  return { object, setView };
 }
 
 /** Underside door: light leaking through the seams between its boards (woodTexture BOARDS = 4). */
@@ -323,11 +356,15 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   void: () => ({ object: new Group() }),
 
   wall: (cell, ctx) => {
-    const g = wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop);
+    const rock = rockByView(cell, ctx, (low) => {
+      const r = new Group();
+      r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, undefined, low), withHole(cobble('#ffffff', true))));
+      addOuterWall(r, cell, ctx, low);
+      return r;
+    });
     const group = new Group();
-    group.add(m(g, withHole(cobble('#ffffff', true))), ...floorTile(cell, ctx));
-    addOuterWall(group, cell, ctx);
-    return { object: place(group, cell) };
+    group.add(rock.object, ...floorTile(cell, ctx));
+    return { object: place(group, cell), setView: rock.setView };
   },
 
   spawn: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
@@ -389,7 +426,12 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     const [dx, dz] = ctx.grid.exitMouth(cell);
     const mouth = { dx, dz, floor: ctx.theme.floor[0] };
     const stone = withHole(cobble('#ffffff', true));
-    const rock = m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, mouth), stone);
+    const rock = rockByView(cell, ctx, (low) => {
+      const r = new Group();
+      r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, mouth, low), stone));
+      addOuterWall(r, cell, ctx, low);
+      return r;
+    });
     // the tunnel takes no shadow from the rock over it: its light comes from inside
     // everything inside shows only through the arch, so it hides like the wall round it from any other angle
     // (e.g. through the camera hole cut into a neighbouring wall)
@@ -418,9 +460,8 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     light.position.set(0, CAVE.spring * 0.8, 0.5 - CAVE.depth * 0.6);
     inside.add(light);
     const g = new Group();
-    g.add(rock, tunnel, inside, ...floorTile(cell, ctx));
-    addOuterWall(g, cell, ctx);
+    g.add(rock.object, tunnel, inside, ...floorTile(cell, ctx));
     place(g, cell);
-    return { object: g };
+    return { object: g, setView: rock.setView };
   },
 };

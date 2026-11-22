@@ -454,6 +454,33 @@ export function isOuterRock(grid: LevelGrid, dim: DimIndex, x: number, z: number
   return outerCells(grid, dim).has(z * grid.w + x);
 }
 
+/** Which side of the level a cell lies on: 0 = +x (east), 1 = +z (south), 2 = −x (west), 3 = −z (north). The level
+ *  (with its ring) is cut along its diagonals into four wedges, one per side. */
+export function levelSide(grid: LevelGrid, x: number, z: number): number {
+  const dx = (x + 0.5 - grid.w / 2) / (grid.w / 2 + 1);
+  const dz = (z + 0.5 - grid.h / 2) / (grid.h / 2 + 1);
+  return Math.abs(dx) >= Math.abs(dz) ? (dx >= 0 ? 0 : 2) : dz >= 0 ? 1 : 3;
+}
+
+/**
+ * The two sides facing a camera that looks along grid direction (fx, fz), as a bit mask over levelSide: the one of
+ * west/east and the one of north/south that the camera stands on. Index into OUTER_VIEWS.
+ */
+export function nearSides(fx: number, fz: number): number {
+  return (1 << (fx > 0 ? 2 : 0)) | (1 << (fz > 0 ? 3 : 1));
+}
+
+/** Every camera-side mask nearSides can give, plus 0 (no side lowered: the whole cliff standing). */
+export const OUTER_VIEWS = [0, nearSides(1, 1), nearSides(1, -1), nearSides(-1, 1), nearSides(-1, -1)];
+
+/** Cells of the sides in `mask` (see levelSide): their outermost rock is drawn at WALL_H, like an ordinary wall. */
+export type Lowered = (x: number, z: number) => boolean;
+export const loweredBy = (grid: LevelGrid, mask: number): Lowered =>
+  (x, z) => mask !== 0 && (mask & (1 << levelSide(grid, x, z))) !== 0;
+
+/** Outside the grid and its one-cell ring: rock only ever seen from outside, open once the ring is lowered. */
+const beyondRing = (grid: LevelGrid, x: number, z: number) => x < -1 || z < -1 || x > grid.w || z > grid.h;
+
 /** Rounded inner-corner tops at height y: where this wall's two neighbours are walls but the diagonal cell is
  *  open, the corner spills into that open cell; its sides come from the neighbours' faces. */
 function fillets(b: MeshBuilder, isWall: IsWall, cx: number, cz: number, y: number): void {
@@ -482,9 +509,10 @@ function fillets(b: MeshBuilder, isWall: IsWall, cx: number, cz: number, y: numb
  * Vertex colours blend `sideColor` → `topColor` by how upward each point faces.
  */
 export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
-  topColor: string, cave?: CaveMouth): BufferGeometry {
-  const isWall: IsWall = (x, z) => isRock(grid, dim, x, z);
-  const isOuter: IsWall = (x, z) => isOuterRock(grid, dim, x, z);
+  topColor: string, cave?: CaveMouth, low: Lowered = () => false): BufferGeometry {
+  // a lowered ring shows its outside face, so the rock beyond it counts as open there
+  const isWall: IsWall = (x, z) => isRock(grid, dim, x, z) && !(beyondRing(grid, x, z) && low(x, z));
+  const isOuter: IsWall = (x, z) => isOuterRock(grid, dim, x, z) && !low(x, z);
   // an outermost wall stops at WALL_H here (no top, no bevel); outerWallGeometry carries it on up. Where ordinary
   // rock meets it, the two footprints differ at WALL_H (the cliff has no fillet into, and rounds the corner beside,
   // the lower wall), so there it is also topped and bevelled like an ordinary wall wherever it lies outside the cliff.
@@ -523,8 +551,8 @@ export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
  * A separate mesh so it casts no shadow: a cliff that tall would darken half the level.
  */
 export function outerWallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
-  topColor: string): BufferGeometry {
-  const isWall: IsWall = (x, z) => isOuterRock(grid, dim, x, z);
+  topColor: string, low: Lowered = () => false): BufferGeometry {
+  const isWall: IsWall = (x, z) => isOuterRock(grid, dim, x, z) && !low(x, z);
   const b = new MeshBuilder(new WallShape(isWall, OUTER_H), [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
   let exposed = false;
   for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!isWall(cx + dx, cz + dz)) exposed = true;

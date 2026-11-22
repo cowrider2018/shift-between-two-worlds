@@ -20,6 +20,7 @@ import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim'
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE, MOUTH_UP } from './cutaway';
+import { OUTER_VIEWS, nearSides } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -180,6 +181,8 @@ export class GameView {
   private readonly world = new Group();
   private dims: [Group, Group] = [new Group(), new Group()];
   private blocks: BlockView[] = [];
+  /** The OUTER_VIEWS entry the rock is shown for; -1 until the first frame picks one. */
+  private outerView = -1;
   private readonly holeAt = new Vector3();
   private readonly sunDir = new Vector3();
   private monsters: MonsterView[] = [];
@@ -219,6 +222,7 @@ export class GameView {
     this.world.clear();
     this.dims = [new Group(), new Group()];
     this.blocks = [];
+    this.outerView = -1;
     this.world.add(...this.dims);
     if (!this.hero) {
       this.hero = new CharacterInstance('hero', 'normal', 'plain');
@@ -352,6 +356,7 @@ export class GameView {
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     if (this.takedown) this.updateTakedown(this.takedown, dt);
     this.follow.update(sim, dt);
+    this.lowerNearSides();
     this.snapCharacters();
     this.pipeline.subpixel.x = this.follow.subpixel.x;
     this.pipeline.subpixel.y = this.follow.subpixel.y;
@@ -360,6 +365,16 @@ export class GameView {
     this.backdrop.update(this.pipeline.width, this.pipeline.height, this.follow.camera, this.t);
     this.renderMirror();
     this.pipeline.render(this.scene, this.follow.camera);
+  }
+
+  /** Lower the outermost wall on the two sides of the level facing the camera (see nearSides), so it never stands
+   *  between the camera and the level. */
+  private lowerNearSides(): void {
+    const [fx, fz] = this.follow.forward();
+    const view = OUTER_VIEWS.indexOf(nearSides(fx, fz));
+    if (view === this.outerView) return;
+    this.outerView = view;
+    for (const b of this.blocks) b.setView?.(view);
   }
 
   /**

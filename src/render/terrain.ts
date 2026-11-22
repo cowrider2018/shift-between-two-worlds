@@ -680,6 +680,33 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
   return row;
 }
 
+/**
+ * The outermost rock filled in on the room side of the far row (see farRow): rock raised with the outline (see
+ * isOuterRock) that is not on it itself, reached from the row through such rock (8-connected). It would stand as a
+ * cliff in front of the row, so it is cut down to WALL_H with the rest of the camera's side.
+ */
+export function rowFill(grid: LevelGrid, dim: DimIndex, row: ReadonlySet<number>): Set<number> {
+  const onOutline = new Set(outlineChains(grid, dim).flat());
+  const fill = new Set<number>();
+  const queue = [...row];
+  while (queue.length) {
+    const k = queue.pop()!;
+    const x = k % grid.w;
+    const z = Math.floor(k / grid.w);
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx;
+        const nz = z + dz;
+        const n = nz * grid.w + nx;
+        if (!grid.inBounds(nx, nz) || !isOuterRock(grid, dim, nx, nz) || onOutline.has(n) || row.has(n) || fill.has(n)) continue;
+        fill.add(n);
+        queue.push(n);
+      }
+    }
+  }
+  return fill;
+}
+
 /** The outermost rock to cut down to WALL_H: every corner (see outerCorners) with any rock in `cells` (see
  *  cameraSide), whole, except the rock in `keep` (see farRow). */
 export function cornersWith(grid: LevelGrid, dim: DimIndex, cells: ReadonlySet<number>, keep: ReadonlySet<number>): Set<number> {

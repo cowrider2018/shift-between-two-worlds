@@ -628,13 +628,15 @@ function outlineChains(grid: LevelGrid, dim: DimIndex): number[][] {
  * the outline (outlineChains) both ways, cell centre to cell centre, for as long as each step faces away from the
  * camera or side-on to it, so a staircase counts as the slope it makes rather than as its one-cell faces. It stops at
  * the first step facing the camera: the outline has turned back there, and what lies past it stands between the
- * camera and floor, so it is left out; the cell it turns on stays.
+ * camera and floor, so it is left out; the cell it turns on stays. That turned-back edge, the cells straight on from
+ * there for as long as the outline keeps that heading, is `turn`: it is cut down to WALL_H wherever it lies.
  */
-export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Set<number> {
+export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): { row: Set<number>; turn: Set<number> } {
   const chains = outlineChains(grid, dim);
   const cx = (k: number) => (k % grid.w) + 0.5;
   const cz = (k: number) => Math.floor(k / grid.w) + 0.5;
   const row = new Set<number>();
+  const turn = new Set<number>();
   let best: [number[], number] | null = null;
   let reach = -Infinity;
   for (const chain of chains) {
@@ -646,7 +648,7 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
       }
     });
   }
-  if (!best) return row;
+  if (!best) return { row, turn };
   const [chain, start] = best as [number[], number];
   const n = chain.length;
   const closed = (() => {
@@ -664,11 +666,19 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
   };
   row.add(chain[start]);
   for (const dir of [1, -1]) {
+    // the cell after chain[i] going this way, or -1 at the end of an open chain
+    const after = (i: number) => (!closed && (i + dir < 0 || i + dir >= n) ? -1 : (i + dir + n) % n);
+    const faces = (i: number, j: number) => facing(dir > 0 ? i : j);
     for (let i = start, steps = 0; steps < n; steps++) {
-      const j = i + dir;
-      if (!closed && (j < 0 || j >= n)) break;
-      const jj = (j + n) % n;
-      if (facing(dir > 0 ? i : jj)) break;
+      const jj = after(i);
+      if (jj < 0) break;
+      if (faces(i, jj)) {
+        // the edge turned back: straight on from here, as far as the outline keeps that heading
+        const dir0 = (a: number, b: number) => `${cx(chain[b]) - cx(chain[a])},${cz(chain[b]) - cz(chain[a])}`;
+        const heading = dir0(i, jj);
+        for (let a = i, b = jj, k = steps; b >= 0 && k < n && dir0(a, b) === heading; a = b, b = after(b), k++) turn.add(chain[b]);
+        break;
+      }
       row.add(chain[jj]);
       // a diagonal step passes a dug-out corner: its rock, beside both cells, belongs to the row too
       for (const k of [chain[i] - (chain[i] % grid.w) + (chain[jj] % grid.w), chain[jj] - (chain[jj] % grid.w) + (chain[i] % grid.w)]) {
@@ -677,7 +687,8 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
       i = jj;
     }
   }
-  return row;
+  for (const k of row) turn.delete(k);
+  return { row, turn };
 }
 
 /**

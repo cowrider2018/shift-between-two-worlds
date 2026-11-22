@@ -367,15 +367,15 @@ export class GameView {
   }
 
   /** Cut every corner of the outermost wall reaching the camera's side of the hero down to WALL_H, all but the row
-   *  across the far side, and the rock filled in front of that row (see cameraSide, cornersWith, farRow, rowFill), in
-   *  both dimensions (the other one shows in the reflection). */
+   *  across the far side; and the edge where that row turns back and the rock filled in front of it, wherever they lie
+   *  (see cameraSide, cornersWith, farRow, rowFill), in both dimensions (the other one shows in the reflection). */
   private cutCameraSide(): void {
     const [fx, fz] = this.follow.forward();
     for (const dim of [0, 1] as DimIndex[]) {
       const { grid } = this.sim;
-      const row = farRow(grid, dim, fx, fz);
+      const { row, turn } = farRow(grid, dim, fx, fz);
       const low = cornersWith(grid, dim, cameraSide(grid, dim, fx, fz, this.sim.x, this.sim.y), row);
-      for (const k of rowFill(grid, dim, row)) low.add(k);
+      for (const k of [...turn, ...rowFill(grid, dim, row)]) low.add(k);
       const key = [...low].sort((a, b) => a - b).join(',');
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;

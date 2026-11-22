@@ -368,17 +368,18 @@ export class GameView {
 
   /** Cut down every corner of the outermost wall reaching the camera's side of the hero, all but the row across the
    *  far side; and the edge where that row turns back and the rock filled in front of it, wherever they lie. The
-   *  corners the row turns on stand at CORNER_H and the cut-down rock falls away from them (see cameraSide,
+   *  wall slopes down from the corners the row turns on and the cut-down rock past that is gone (see cameraSide,
    *  cornersWith, farRow, rowFill, rockHeights). In both dimensions (the other one shows in the reflection). */
   private cutCameraSide(): void {
     const [fx, fz] = this.follow.forward();
     for (const dim of [0, 1] as DimIndex[]) {
       const { grid } = this.sim;
-      const { row, turn, corners } = farRow(grid, dim, fx, fz);
+      const { row, turn, bends } = farRow(grid, dim, fx, fz);
       const low = cornersWith(grid, dim, cameraSide(grid, dim, fx, fz, this.sim.x, this.sim.y), row);
       for (const k of [...turn, ...rowFill(grid, dim, row)]) low.add(k);
-      const heights = rockHeights(grid, dim, corners, low);
-      const key = [...heights].sort((a, b) => a[0] - b[0]).join(';');
+      const heights = rockHeights(grid, dim, bends, low);
+      const key = [...heights.low].sort((a, b) => a[0] - b[0]).join(';') + '|' +
+        [...heights.upper].sort((a, b) => a[0] - b[0]).map(([k, u]) => `${k}:${u.h}/${u.ux.toFixed(3)}/${u.uz.toFixed(3)}`).join(';');
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;
       for (const b of this.dimBlocks[dim]) b.setHeights?.(heights);

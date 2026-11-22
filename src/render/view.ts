@@ -20,7 +20,7 @@ import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim'
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE, MOUTH_UP } from './cutaway';
-import { nearView } from './terrain';
+import { occluders } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -181,8 +181,9 @@ export class GameView {
   private readonly world = new Group();
   private dims: [Group, Group] = [new Group(), new Group()];
   private blocks: BlockView[] = [];
-  /** The OUTER_VIEWS index the rock is shown for; -1 until the first frame picks one. */
-  private outerView = -1;
+  /** Each dimension's blocks, and the outermost walls (occluders) last cut down there, as a sorted key. */
+  private dimBlocks: [BlockView[], BlockView[]] = [[], []];
+  private lowKeys = ['', ''];
   private readonly holeAt = new Vector3();
   private readonly sunDir = new Vector3();
   private monsters: MonsterView[] = [];
@@ -222,7 +223,8 @@ export class GameView {
     this.world.clear();
     this.dims = [new Group(), new Group()];
     this.blocks = [];
-    this.outerView = -1;
+    this.dimBlocks = [[], []];
+    this.lowKeys = ['', ''];
     this.world.add(...this.dims);
     if (!this.hero) {
       this.hero = new CharacterInstance('hero', 'normal', 'plain');
@@ -236,6 +238,7 @@ export class GameView {
         const v = factory(cell, ctx);
         this.dims[dim].add(v.object);
         this.blocks.push(v);
+        this.dimBlocks[dim].push(v);
       }
     }
     this.monsters = sim.monsters.map((state) => {
@@ -352,7 +355,7 @@ export class GameView {
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     if (this.takedown) this.updateTakedown(this.takedown, dt);
     this.follow.update(sim, dt);
-    this.cutNearSide();
+    this.cutOccluders();
     this.snapCharacters();
     this.pipeline.subpixel.x = this.follow.subpixel.x;
     this.pipeline.subpixel.y = this.follow.subpixel.y;
@@ -363,14 +366,17 @@ export class GameView {
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Cut the outermost wall on the camera's half of the level down to WALL_H (see cutFor), so it never stands
-   *  between the camera and the level. */
-  private cutNearSide(): void {
-    const [fx, fz] = this.follow.forward();
-    const view = nearView(fx, fz);
-    if (view === this.outerView) return;
-    this.outerView = view;
-    for (const b of this.blocks) b.setView?.(view);
+  /** Cut every outermost wall that hides any floor from the camera down to WALL_H (see occluders), in both
+   *  dimensions (the other one shows in the reflection). */
+  private cutOccluders(): void {
+    const { x, y, z } = this.follow.camera.position;
+    for (const dim of [0, 1] as DimIndex[]) {
+      const low = occluders(this.sim.grid, dim, x, y, z);
+      const key = [...low].sort((a, b) => a - b).join(',');
+      if (key === this.lowKeys[dim]) continue;
+      this.lowKeys[dim] = key;
+      for (const b of this.dimBlocks[dim]) b.setLow?.(low);
+    }
   }
 
   /**

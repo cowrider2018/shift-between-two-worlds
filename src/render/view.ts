@@ -20,7 +20,7 @@ import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim'
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE, MOUTH_UP } from './cutaway';
-import { hiddenHeights, nearRow, rowFill } from './terrain';
+import { hiddenHeights, nearRow } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -366,15 +366,14 @@ export class GameView {
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Hide the outermost wall along the near side of the level and the rock filled in behind it (see nearRow,
-   *  rowFill), so it never stands between the camera and the level; the rest stands as it is. In both dimensions (the
-   *  other one shows in the reflection). */
+  /** Hide the outermost wall along the near side of the level and the rock filled in behind it (see nearRow), so
+   *  it never stands between the camera and the level; the rest stands as it is. In both dimensions (the other one
+   *  shows in the reflection). */
   private hideNearSide(): void {
     const [fx, fz] = this.follow.forward();
     for (const dim of [0, 1] as DimIndex[]) {
       const { grid } = this.sim;
       const near = nearRow(grid, dim, fx, fz);
-      for (const k of rowFill(grid, dim, near)) near.add(k);
       const heights = hiddenHeights(near);
       const key = [...heights].sort((a, b) => a[0] - b[0]).join(';');
       if (key === this.lowKeys[dim]) continue;

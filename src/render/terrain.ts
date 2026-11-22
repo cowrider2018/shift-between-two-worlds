@@ -552,7 +552,8 @@ export const SIDE_ON_DEG = 15;
  * slope it makes rather than as its one-cell faces, and stops at the first step facing away. Of what it passes, the
  * cells with every step beside them facing the camera are not drawn; the corners where such a stretch meets one
  * running side-on stay, as does every side-on stretch (the walls between the near side and the far), and so does
- * the wall closing off a corridor one cell wide (a one-cell U-turn). The exit counts as an opening, like floor:
+ * every wall bordering a corridor one cell wide, its corners included (a one-cell U-turn). The rock filled in behind
+ * a hidden wall goes with it (see rowFill). The exit counts as an opening, like floor:
  * never a corner or a wall beside a corridor, and it goes (all but its light) wherever a step facing the camera
  * touches it.
  */
@@ -595,17 +596,18 @@ export function nearRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number):
     const d = (cz(b) - cz(a)) * fx - (cx(b) - cx(a)) * fz;
     return d < -1e-6 ? -1 : d > 1e-6 ? 1 : 0;
   };
-  // a one-cell U-turn: the wall closes off a corridor one cell wide, the floor behind it having walls either side
+  // a one-cell U-turn: the wall borders (sides, end or corners) a corridor one cell wide, i.e. floor with walls or
+  // doors on both sides of it along one axis; the exit is an opening, like floor
   const nothing = (x: number, z: number) => !grid.inBounds(x, z) || isVoid(grid, dim, x, z);
-  const wall = (x: number, z: number) => isRock(grid, dim, x, z) && grid.cell(dim, x, z).def.behavior !== 'exit';
+  const closes = (x: number, z: number) =>
+    (isRock(grid, dim, x, z) && grid.cell(dim, x, z).def.behavior !== 'exit') || grid.cell(dim, x, z).def.behavior === 'door';
+  const narrow = (x: number, z: number) => !nothing(x, z) && !closes(x, z) &&
+    ((closes(x - 1, z) && closes(x + 1, z)) || (closes(x, z - 1) && closes(x, z + 1)));
   const uTurn = (k: number) => {
     const x = k % grid.w;
     const z = Math.floor(k / grid.w);
-    return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => {
-      const bx = x - dx;
-      const bz = z - dz;
-      return nothing(x + dx, z + dz) && !nothing(bx, bz) && !wall(bx, bz) && wall(bx + dz, bz + dx) && wall(bx - dz, bz - dx);
-    });
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (narrow(x + dx, z + dz)) return true;
+    return false;
   };
   // every cell passed, and whether every step beside it faces the camera
   // the exit is an opening here, like floor, not a wall: the walk carries on past it, it is never a corner, and it
@@ -641,7 +643,9 @@ export function nearRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number):
   }
   for (const [k, f] of toward) if (f && !passed.has(k) && !uTurn(k)) near.add(k);
   // a dug-out corner goes with the cells of its step: hidden while one of them is
-  for (const [k, by] of passed) if (toward.get(k) && by.some((c) => near.has(c))) near.add(k);
+  for (const [k, by] of passed) if (toward.get(k) && !uTurn(k) && by.some((c) => near.has(c) && !isExit(c))) near.add(k);
+  // and the rock filled in behind the hidden wall, but not from the exit (an opening) nor round a one-cell corridor
+  for (const k of rowFill(grid, dim, near)) if (!uTurn(k)) near.add(k);
   for (const [k, f] of exits) if (f) near.add(k);
   return near;
 }
@@ -651,7 +655,7 @@ export function nearRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number):
  * isOuterRock) that is not on it itself, reached from the row through such rock (8-connected). It would stand as a
  * cliff where the row is gone, so it goes with it.
  */
-export function rowFill(grid: LevelGrid, dim: DimIndex, row: ReadonlySet<number>): Set<number> {
+function rowFill(grid: LevelGrid, dim: DimIndex, row: ReadonlySet<number>): Set<number> {
   const onOutline = new Set(outlineChains(grid, dim).flat());
   const fill = new Set<number>();
   const queue = [...row];

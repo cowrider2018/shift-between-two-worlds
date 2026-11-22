@@ -13,7 +13,7 @@ import type { DimTheme } from './palette';
 import { cobble, toon, whitening, wood } from './materials';
 import { throughMouth, withHole, type Mouth } from './cutaway';
 import {
-  CAVE, OUTER_VIEWS, WALL_H, caveGeometry, cutFor, floorGeometry, isOuterRock, outerWallGeometry, wallGeometry, type Cut,
+  CAVE, OUTER_VIEWS, WALL_H, caveGeometry, cutFor, floorGeometry, outerWallGeometry, wallGeometry, type Cut,
 } from './terrain';
 
 export interface BlockView {
@@ -73,19 +73,20 @@ function archShape(grow = 0): Shape {
 /** Haze in the cave: [depth, opacity] of each thin veil of white light, thickening towards the back. */
 const CAVE_HAZE: [number, number][] = [[0.42, 0.3], [0.5, 0.4], [0.58, 0.5], [0.66, 0.6], [0.74, 0.75]];
 
-/** Raise an outermost wall (see isOuterRock) on up to OUTER_H, unless cut down; the upper part casts no shadow. */
+/** Raise an outermost wall (see cutFor) on up to its top; the upper part casts no shadow. */
 function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx, cut: Cut): void {
-  if (!isOuterRock(ctx.grid, cell.dim, cell.x, cell.y) || cut.low(cell.x, cell.y)) return;
+  if (cut.top(cell.x, cell.y) === 0) return;
   const geo = outerWallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, cut);
   g.add(m(geo, withHole(cobble('#ffffff', true)), 0, 0, 0, false));
 }
 
-/** How far round a cell cutting rock away can change its own (faces, fillets and the rounded corners' reach). */
+/** How far round a cell changing a rock's height can change its own (faces, fillets and the rounded corners' reach). */
 const VIEW_REACH = 2;
 
 /**
- * The rock of `cell` once per camera view (OUTER_VIEWS, see cutFor) that draws it differently; views that cut the same
- * cells round it share one copy. Only the copy for the current view is shown; until a view is set, nothing is cut.
+ * The rock of `cell` once per camera view (OUTER_VIEWS, see cutFor) that draws it differently; views that raise the
+ * cells round it alike share one copy. Only the copy for the current view is shown; until a view is set, the whole
+ * cliff stands.
  */
 function rockByView(cell: Cell, ctx: ModelCtx, build: (cut: Cut) => Object3D): { object: Object3D; setView?(i: number): void } {
   const copies = new Map<string, Object3D>();
@@ -96,7 +97,7 @@ function rockByView(cell: Cell, ctx: ModelCtx, build: (cut: Cut) => Object3D): {
       for (let dx = -VIEW_REACH; dx <= VIEW_REACH; dx++) {
         const x = cell.x + dx;
         const z = cell.y + dz;
-        key += cut.gone(x, z) ? 'g' : isOuterRock(ctx.grid, cell.dim, x, z) && !cut.low(x, z) ? 'o' : '-';
+        key += `${cut.top(x, z)}${!ctx.grid.inBounds(x, z) && cut.low(x, z) ? 'x' : ''},`;
       }
     }
     let o = copies.get(key);
@@ -358,10 +359,8 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
   void: () => ({ object: new Group() }),
 
   wall: (cell, ctx) => {
-    // cut away for the camera: nothing at all, not even the floor in its rounded-off corners
     const rock = rockByView(cell, ctx, (cut) => {
       const r = new Group();
-      if (cut.gone(cell.x, cell.y)) return r;
       r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, undefined, cut), withHole(cobble('#ffffff', true))),
         ...floorTile(cell, ctx));
       addOuterWall(r, cell, ctx, cut);

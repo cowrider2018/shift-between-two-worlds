@@ -464,25 +464,32 @@ export const OUTER_VIEWS: NearSides[] = [null, [-1, -1], [-1, 1], [1, -1], [1, 1
 /** The OUTER_VIEWS index for a camera looking along grid direction (fx, fz): it stands on the sides opposite. */
 export const nearView = (fx: number, fz: number): number => OUTER_VIEWS.findIndex((v) => v && v[0] === (fx > 0 ? -1 : 1) && v[1] === (fz > 0 ? -1 : 1));
 
-/** What one camera view cuts away: `low` is the camera's half of the level, past the diagonal between the two
- *  corners it does not face, where no rock rises above WALL_H; `gone` is what is not drawn there at all. */
-export interface Cut { low(x: number, z: number): boolean; gone(x: number, z: number): boolean }
+/** Height the outermost wall on the camera's half is cut down to (see cutFor): a little over an ordinary wall, so
+ *  the level's edge still reads as its edge. */
+export const CUT_H = 2;
 
-export const NO_CUT: Cut = { low: () => false, gone: () => false };
+/** How one camera view draws the rock: `low` is the camera's half of the level, past the diagonal between the two
+ *  corners it does not face; `top` is how high a cell's rock rises above WALL_H (0 where it stops at WALL_H). */
+export interface Cut { low(x: number, z: number): boolean; top(x: number, z: number): number }
 
 /**
- * The cut for `view` in dimension `dim`. Gone: in the camera's half, every wall (not the exit) with nothing beside it
- * on a camera-facing side (no cell, or a dug-out one), i.e. the outermost wall between the camera and the level;
- * and everything outside the grid there.
+ * The cut for `view` in dimension `dim` (null: no camera, the whole cliff standing). Away from the camera the
+ * outermost rock (isOuterRock) rises to OUTER_H. On the camera's half, only the outermost wall between the camera and
+ * the level rises, and only to CUT_H: every wall with nothing beside it on a camera-facing side (no cell, or a dug-out
+ * one); there the rest of the rock, the exit too, stops at WALL_H.
  */
 export function cutFor(grid: LevelGrid, dim: DimIndex, view: NearSides): Cut {
-  if (!view) return NO_CUT;
+  if (!view) return { low: () => false, top: (x, z) => (isOuterRock(grid, dim, x, z) ? OUTER_H : 0) };
   const [sx, sz] = view;
   const low = (x: number, z: number) => sx * ((x + 0.5) / grid.w - 0.5) + sz * ((z + 0.5) / grid.h - 0.5) >= 0;
   const nothing = (x: number, z: number) => !grid.inBounds(x, z) || isVoid(grid, dim, x, z);
-  const gone = (x: number, z: number) => low(x, z) && (!grid.inBounds(x, z) ||
-    (isRock(grid, dim, x, z) && grid.cell(dim, x, z).def.behavior !== 'exit' && (nothing(x + sx, z) || nothing(x, z + sz))));
-  return { low, gone };
+  const top = (x: number, z: number) => {
+    if (!low(x, z)) return isOuterRock(grid, dim, x, z) ? OUTER_H : 0;
+    const edge = grid.inBounds(x, z) && isRock(grid, dim, x, z) && grid.cell(dim, x, z).def.behavior !== 'exit' &&
+      (nothing(x + sx, z) || nothing(x, z + sz));
+    return edge ? CUT_H : 0;
+  };
+  return { low, top };
 }
 
 /** Rounded inner-corner tops at height y: where this wall's two neighbours are walls but the diagonal cell is
@@ -513,14 +520,15 @@ function fillets(b: MeshBuilder, isWall: IsWall, cx: number, cz: number, y: numb
  * Vertex colours blend `sideColor` → `topColor` by how upward each point faces.
  */
 export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
-  topColor: string, cave?: CaveMouth, cut: Cut = NO_CUT): BufferGeometry {
-  // rock cut away for the camera leaves the faces behind it open
-  const isWall: IsWall = (x, z) => isRock(grid, dim, x, z) && !cut.gone(x, z);
-  const isOuter: IsWall = (x, z) => isOuterRock(grid, dim, x, z) && !cut.low(x, z);
+  topColor: string, cave?: CaveMouth, cut = cutFor(grid, dim, null)): BufferGeometry {
+  // on the camera's half the rock outside the grid is open, so the edge shows its outside face
+  const isWall: IsWall = (x, z) => isRock(grid, dim, x, z) && !(!grid.inBounds(x, z) && cut.low(x, z));
+  const isOuter: IsWall = (x, z) => cut.top(x, z) > 0;
   // an outermost wall stops at WALL_H here (no top, no bevel); outerWallGeometry carries it on up. Where ordinary
   // rock meets it, the two footprints differ at WALL_H (the cliff has no fillet into, and rounds the corner beside,
   // the lower wall), so there it is also topped and bevelled like an ordinary wall wherever it lies outside the cliff.
   const outer = isOuter(cx, cz);
+  const rise = cut.top(cx, cz);
   let exposed = false;
   let shelf = false;
   for (let dz = -1; dz <= 1; dz++) {
@@ -530,7 +538,7 @@ export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
     }
   }
   const cliff = new WallShape(isOuter);
-  const shape = new WallShape(isWall, !outer ? WALL_H : !shelf ? OUTER_H : (x, z) => (cliff.sdf(x, z) < 1e-3 ? OUTER_H : WALL_H));
+  const shape = new WallShape(isWall, !outer ? WALL_H : !shelf ? rise : (x, z) => (cliff.sdf(x, z) < 1e-3 ? rise : WALL_H));
   const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor),
     outer ? (x, z) => cliff.sdf(x, z) < 1e-3 : undefined);
   const B = exposed ? FINE : COARSE;
@@ -550,25 +558,27 @@ export function wallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: num
 }
 
 /**
- * The part of an outermost wall (isOuterRock) above WALL_H, up to OUTER_H, local to the cell centre like
- * wallGeometry. Its footprint is the outermost rock alone, so it also rises above the ordinary walls that meet it.
+ * The part of an outermost wall above WALL_H, up to its top in `cut` (OUTER_H, or CUT_H on the camera's half), local
+ * to the cell centre like wallGeometry. Its footprint is the rock rising at least as high, so it also rises above
+ * the ordinary walls that meet it, and a cliff shows its face above a lower one beside it.
  * A separate mesh so it casts no shadow: a cliff that tall would darken half the level.
  */
 export function outerWallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
-  topColor: string, cut: Cut = NO_CUT): BufferGeometry {
-  const isWall: IsWall = (x, z) => isOuterRock(grid, dim, x, z) && !cut.low(x, z);
-  const b = new MeshBuilder(new WallShape(isWall, OUTER_H), [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
+  topColor: string, cut = cutFor(grid, dim, null)): BufferGeometry {
+  const T = cut.top(cx, cz);
+  const isWall: IsWall = (x, z) => cut.top(x, z) >= T;
+  const b = new MeshBuilder(new WallShape(isWall, T), [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
   let exposed = false;
   for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!isWall(cx + dx, cz + dz)) exposed = true;
   const B = exposed ? FINE : COARSE;
   const n = B.length;
-  const H = faceHeights(WALL_H, OUTER_H);
-  b.patch(n, n, (i, j) => [cx + B[i], OUTER_H, cz + B[j]], false, [0, 1, 0]);
+  const H = faceHeights(WALL_H, T);
+  b.patch(n, n, (i, j) => [cx + B[i], T, cz + B[j]], false, [0, 1, 0]);
   if (!isWall(cx + 1, cz)) b.patch(n, H.length, (i, j) => [cx + 1, H[j], cz + B[i]], true, [1, 0, 0]);
   if (!isWall(cx - 1, cz)) b.patch(n, H.length, (i, j) => [cx, H[j], cz + B[i]], true, [-1, 0, 0]);
   if (!isWall(cx, cz + 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz + 1], true, [0, 0, 1]);
   if (!isWall(cx, cz - 1)) b.patch(n, H.length, (i, j) => [cx + B[i], H[j], cz], true, [0, 0, -1]);
-  fillets(b, isWall, cx, cz, OUTER_H);
+  fillets(b, isWall, cx, cz, T);
   return b.build();
 }
 

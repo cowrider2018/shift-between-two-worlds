@@ -20,7 +20,7 @@ import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim'
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { HOLE, MOUTH_UP } from './cutaway';
-import { OUTER_VIEWS, nearSides } from './terrain';
+import { nearView } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -181,7 +181,7 @@ export class GameView {
   private readonly world = new Group();
   private dims: [Group, Group] = [new Group(), new Group()];
   private blocks: BlockView[] = [];
-  /** The OUTER_VIEWS entry the rock is shown for; -1 until the first frame picks one. */
+  /** The OUTER_VIEWS index the rock is shown for; -1 until the first frame picks one. */
   private outerView = -1;
   private readonly holeAt = new Vector3();
   private readonly sunDir = new Vector3();
@@ -230,11 +230,7 @@ export class GameView {
     }
     for (const dim of [0, 1] as DimIndex[]) {
       const ctx = { theme: THEMES[dim], grid: sim.grid };
-      // the ring of rock just outside the grid: the outermost wall wherever the level's border is open
-      const { w, h } = sim.level.size;
-      const ring = [];
-      for (let y = -1; y <= h; y++) for (let x = -1; x <= w; x++) if (x < 0 || y < 0 || x >= w || y >= h) ring.push(sim.grid.cell(dim, x, y));
-      for (const cell of [...sim.grid.all(dim), ...ring]) {
+      for (const cell of sim.grid.all(dim)) {
         const factory = BLOCK_MODELS[cell.def.id];
         if (!factory) continue;
         const v = factory(cell, ctx);
@@ -356,7 +352,7 @@ export class GameView {
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     if (this.takedown) this.updateTakedown(this.takedown, dt);
     this.follow.update(sim, dt);
-    this.lowerNearSides();
+    this.cutNearSide();
     this.snapCharacters();
     this.pipeline.subpixel.x = this.follow.subpixel.x;
     this.pipeline.subpixel.y = this.follow.subpixel.y;
@@ -367,11 +363,11 @@ export class GameView {
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Lower the outermost wall on the two sides of the level facing the camera (see nearSides), so it never stands
-   *  between the camera and the level. */
-  private lowerNearSides(): void {
+  /** Cut away the outermost wall on the camera's half of the level (see cutFor), so it never stands between the
+   *  camera and the level. */
+  private cutNearSide(): void {
     const [fx, fz] = this.follow.forward();
-    const view = OUTER_VIEWS.indexOf(nearSides(fx, fz));
+    const view = nearView(fx, fz);
     if (view === this.outerView) return;
     this.outerView = view;
     for (const b of this.blocks) b.setView?.(view);

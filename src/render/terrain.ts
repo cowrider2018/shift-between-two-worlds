@@ -482,7 +482,12 @@ export function cameraSide(grid: LevelGrid, dim: DimIndex, fx: number, fz: numbe
   return out;
 }
 
-const cornerCache = new WeakMap<LevelGrid, number[][][]>();
+/** A straight run of the outline (see outerCorners): its cells in order, the side (dx, dz) where nothing lies, how
+ *  far its line lies that way (x·dx + z·dz) and the corner at each end. */
+interface Run { cells: number[]; dx: number; dz: number; at: number; ends: [number, number] }
+interface Outline { corners: number[][]; runs: Run[] }
+
+const cornerCache = new WeakMap<LevelGrid, Outline[]>();
 
 /**
  * The outermost rock of a dimension (in-grid, see isOuterRock) split into corners, as lists of cells (z * w + x).
@@ -492,10 +497,15 @@ const cornerCache = new WeakMap<LevelGrid, number[][][]>();
  * there. Rock behind the outline (rock that only backs it) goes with the nearest of it. A cell can be in two corners.
  */
 export function outerCorners(grid: LevelGrid, dim: DimIndex): number[][] {
+  return outline(grid, dim).corners;
+}
+
+function outline(grid: LevelGrid, dim: DimIndex): Outline {
   let sets = cornerCache.get(grid);
   if (!sets) cornerCache.set(grid, (sets = []));
   const cached = sets[dim];
   if (cached) return cached;
+  const runs: Run[] = [];
   const key = (x: number, z: number) => z * grid.w + x;
   const outer = (x: number, z: number) => grid.inBounds(x, z) && isOuterRock(grid, dim, x, z);
   const nothing = (x: number, z: number) => !grid.inBounds(x, z) || isVoid(grid, dim, x, z);
@@ -523,9 +533,11 @@ export function outerCorners(grid: LevelGrid, dim: DimIndex): number[][] {
         };
         const first = end(run[0], -ax, -az);
         const last = end(run[run.length - 1], ax, az);
+        const cells = run.map(([cx, cz]) => key(cx, cz));
+        runs.push({ cells, dx, dz, at: x * dx + z * dz, ends: [first, last] });
         const half = run.length / 2;
-        join(first, run.slice(0, Math.ceil(half)).map(([cx, cz]) => key(cx, cz)));
-        join(last, run.slice(Math.floor(half)).map(([cx, cz]) => key(cx, cz)));
+        join(first, cells.slice(0, Math.ceil(half)));
+        join(last, cells.slice(Math.floor(half)));
       }
     }
   }
@@ -556,16 +568,62 @@ export function outerCorners(grid: LevelGrid, dim: DimIndex): number[][] {
     }
     front = [...next.keys()];
   }
-  sets[dim] = groups;
-  return groups;
+  sets[dim] = { corners: groups, runs };
+  return sets[dim];
+}
+
+/**
+ * The row of the outermost wall across the far side of the level from a camera looking along grid direction (fx, fz),
+ * which is never cut down (cells z * w + x). It starts from the runs farthest away that have nothing beyond them on
+ * the far side (the axis the camera looks along most), and carries on through every step out of line and back (a
+ * run across the view's depth between two such far-facing runs), up to where the outline turns and does not turn
+ * back, i.e. where it starts to come round towards the camera.
+ */
+export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Set<number> {
+  const { runs } = outline(grid, dim);
+  const [dx, dz] = Math.abs(fx) >= Math.abs(fz) ? [Math.sign(fx), 0] : [0, Math.sign(fz)];
+  const far = (r: Run) => r.dx === dx && r.dz === dz;
+  const across = (r: Run) => r.dx * dx + r.dz * dz === 0;
+  const at = new Map<number, Run[]>();
+  for (const r of runs) for (const c of r.ends) at.set(c, [...(at.get(c) ?? []), r]);
+  const farthest = Math.max(...runs.filter(far).map((r) => r.at));
+  const row = new Set(runs.filter((r) => far(r) && r.at === farthest));
+  for (const queue = [...row]; queue.length;) {
+    const r = queue.pop()!;
+    for (const c of r.ends) {
+      for (const q of at.get(c) ?? []) {
+        if (row.has(q)) continue;
+        if (far(q)) {
+          row.add(q);
+          queue.push(q);
+        } else if (across(q)) {
+          // a step out of line: only if it comes back to a far-facing run at its other end
+          const other = q.ends[0] === c ? q.ends[1] : q.ends[0];
+          const back = (at.get(other) ?? []).filter((n) => n !== q && far(n));
+          if (back.length === 0) continue;
+          row.add(q);
+          for (const n of back) {
+            if (row.has(n)) continue;
+            row.add(n);
+            queue.push(n);
+          }
+        }
+      }
+    }
+  }
+  const cells = new Set<number>();
+  for (const r of row) for (const k of r.cells) cells.add(k);
+  // and the rock a dug-out corner turns on, between two runs of the row
+  for (const [c, rs] of at) if (rs.filter((r) => row.has(r)).length >= 2) cells.add(c);
+  return cells;
 }
 
 /** The outermost rock to cut down to WALL_H: every corner (see outerCorners) with any rock in `cells` (see
- *  cameraSide), whole. */
-export function cornersWith(grid: LevelGrid, dim: DimIndex, cells: ReadonlySet<number>): Set<number> {
+ *  cameraSide), whole, except the rock in `keep` (see farRow). */
+export function cornersWith(grid: LevelGrid, dim: DimIndex, cells: ReadonlySet<number>, keep: ReadonlySet<number>): Set<number> {
   const low = new Set<number>();
   for (const corner of outerCorners(grid, dim)) {
-    if (corner.some((k) => cells.has(k))) for (const k of corner) low.add(k);
+    if (corner.some((k) => cells.has(k))) for (const k of corner) if (!keep.has(k)) low.add(k);
   }
   return low;
 }

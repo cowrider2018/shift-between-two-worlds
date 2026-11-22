@@ -366,9 +366,8 @@ export class GameView {
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Hide or cut down the outermost wall facing the camera and the rock filled in behind it (see nearCut), so no
-   *  cliff stands between the camera and the level; the rest stands as it is. In both dimensions (the other one
-   *  shows in the reflection). */
+  /** Hide the outermost rock on the camera's side, between the two side walls (see nearCut).
+   *  In both dimensions (the other one shows in the reflection). */
   private hideNearSide(): void {
     const [fx, fz] = this.follow.forward();
     for (const dim of [0, 1] as DimIndex[]) {

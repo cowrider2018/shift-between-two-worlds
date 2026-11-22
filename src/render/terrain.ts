@@ -535,116 +535,120 @@ function outlineChains(grid: LevelGrid, dim: DimIndex): number[][] {
   return chains;
 }
 
-/** How far (degrees) the camera may turn off a grid axis and still see the walls along that axis as side-on. */
-export const SIDE_ON_DEG = 15;
-
 /**
- * How the outermost wall is cut down for a camera looking along grid direction (fx, fz): the height of every cell
- * drawn other than as it stands (see Cut), indices z * w + x. Every step of the outline (outlineChains), cell centre
- * to cell centre, faces the camera, away from it or side-on (within SIDE_ON_DEG of a grid axis the camera counts as
- * looking straight along it), so a staircase counts as the slope it makes. An outline wall faces the camera only
- * where the level lies behind it, so every such stretch goes, wherever it is on the outline:
- * - a cell with every step beside it facing the camera is not drawn (0);
- * - one where such a stretch meets a step side-on or facing away (a corner) is cut down to WALL_H, like the rock
- *   inside, so no cliff is left standing in front of the level;
- * - so is the end of a one-cell dead end (the wall across it and its two corners, a one-cell U-turn), which keeps
- *   the corridor's shape;
- * - the rock filled in behind them goes with them (see rowFill);
- * - the exit is an opening: its stone goes (all but its light) wherever a step facing the camera touches it, and
- *   it is never cut down part way.
- * Everything else stands as it is.
+ * The near side of the outermost rock for a camera looking along (fx, fz), which is not drawn: the height of every
+ * cell drawn other than as it stands (see Cut), indices z * w + x. Where the hero stands does not matter.
+ *
+ * The camera looks one of eight ways: along a grid axis within 15° of it (30° each), else
+ * diagonally (60° each).
+ *
+ * Diagonally: the two lines of the outline's bounding square on the camera's side are marked; from the outermost
+ * marked cell one way round the near corner to the outermost the other way, the outline is not drawn.
+ *
+ * Along an axis: the side walls are the outermost rock on
+ * the two lines of the level's bounding square along that axis (left and right) with a walkable cell (floor, doors
+ * and all) beside them on the inner side; they always stand. They cut the outline (outlineChains, walked cell by
+ * side-by-side cell: a diagonal step past a dug-out corner goes through the rock it skips) in two: the half on the
+ * camera's side is not drawn, the exit included (it keeps only its light), and the rock filled in behind it goes
+ * with it (see rowFill).
  */
 export function nearCut(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Map<number, number> {
-  // looking nearly along an axis, look exactly along it: the walls either side then both count as side-on
-  const yaw = Math.atan2(fz, fx);
-  const axis = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
-  if (Math.abs(yaw - axis) <= (SIDE_ON_DEG * Math.PI) / 180) {
-    fx = Math.round(Math.cos(axis));
-    fz = Math.round(Math.sin(axis));
-  }
-  const cx = (k: number) => (k % grid.w) + 0.5;
-  const cz = (k: number) => Math.floor(k / grid.w) + 0.5;
-  const isExit = (k: number) => grid.cell(dim, k % grid.w, Math.floor(k / grid.w)).def.behavior === 'exit';
-  // for each cell beside a step: [some step facing the camera, every step facing it]
-  const face = new Map<number, [boolean, boolean]>();
-  const note = (k: number, f: boolean) => {
-    const [some, every] = face.get(k) ?? [false, true];
-    face.set(k, [some || f, every && f]);
-  };
-  // the dug-out corners passed by diagonal steps, and the cells of those steps
-  const passed = new Map<number, number[]>();
-  for (const chain of outlineChains(grid, dim)) {
-    const n = chain.length;
-    if (n < 2) continue;
-    const closed = n > 2 && Math.abs(cx(chain[0]) - cx(chain[n - 1])) <= 1 && Math.abs(cz(chain[0]) - cz(chain[n - 1])) <= 1;
-    for (let i = 0; i < (closed ? n : n - 1); i++) {
-      const a = chain[i];
-      const b = chain[(i + 1) % n];
-      // facing by the nothing on the step's left (z down): towards the camera when it lies on the camera's side
-      const f = (cz(b) - cz(a)) * fx - (cx(b) - cx(a)) * fz < -1e-6;
-      note(a, f);
-      note(b, f);
-      // a diagonal step passes a dug-out corner: its rock, beside both cells, goes with the step
-      for (const k of [a - (a % grid.w) + (b % grid.w), b - (b % grid.w) + (a % grid.w)]) {
-        if (k === a || k === b || !isOuterRock(grid, dim, k % grid.w, Math.floor(k / grid.w))) continue;
-        note(k, f);
-        passed.set(k, [...(passed.get(k) ?? []), a, b]);
-      }
-    }
-  }
-  const gone = new Set<number>();
-  const low = new Set<number>();
-  for (const [k, [some, every]] of face) {
-    if (passed.has(k)) continue;
-    if (isExit(k)) {
-      if (some) gone.add(k);
-    } else if (every) gone.add(k);
-    else if (some) low.add(k);
-  }
-  // a dug-out corner goes with the cells of its step: gone while one of them is, else cut down if it faces at all
-  for (const [k, by] of passed) {
-    const [some, every] = face.get(k)!;
-    if (every && by.some((c) => gone.has(c) && !isExit(c))) gone.add(k);
-    else if (some) low.add(k);
-  }
-  // the end of a one-cell dead end (floor closed in by rock on three sides; doors and the exit are openings) stays
-  // as a low wall, the wall across it and its two corners
-  const closes = (x: number, z: number) => isRock(grid, dim, x, z) && grid.cell(dim, x, z).def.behavior !== 'exit';
-  for (let z = 0; z < grid.h; z++) {
-    for (let x = 0; x < grid.w; x++) {
-      if (closes(x, z) || isVoid(grid, dim, x, z)) continue;
-      const shut = ([[1, 0], [-1, 0], [0, 1], [0, -1]] as const).filter(([dx, dz]) => closes(x + dx, z + dz));
-      if (shut.length !== 3) continue;
-      const open = ([[1, 0], [-1, 0], [0, 1], [0, -1]] as const).find(([dx, dz]) => !closes(x + dx, z + dz))!;
-      const [bx, bz] = [x - open[0], z - open[1]];
-      for (const s of [0, 1, -1]) {
-        const ex = bx + s * open[1];
-        const ez = bz + s * open[0];
-        const k = ez * grid.w + ex;
-        if (grid.inBounds(ex, ez) && gone.has(k) && !isExit(k)) {
-          gone.delete(k);
-          low.add(k);
-        }
-      }
-    }
-  }
   const heights = new Map<number, number>();
-  // the rock filled in behind: gone behind a wall that is gone (but not behind the exit, an opening), cut down behind
-  // one cut down
-  const goneFill = rowFill(grid, dim, new Set([...gone].filter((k) => !isExit(k))));
-  for (const k of rowFill(grid, dim, low)) if (!goneFill.has(k) && !gone.has(k)) heights.set(k, WALL_H);
-  for (const k of low) heights.set(k, WALL_H);
-  for (const k of [...gone, ...goneFill]) heights.set(k, 0);
-  return heights;
+  const w = grid.w;
+  if (!fx && !fz) return heights;
+  // which of eight ways the camera looks: along an axis within 15° of it (30° each), else diagonally (60° each)
+  const offAxis = Math.atan2(Math.min(Math.abs(fx), Math.abs(fz)), Math.max(Math.abs(fx), Math.abs(fz)));
+  const diagonal = offAxis > Math.PI / 12;
+  const [ax, az] = diagonal ? [Math.sign(fx), Math.sign(fz)] : Math.abs(fx) >= Math.abs(fz) ? [Math.sign(fx), 0] : [0, Math.sign(fz)];
+  const [lx, lz] = [-az, ax];
+  const depth = (k: number) => (k % w) * ax + Math.floor(k / w) * az;
+  const across = (k: number) => (k % w) * lx + Math.floor(k / w) * lz;
+  const walkable = (x: number, z: number) => grid.inBounds(x, z) && !isRock(grid, dim, x, z) && !isVoid(grid, dim, x, z);
+  // the outline as a path of side-by-side cells; the longest chain is the outer edge of the level
+  const chains = outlineChains(grid, dim);
+  if (!chains.length) return heights;
+  const chain = chains.reduce((a, b) => (b.length > a.length ? b : a));
+  const n0 = chain.length;
+  const closed = n0 > 2 && Math.abs((chain[0] % w) - (chain[n0 - 1] % w)) <= 1 && Math.abs(Math.floor(chain[0] / w) - Math.floor(chain[n0 - 1] / w)) <= 1;
+  const path: number[] = [];
+  for (let i = 0; i < n0; i++) {
+    const a = chain[i];
+    path.push(a);
+    if (!closed && i === n0 - 1) break;
+    const b = chain[(i + 1) % n0];
+    const [ax0, az0, bx, bz] = [a % w, Math.floor(a / w), b % w, Math.floor(b / w)];
+    if (ax0 !== bx && az0 !== bz) path.push(isRock(grid, dim, bx, az0) ? az0 * w + bx : bz * w + ax0);
+  }
+  const n = path.length;
+  const isExit = (k: number) => grid.cell(dim, k % w, Math.floor(k / w)).def.behavior === 'exit';
+  const hide = (cells: number[]) => {
+    const hidden = new Set(cells);
+    for (const k of rowFill(grid, dim, new Set(cells.filter((k) => !isExit(k))))) hidden.add(k);
+    for (const k of hidden) heights.set(k, 0);
+    return heights;
+  };
+  if (diagonal) {
+    // the two lines of the outline's bounding square on the camera's side; from the outermost of their cells one
+    // way round the near corner to the outermost the other way, everything goes (the outline but for the longest
+    // stretch between their cells, which runs round the far side)
+    const xs = path.map((k) => k % w);
+    const zs = path.map((k) => Math.floor(k / w));
+    const nearX = ax < 0 ? Math.max(...xs) : Math.min(...xs);
+    const nearZ = az < 0 ? Math.max(...zs) : Math.min(...zs);
+    const on = path.map((_, i) => i).filter((i) => xs[i] === nearX || zs[i] === nearZ);
+    if (!on.length) return heights;
+    let gapAt = on.length - 1;
+    let gap = -1;
+    for (let j = 0; j < on.length; j++) {
+      const next = j + 1 < on.length ? on[j + 1] : closed ? on[0] + n : on[j];
+      if (next - on[j] > gap) [gap, gapAt] = [next - on[j], j];
+    }
+    // from the marked cell after the gap round to the one before it
+    const from = on[(gapAt + 1) % on.length];
+    const to = on[gapAt];
+    const cells: number[] = [];
+    for (let i = from; ; i++) {
+      cells.push(path[i % n]);
+      if (i % n === to || cells.length >= n) break;
+    }
+    return hide(cells);
+  }
+  // the side walls: on the outline's two extreme lines across the camera's way, with walkable cells beside them inward
+  const lo = Math.min(...path.map(across));
+  const hi = Math.max(...path.map(across));
+  const side = path.map((k) => {
+    const t = across(k);
+    const inward = t === lo ? 1 : t === hi ? -1 : 0;
+    if (!inward) return 0;
+    const [x, z] = [k % w, Math.floor(k / w)];
+    return walkable(x + inward * lx, z + inward * lz) ? inward : 0;
+  });
+  // the stretches of the outline between side wall cells; of those running from one side to the other, the one
+  // nearer the camera goes
+  const marks = side.map((s, i) => (s ? i : -1)).filter((i) => i >= 0);
+  if (marks.length < 2) return heights;
+  let best: number[] | null = null;
+  let bestDepth = Infinity;
+  for (let j = 0; j < (closed ? marks.length : marks.length - 1); j++) {
+    const from = marks[j];
+    const to = marks[(j + 1) % marks.length];
+    if (side[from] === side[to]) continue;
+    const cells: number[] = [];
+    for (let i = from + 1; i % n !== to; i++) cells.push(path[i % n]);
+    if (!cells.length) continue;
+    const mean = cells.reduce((sum, k) => sum + depth(k), 0) / cells.length;
+    if (mean < bestDepth) [best, bestDepth] = [cells, mean];
+  }
+  if (!best) return heights;
+  return hide(best);
 }
 
 /**
  * The outermost rock filled in on the room side of `row` (see nearCut): rock raised with the outline (see
- * isOuterRock) that is not on it itself, reached from the row through such rock (8-connected). It would stand as a
- * cliff where the row is gone, so it goes with it.
+ * isOuterRock) that touches nothing itself (see isRimRock), reached from the row through such rock (8-connected). It
+ * would stand as a cliff where the row is gone, so it goes with it.
  */
 function rowFill(grid: LevelGrid, dim: DimIndex, row: ReadonlySet<number>): Set<number> {
-  const onOutline = new Set(outlineChains(grid, dim).flat());
   const fill = new Set<number>();
   const queue = [...row];
   while (queue.length) {
@@ -655,10 +659,10 @@ function rowFill(grid: LevelGrid, dim: DimIndex, row: ReadonlySet<number>): Set<
       for (let dx = -1; dx <= 1; dx++) {
         const nx = x + dx;
         const nz = z + dz;
-        const n = nz * grid.w + nx;
-        if (!grid.inBounds(nx, nz) || !isOuterRock(grid, dim, nx, nz) || onOutline.has(n) || row.has(n) || fill.has(n)) continue;
-        fill.add(n);
-        queue.push(n);
+        const nk = nz * grid.w + nx;
+        if (!grid.inBounds(nx, nz) || !isOuterRock(grid, dim, nx, nz) || isRimRock(grid, dim, nx, nz) || row.has(nk) || fill.has(nk)) continue;
+        fill.add(nk);
+        queue.push(nk);
       }
     }
   }

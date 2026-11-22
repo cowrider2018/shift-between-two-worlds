@@ -435,7 +435,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       half: CAVE.half,
       spring: CAVE.spring,
     };
-    // hidden from the camera (see nearCut), none of its stone is drawn, the tunnel and floor included: only its light
+    // in the near row (see nearCut), none of its stone is drawn, the tunnel and floor included: only its light
     const rock = rockByHeight(cell, ctx, (cut) => {
       const r = new Group();
       if (cut.height(cell.x, cell.y) <= 0) return r;

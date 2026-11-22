@@ -13,14 +13,14 @@ import type { DimTheme } from './palette';
 import { cobble, toon, whitening, wood } from './materials';
 import { throughMouth, withHole, type Mouth } from './cutaway';
 import {
-  CAVE, WALL_H, caveGeometry, cutOf, floorGeometry, outerWallGeometry, upperGeometry, wallGeometry, type Cut, type Heights,
+  CAVE, WALL_H, caveGeometry, cutOf, floorGeometry, outerWallGeometry, wallGeometry, type Cut,
 } from './terrain';
 
 export interface BlockView {
   object: Object3D;
   update?(sim: Sim, dt: number, t: number): void;
-  /** Draw the rock with the heights in `heights` (see rockHeights). */
-  setHeights?(heights: Heights): void;
+  /** Draw the rock with the heights in `heights` (indices z * w + x, see rockHeights). */
+  setHeights?(heights: ReadonlyMap<number, number>): void;
 }
 
 export interface ModelCtx {
@@ -73,15 +73,11 @@ function archShape(grow = 0): Shape {
 /** Haze in the cave: [depth, opacity] of each thin veil of white light, thickening towards the back. */
 const CAVE_HAZE: [number, number][] = [[0.42, 0.3], [0.5, 0.4], [0.58, 0.5], [0.66, 0.6], [0.74, 0.75]];
 
-/** Raise an outermost wall (see Cut) on up to its top, and the higher half of a split cell; neither casts a shadow. */
+/** Raise an outermost wall (see Cut) on up to its top; the upper part casts no shadow. */
 function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx, cut: Cut): void {
-  const { grid, theme } = ctx;
-  if (cut.top(cell.x, cell.y) > 0) {
-    const geo = outerWallGeometry(grid, cell.dim, cell.x, cell.y, theme.wallSide, theme.wallTop, cut);
-    g.add(m(geo, withHole(cobble('#ffffff', true)), 0, 0, 0, false));
-  }
-  const upper = upperGeometry(grid, cell.dim, cell.x, cell.y, theme.wallSide, theme.wallTop, cut);
-  if (upper) g.add(m(upper, withHole(cobble('#ffffff', true)), 0, 0, 0, false));
+  if (cut.top(cell.x, cell.y) === 0) return;
+  const geo = outerWallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, cut);
+  g.add(m(geo, withHole(cobble('#ffffff', true)), 0, 0, 0, false));
 }
 
 /**
@@ -89,15 +85,14 @@ function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx, cut: Cut): void {
  * reach no further) and its own; each combination is built once, when first needed, and only the current one is
  * shown. Starts with every rock at its own height (see cutOf).
  */
-function rockByHeight(cell: Cell, ctx: ModelCtx, build: (cut: Cut) => Object3D): { object: Object3D; setHeights(heights: Heights): void } {
+function rockByHeight(cell: Cell, ctx: ModelCtx, build: (cut: Cut) => Object3D): { object: Object3D; setHeights(heights: ReadonlyMap<number, number>): void } {
   const { grid } = ctx;
   const copies = new Map<string, Object3D>();
   const object = new Group();
   let shown: Object3D | undefined;
-  const setHeights = (heights?: Heights) => {
+  const setHeights = (heights: ReadonlyMap<number, number>) => {
     const cut = cutOf(grid, cell.dim, heights);
-    const up = cut.upper(cell.x, cell.y);
-    let key = `${cut.low(cell.x, cell.y) ? 'L' : ''}${up ? `${up.h}/${up.ux.toFixed(3)}/${up.uz.toFixed(3)}` : ''}:`;
+    let key = cut.low(cell.x, cell.y) ? 'L' : '';
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) key += `${cut.height(cell.x + dx, cell.y + dz)},`;
     let o = copies.get(key);
     if (!o) {
@@ -109,7 +104,7 @@ function rockByHeight(cell: Cell, ctx: ModelCtx, build: (cut: Cut) => Object3D):
     o.visible = true;
     shown = o;
   };
-  setHeights();
+  setHeights(new Map());
   return { object, setHeights };
 }
 

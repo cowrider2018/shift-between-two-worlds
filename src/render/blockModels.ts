@@ -19,7 +19,7 @@ import {
 export interface BlockView {
   object: Object3D;
   update?(sim: Sim, dt: number, t: number): void;
-  /** Draw the rock with the heights in `heights` (indices z * w + x, see hiddenHeights). */
+  /** Draw the rock with the heights in `heights` (indices z * w + x, see nearCut). */
   setHeights?(heights: ReadonlyMap<number, number>): void;
 }
 
@@ -435,7 +435,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       half: CAVE.half,
       spring: CAVE.spring,
     };
-    // hidden from the camera (see hiddenHeights), none of its stone is drawn, the tunnel and floor included: only its light
+    // hidden from the camera (see nearCut), none of its stone is drawn, the tunnel and floor included: only its light
     const rock = rockByHeight(cell, ctx, (cut) => {
       const r = new Group();
       if (cut.height(cell.x, cell.y) <= 0) return r;

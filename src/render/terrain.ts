@@ -577,7 +577,7 @@ function outline(grid: LevelGrid, dim: DimIndex): Outline {
  * which is never cut down (cells z * w + x). It starts from the runs farthest away that have nothing beyond them on
  * the far side (the axis the camera looks along most), and carries on through every step out of line and back (a
  * run across the view's depth between two such far-facing runs), up to where the outline turns and does not turn
- * back, i.e. where it starts to come round towards the camera.
+ * back, i.e. where it starts to come round towards the camera; the corner it meets that outline at stays with it.
  */
 export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Set<number> {
   const { runs } = outline(grid, dim);
@@ -613,8 +613,9 @@ export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): 
   }
   const cells = new Set<number>();
   for (const r of row) for (const k of r.cells) cells.add(k);
-  // and the rock a dug-out corner turns on, between two runs of the row
-  for (const [c, rs] of at) if (rs.filter((r) => row.has(r)).length >= 2) cells.add(c);
+  // and the corner at each end of every run of the row: the dug-out corners it turns on, and where it meets the
+  // outline coming round towards the camera
+  for (const r of row) for (const c of r.ends) cells.add(c);
   return cells;
 }
 

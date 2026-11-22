@@ -622,16 +622,27 @@ function outlineChains(grid: LevelGrid, dim: DimIndex): number[][] {
   return chains;
 }
 
+/** How far (degrees) the camera may turn off a grid axis and still see the walls along that axis as side-on. */
+export const SIDE_ON_DEG = 15;
+
 /**
  * The row of the outermost wall across the far side of the level from a camera looking along grid direction (fx, fz),
  * which is never cut down (cells z * w + x). It starts from the wall cell reaching farthest from the camera and follows
  * the outline (outlineChains) both ways, cell centre to cell centre, for as long as each step faces away from the
- * camera or side-on to it, so a staircase counts as the slope it makes rather than as its one-cell faces. It stops at
- * the first step facing the camera: the outline has turned back there, and what lies past it stands between the
- * camera and floor, so it is left out; the cell it turns on stays. That turned-back edge, the cells straight on from
- * there for as long as the outline keeps that heading, is `turn`: it is cut down to WALL_H wherever it lies.
+ * camera or side-on to it (a camera within SIDE_ON_DEG of a grid axis counts as looking straight along it), so a
+ * staircase counts as the slope it makes rather than as its one-cell faces. It stops at the first step facing the
+ * camera: the outline has turned back there, and what lies past it stands between the camera and floor, so it is
+ * left out; the cell it turns on stays. That turned-back edge, the cells straight on from there for as long as the
+ * outline keeps that heading, is `turn`: it is cut down to WALL_H wherever it lies.
  */
 export function farRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): { row: Set<number>; turn: Set<number> } {
+  // looking nearly along an axis, look exactly along it: the walls either side then both count as side-on
+  const yaw = Math.atan2(fz, fx);
+  const axis = Math.round(yaw / (Math.PI / 2)) * (Math.PI / 2);
+  if (Math.abs(yaw - axis) <= (SIDE_ON_DEG * Math.PI) / 180) {
+    fx = Math.round(Math.cos(axis));
+    fz = Math.round(Math.sin(axis));
+  }
   const chains = outlineChains(grid, dim);
   const cx = (k: number) => (k % grid.w) + 0.5;
   const cz = (k: number) => Math.floor(k / grid.w) + 0.5;

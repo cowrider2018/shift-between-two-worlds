@@ -552,7 +552,9 @@ export const SIDE_ON_DEG = 15;
  * slope it makes rather than as its one-cell faces, and stops at the first step facing away. Of what it passes, the
  * cells with every step beside them facing the camera are not drawn; the corners where such a stretch meets one
  * running side-on stay, as does every side-on stretch (the walls between the near side and the far), and so does
- * the wall closing off a corridor one cell wide (a one-cell U-turn).
+ * the wall closing off a corridor one cell wide (a one-cell U-turn). The exit counts as an opening, like floor:
+ * never a corner or a wall beside a corridor, and it goes (all but its light) wherever a step facing the camera
+ * touches it.
  */
 export function nearRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Set<number> {
   // looking nearly along an axis, look exactly along it: the walls either side then both count as side-on
@@ -593,21 +595,26 @@ export function nearRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number):
     const d = (cz(b) - cz(a)) * fx - (cx(b) - cx(a)) * fz;
     return d < -1e-6 ? -1 : d > 1e-6 ? 1 : 0;
   };
-  // a one-cell U-turn: the wall closes off a corridor one cell wide, the floor behind it having rock either side
+  // a one-cell U-turn: the wall closes off a corridor one cell wide, the floor behind it having walls either side
   const nothing = (x: number, z: number) => !grid.inBounds(x, z) || isVoid(grid, dim, x, z);
+  const wall = (x: number, z: number) => isRock(grid, dim, x, z) && grid.cell(dim, x, z).def.behavior !== 'exit';
   const uTurn = (k: number) => {
     const x = k % grid.w;
     const z = Math.floor(k / grid.w);
     return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => {
       const bx = x - dx;
       const bz = z - dz;
-      return nothing(x + dx, z + dz) && !nothing(bx, bz) && !isRock(grid, dim, bx, bz) &&
-        isRock(grid, dim, bx + dz, bz + dx) && isRock(grid, dim, bx - dz, bz - dx);
+      return nothing(x + dx, z + dz) && !nothing(bx, bz) && !wall(bx, bz) && wall(bx + dz, bz + dx) && wall(bx - dz, bz - dx);
     });
   };
   // every cell passed, and whether every step beside it faces the camera
+  // the exit is an opening here, like floor, not a wall: the walk carries on past it, it is never a corner, and it
+  // goes when a step facing the camera touches it
+  const isExit = (k: number) => grid.cell(dim, k % grid.w, Math.floor(k / grid.w)).def.behavior === 'exit';
+  const exits = new Map<number, boolean>();
   const toward = new Map<number, boolean>();
-  const mark = (k: number, f: boolean) => toward.set(k, (toward.get(k) ?? true) && f);
+  const mark = (k: number, f: boolean) =>
+    isExit(k) ? exits.set(k, (exits.get(k) ?? false) || f) : toward.set(k, (toward.get(k) ?? true) && f);
   // the dug-out corners passed by diagonal steps, and the cells of those steps
   const passed = new Map<number, number[]>();
   for (const dir of [1, -1]) {
@@ -635,6 +642,7 @@ export function nearRow(grid: LevelGrid, dim: DimIndex, fx: number, fz: number):
   for (const [k, f] of toward) if (f && !passed.has(k) && !uTurn(k)) near.add(k);
   // a dug-out corner goes with the cells of its step: hidden while one of them is
   for (const [k, by] of passed) if (toward.get(k) && by.some((c) => near.has(c))) near.add(k);
+  for (const [k, f] of exits) if (f) near.add(k);
   return near;
 }
 

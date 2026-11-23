@@ -106,7 +106,8 @@ const fadeCache = new Map<string, Material>();
 /**
  * A copy of `mat` (already given the camera hole) thinned by its dimension's fade map: where a cell's rock stands
  * only partly, its pixels drop out through the same ordered dither as the hole's rim, so the cut edge fades by pixel
- * density. Cached per source material and dimension.
+ * density; the pixels left show no stone pattern, only its plain colour, darkening to black towards the cut. Cached
+ * per source material and dimension.
  */
 export function withFade<T extends Material>(mat: T, dim: number): T {
   const ck = `${mat.uuid}:${dim}`;
@@ -129,10 +130,17 @@ varying vec2 vFadeXZ;
 uniform sampler2D uFadeMap;
 uniform vec2 uFadeSize;`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-{
-  float fadeKeep = texture2D(uFadeMap, vFadeXZ / uFadeSize).r * 2.0 - 0.5;
-  if (fadeKeep < 0.999 && fadeKeep <= holeBayer4(gl_FragCoord.xy)) discard;
-}`);
+float fadeKeep = texture2D(uFadeMap, vFadeXZ / uFadeSize).r * 2.0 - 0.5;
+if (fadeKeep < 0.999 && fadeKeep <= holeBayer4(gl_FragCoord.xy)) discard;
+float fadeFlat = clamp((1.0 - fadeKeep) * 4.0, 0.0, 1.0);`)
+      // across the fade the stone pattern gives way to its plain average colour (the texture's smallest mip)...
+      .replace('#include <map_fragment>', `#include <map_fragment>
+#ifdef USE_MAP
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuse * textureLod(map, vMapUv, 16.0).rgb, fadeFlat);
+#endif`)
+      // ...and darkens to black towards the cut
+      .replace('#include <opaque_fragment>', `outgoingLight *= smoothstep(0.0, 1.0, fadeKeep);
+#include <opaque_fragment>`);
   };
   const key = mat.customProgramCacheKey.bind(mat);
   m.customProgramCacheKey = () => `${key()}+fade`;

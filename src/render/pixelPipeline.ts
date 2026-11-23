@@ -19,6 +19,9 @@ export const PIXEL_SCALE = 3;
 const MARGIN = 1;
 /** Depth jump between neighbouring pixels, relative to the pixel's depth, that counts as a silhouette edge. */
 const SILHOUETTE = 0.07;
+/** Depth jump at which the ink is full strength. Between SILHOUETTE and this, a crease inside one object (a ledge,
+ *  a fold) gets a lighter line than a gap to what is behind it, so the outline has two weights. */
+const DEEP_GAP = 0.3;
 /** A silhouette pixel whose outward direction is within this cosine of the on-screen sun direction gets the rim. */
 const RIM_FACING = 0.35;
 /** Rim thickness in art pixels: the silhouette pixel plus this many minus one more inward, on the same surface. */
@@ -144,8 +147,12 @@ export class PixelPipeline {
             if (far > ${SILHOUETTE.toFixed(3)}) {
               // a silhouette pixel: facing the sun -> rim light, else ink
               lit = sunEdge(uv, d);
-              // sel-out: the nearer side of the jump darkens into its own colour instead of one flat ink
-              if (!lit) c = mix(c * 0.45, outline, 0.35);
+              // sel-out: the nearer side of the jump darkens into its own colour instead of one flat ink. The weight
+              // follows the size of the jump: a small crease inside one object gets a lighter line than a gap
+              if (!lit) {
+                float weight = smoothstep(${SILHOUETTE.toFixed(3)}, ${DEEP_GAP.toFixed(3)}, far);
+                c = mix(c * 0.8, mix(c * 0.45, outline, 0.35), weight);
+              }
             } else {
               // inner rim pixels: the rim grows inward from the sun-facing silhouette. Any pixel within RIM_WIDTH-1
               // (square) on the sun's side and on the same surface that is a sun-facing silhouette pixel lights this

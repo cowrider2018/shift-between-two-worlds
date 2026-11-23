@@ -623,8 +623,8 @@ function waySpan(grid: LevelGrid, dim: DimIndex, o: OutlinePath, way: number): [
   return best;
 }
 
-/** Cells (outline lengths) over which the outline fades from hidden to standing, centred on each end of the cut. */
-export const CUT_FADE = 2;
+/** Cells (outline lengths) over which the outline fades from hidden to standing, just outside each end of the cut. */
+export const CUT_FADE = 1;
 
 /**
  * How much of the outermost rock stands for a camera looking along (fx, fz), from any angle: 0 gone, 1 standing,
@@ -633,7 +633,7 @@ export const CUT_FADE = 2;
  *
  * The hidden stretch is known exactly for eight ways (see waySpan). Between two neighbouring ways its two ends slide
  * along the outline from one way's to the other's, halfway at 15° off the axis (so the axis views keep their 30° and
- * the diagonal ones their 60°, as when the cut snapped). Across each end the outline fades over CUT_FADE cells. The
+ * the diagonal ones their 60°, as when the cut snapped). Past each end the outline fades back in over CUT_FADE cells. The
  * exit fades like the wall (its light stays); the rock filled in behind the outline (see rowFill) follows the
  * thinnest outline cell it backs; inner walls are never touched.
  */
@@ -671,7 +671,7 @@ export function nearFade(grid: LevelGrid, dim: DimIndex, fx: number, fz: number)
     return d <= len ? -Math.min(d, len - d) : Math.min(d - len, n - d);
   };
   for (let i = 0; i < n; i++) {
-    const v = Math.min(1, Math.max(0, 0.5 + outside(i) / CUT_FADE));
+    const v = Math.min(1, Math.max(0, outside(i) / CUT_FADE));
     if (v < 1) fade.set(path[i], Math.min(v, fade.get(path[i]) ?? 1));
   }
   // the filled-in rock behind: each piece follows the thinnest outline cell it backs

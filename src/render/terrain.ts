@@ -817,13 +817,15 @@ export function outerWallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz
 
 /**
  * The outermost rock at (cx, cz) as a single sheet: only its faces towards the room (a cell in the grid that is
- * neither rock nor dug out), from `from` up to `to`, local to the cell centre like wallGeometry. No top, no
- * thickness, nothing facing outwards or into other rock: from the room it reads as the wall of the room, as the very
- * first walls did. The faces follow the rounded rock outline; `cave` cuts the exit's mouth into its face.
+ * neither rock nor dug out), from `from` up to `to`, local to the cell centre like wallGeometry; from WALL_H up, also
+ * towards ordinary rock (an inner wall), which stops at WALL_H, so the cliff above it is not left open. No top, no
+ * thickness, nothing facing outwards or into other outermost rock: from the room it reads as the wall of the room, as
+ * the very first walls did. The faces follow the rounded rock outline; `cave` cuts the exit's mouth into its face.
  */
 export function outerSheetGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
   topColor: string, from: number, to: number, cave?: CaveMouth): BufferGeometry {
-  const room = (x: number, z: number) => grid.inBounds(x, z) && !isRock(grid, dim, x, z) && !isVoid(grid, dim, x, z);
+  const room = (x: number, z: number) => grid.inBounds(x, z) && !isVoid(grid, dim, x, z) &&
+    (!isRock(grid, dim, x, z) || (from >= WALL_H && !isOuterRock(grid, dim, x, z)));
   // tall enough that the faces never reach a bevel
   const shape = new WallShape((x, z) => !room(x, z), OUTER_H + 1);
   const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));

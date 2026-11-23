@@ -71,11 +71,11 @@ export class Backdrop {
           float fade = 1.0 - smoothstep(0.0, fadeDepth, -y);
           vec3 col = mix(bg, m.rgb, m.a * mirrorOpacity * fade);
           // darken into the corners. The post pass quantises luminance, which would snap a smooth falloff into
-          // one hard ring in the dark range; instead each pixel is either darkened or not, by a 4x4 ordered
+          // one hard ring in the dark range; instead each pixel is either pure black or not, by a 4x4 ordered
           // dither whose density grows outwards
           vec2 c = (uv - 0.5) * vec2(rtSize.x / rtSize.y, 1.0);
           float vig = smoothstep(0.45, 1.1, length(c));
-          col = mix(col, bg * 0.6, step(bayer4(px), vig));
+          col = mix(col, vec3(0.0), step(bayer4(px), vig));
           gl_FragColor = vec4(col, 1.0);
         }
       `,

@@ -627,9 +627,11 @@ function waySpan(grid: LevelGrid, dim: DimIndex, o: OutlinePath, way: number): [
 export const CUT_FADE = 1;
 
 /**
- * How much of the outermost rock stands for a camera looking along (fx, fz), from any angle: 0 gone, 1 standing,
- * in between thinned by a dither (see withFade); indices z * w + x, cells not listed stand. Where the hero stands
- * does not matter.
+ * How much of the outermost rock stands for a camera looking along (fx, fz), from any angle, per cell (indices
+ * z * w + x; cells not listed stand), as the value its texel in the fade map takes (see withFade): -0.5 gone, 1.5
+ * standing, the signed distance (in cells) past the end of the hidden stretch in between. Read with linear filtering,
+ * the fade map then runs from 0 at the edge of the hidden stretch to 1 a cell further on, so the thinning is a ramp
+ * across that cell rather than one flat density. Where the hero stands does not matter.
  *
  * The hidden stretch is known exactly for eight ways (see waySpan). Between two neighbouring ways its two ends slide
  * along the outline from one way's to the other's, halfway at 15° off the axis (so the axis views keep their 30° and
@@ -671,8 +673,8 @@ export function nearFade(grid: LevelGrid, dim: DimIndex, fx: number, fz: number)
     return d <= len ? -Math.min(d, len - d) : Math.min(d - len, n - d);
   };
   for (let i = 0; i < n; i++) {
-    const v = Math.min(1, Math.max(0, outside(i) / CUT_FADE));
-    if (v < 1) fade.set(path[i], Math.min(v, fade.get(path[i]) ?? 1));
+    const v = Math.min(1.5, Math.max(-0.5, outside(i) / CUT_FADE));
+    if (v < 1.5) fade.set(path[i], Math.min(v, fade.get(path[i]) ?? 1.5));
   }
   // the filled-in rock behind: each piece follows the thinnest outline cell it backs
   const isExit = (k: number) => grid.cell(dim, k % w, Math.floor(k / w)).def.behavior === 'exit';
@@ -684,10 +686,10 @@ export function nearFade(grid: LevelGrid, dim: DimIndex, fx: number, fz: number)
   return fade;
 }
 
-/** The cells mostly gone (standing under half, see nearFade) for a camera looking along (fx, fz), at height 0. */
+/** The cells inside the hidden stretch (see nearFade) for a camera looking along (fx, fz), at height 0. */
 export function nearCut(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Map<number, number> {
   const heights = new Map<number, number>();
-  for (const [k, v] of nearFade(grid, dim, fx, fz)) if (v < 0.5) heights.set(k, 0);
+  for (const [k, v] of nearFade(grid, dim, fx, fz)) if (v < 0) heights.set(k, 0);
   return heights;
 }
 

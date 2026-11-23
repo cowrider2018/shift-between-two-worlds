@@ -82,8 +82,9 @@ export function withHole<T extends Material>(mat: T): T {
 }
 
 /**
- * Per dimension, how much of each cell's rock stands (see nearFade): one texel per cell (red, 255 standing), read
- * with linear filtering at the fragment's world x, z so the thinning runs smoothly across cells. The view fills it.
+ * Per dimension, how much of each cell's rock stands (see nearFade): one texel per cell, red = (value + 0.5) / 2 so
+ * 255 is standing, read with linear filtering at the fragment's world x, z so the thinning ramps across the cell next
+ * to the cut. The view fills it.
  */
 export const FADE = [0, 1].map(() => ({
   uFadeMap: { value: fadeTexture(1, 1) },
@@ -129,7 +130,7 @@ uniform sampler2D uFadeMap;
 uniform vec2 uFadeSize;`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
 {
-  float fadeKeep = texture2D(uFadeMap, vFadeXZ / uFadeSize).r;
+  float fadeKeep = texture2D(uFadeMap, vFadeXZ / uFadeSize).r * 2.0 - 0.5;
   if (fadeKeep < 0.999 && fadeKeep <= holeBayer4(gl_FragCoord.xy)) discard;
 }`);
   };

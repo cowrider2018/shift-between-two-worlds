@@ -382,12 +382,12 @@ export class GameView {
       const data = tex.image.data as Uint8Array;
       let changed = false;
       for (let k = 0; k < grid.w * grid.h; k++) {
-        const v = Math.round((fade.get(k) ?? 1) * 255);
+        const v = Math.round(((fade.get(k) ?? 1.5) + 0.5) * 0.5 * 255);
         if (data[k * 4] !== v) [data[k * 4], changed] = [v, true];
       }
       if (changed) tex.needsUpdate = true;
       const heights = new Map<number, number>();
-      for (const [k, v] of fade) if (v <= 0) heights.set(k, 0);
+      for (const [k, v] of fade) if (v <= -0.5) heights.set(k, 0);
       const key = [...heights].sort((a, b) => a[0] - b[0]).join(';');
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;

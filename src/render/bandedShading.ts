@@ -20,8 +20,8 @@ export const BAND_EDGES = [0.45, 0.75, 1.3];
 /** Brightness of each band, as a multiple of the surface colour (linear). */
 export const BAND_VALUES = [0.34, 0.6, 0.9, 1.15];
 /** How far the shadow band leans toward the sun's complementary colour, and the lit / hot bands toward the sun. */
-export const SHADOW_TINT = 0.4;
-export const LIGHT_TINT = 0.25;
+export const SHADOW_TINT = 0.65;
+export const LIGHT_TINT = 0.4;
 
 const f = (x: number) => x.toFixed(3);
 

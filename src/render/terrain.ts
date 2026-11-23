@@ -811,6 +811,32 @@ export function outerWallGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz
   return b.build();
 }
 
+/**
+ * The outermost rock at (cx, cz) as a single sheet: only its faces towards the room (a cell in the grid that is
+ * neither rock nor dug out), from `from` up to `to`, local to the cell centre like wallGeometry. No top, no
+ * thickness, nothing facing outwards or into other rock: from the room it reads as the wall of the room, as the very
+ * first walls did. The faces follow the rounded rock outline; `cave` cuts the exit's mouth into its face.
+ */
+export function outerSheetGeometry(grid: LevelGrid, dim: DimIndex, cx: number, cz: number, sideColor: string,
+  topColor: string, from: number, to: number, cave?: CaveMouth): BufferGeometry {
+  const room = (x: number, z: number) => grid.inBounds(x, z) && !isRock(grid, dim, x, z) && !isVoid(grid, dim, x, z);
+  // tall enough that the faces never reach a bevel
+  const shape = new WallShape((x, z) => !room(x, z), OUTER_H + 1);
+  const b = new MeshBuilder(shape, [cx + 0.5, cz + 0.5], new Color(sideColor), new Color(topColor));
+  let exposed = false;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (room(cx + dx, cz + dz)) exposed = true;
+  const B = exposed ? FINE : COARSE;
+  const n = B.length;
+  const H = [from, to];
+  const open = (dx: number, dz: number) => room(cx + dx, cz + dz) && !(cave && cave.dx === dx && cave.dz === dz);
+  if (cave) caveFace(b, cx, cz, cave, H);
+  if (open(1, 0)) b.patch(n, 2, (i, j) => [cx + 1, H[j], cz + B[i]], true, [1, 0, 0]);
+  if (open(-1, 0)) b.patch(n, 2, (i, j) => [cx, H[j], cz + B[i]], true, [-1, 0, 0]);
+  if (open(0, 1)) b.patch(n, 2, (i, j) => [cx + B[i], H[j], cz + 1], true, [0, 0, 1]);
+  if (open(0, -1)) b.patch(n, 2, (i, j) => [cx + B[i], H[j], cz], true, [0, 0, -1]);
+  return b.build();
+}
+
 /** Floors of cells with no rock round them, shared per offset in the cobble pattern. */
 const freeFloors = new Map<number, BufferGeometry>();
 

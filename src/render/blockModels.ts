@@ -13,7 +13,8 @@ import type { DimTheme } from './palette';
 import { cobble, toon, whitening, wood } from './materials';
 import { throughMouth, withFade, withHole, type Mouth } from './cutaway';
 import {
-  CAVE, WALL_H, caveGeometry, cutOf, floorGeometry, outerWallGeometry, wallGeometry, type Cut,
+  CAVE, OUTER_H, WALL_H, caveGeometry, cutOf, floorGeometry, isOuterRock, outerSheetGeometry, outerWallGeometry, wallGeometry,
+  type CaveMouth, type Cut,
 } from './terrain';
 
 export interface BlockView {
@@ -78,6 +79,19 @@ function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx, cut: Cut): void {
   if (cut.top(cell.x, cell.y) === 0) return;
   const geo = outerWallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, cut);
   g.add(m(geo, withFade(withHole(cobble('#ffffff', true)), cell.dim), 0, 0, 0, false));
+}
+
+/**
+ * The outermost rock of `cell` as one sheet facing the room (see outerSheetGeometry): up to WALL_H casting shadows,
+ * the rest up to OUTER_H not (a cliff that tall would darken half the level). Null for any other rock.
+ */
+function outerSheet(cell: Cell, ctx: ModelCtx, mat: Material, cave?: CaveMouth): Object3D[] | null {
+  if (!isOuterRock(ctx.grid, cell.dim, cell.x, cell.y)) return null;
+  const { wallSide, wallTop } = ctx.theme;
+  return [
+    m(outerSheetGeometry(ctx.grid, cell.dim, cell.x, cell.y, wallSide, wallTop, 0, WALL_H, cave), mat),
+    m(outerSheetGeometry(ctx.grid, cell.dim, cell.x, cell.y, wallSide, wallTop, WALL_H, OUTER_H), mat, 0, 0, 0, false),
+  ];
 }
 
 /**
@@ -359,7 +373,10 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       const r = new Group();
       // cut down to nothing: not even the floor in its rounded-off corners
       if (cut.height(cell.x, cell.y) <= 0) return r;
-      r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, undefined, cut), withFade(withHole(cobble('#ffffff', true)), cell.dim)),
+      const stone = withFade(withHole(cobble('#ffffff', true)), cell.dim);
+      const sheet = outerSheet(cell, ctx, stone);
+      if (sheet) return r.add(...sheet, ...floorTile(cell, ctx));
+      r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, undefined, cut), stone),
         ...floorTile(cell, ctx));
       addOuterWall(r, cell, ctx, cut);
       return r;
@@ -439,8 +456,12 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     const rock = rockByHeight(cell, ctx, (cut) => {
       const r = new Group();
       if (cut.height(cell.x, cell.y) <= 0) return r;
-      r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, mouth, cut), stone));
-      addOuterWall(r, cell, ctx, cut);
+      const sheet = outerSheet(cell, ctx, stone, mouth);
+      if (sheet) r.add(...sheet);
+      else {
+        r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, mouth, cut), stone));
+        addOuterWall(r, cell, ctx, cut);
+      }
       // the tunnel takes no shadow from the rock over it: its light comes from inside
       const tunnel = m(caveGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, mouth),
         throughMouth(whitening(stone), arch), 0, 0, 0, false);

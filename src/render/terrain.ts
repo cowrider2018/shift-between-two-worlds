@@ -535,38 +535,20 @@ function outlineChains(grid: LevelGrid, dim: DimIndex): number[][] {
   return chains;
 }
 
-/**
- * The near side of the outermost rock for a camera looking along (fx, fz), which is not drawn: the height of every
- * cell drawn other than as it stands (see Cut), indices z * w + x. Where the hero stands does not matter.
- *
- * The camera looks one of eight ways: along a grid axis within 15° of it (30° each), else
- * diagonally (60° each).
- *
- * Diagonally: the two lines of the outline's bounding square on the camera's side are marked; from the outermost
- * marked cell one way round the near corner to the outermost the other way, the outline is not drawn.
- *
- * Along an axis: the side walls are the outermost rock on
- * the two lines of the level's bounding square along that axis (left and right) with a walkable cell (floor, doors
- * and all) beside them on the inner side; they always stand. They cut the outline (outlineChains, walked cell by
- * side-by-side cell: a diagonal step past a dug-out corner goes through the rock it skips) in two: the half on the
- * camera's side is not drawn, the exit included (it keeps only its light), and the rock filled in behind it goes
- * with it (see rowFill).
- */
-export function nearCut(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Map<number, number> {
-  const heights = new Map<number, number>();
+/** The outline as a path of side-by-side cells (z * w + x): the longest chain of outlineChains, each diagonal step past a
+ *  dug-out corner going through the rock it skips; `closed` when it runs all the way round. */
+interface OutlinePath { path: number[]; closed: boolean }
+
+const pathCache = new WeakMap<LevelGrid, (OutlinePath | null)[]>();
+
+function outlinePath(grid: LevelGrid, dim: DimIndex): OutlinePath | null {
+  let sets = pathCache.get(grid);
+  if (!sets) pathCache.set(grid, (sets = []));
+  const cached = sets[dim];
+  if (cached !== undefined) return cached;
   const w = grid.w;
-  if (!fx && !fz) return heights;
-  // which of eight ways the camera looks: along an axis within 15° of it (30° each), else diagonally (60° each)
-  const offAxis = Math.atan2(Math.min(Math.abs(fx), Math.abs(fz)), Math.max(Math.abs(fx), Math.abs(fz)));
-  const diagonal = offAxis > Math.PI / 12;
-  const [ax, az] = diagonal ? [Math.sign(fx), Math.sign(fz)] : Math.abs(fx) >= Math.abs(fz) ? [Math.sign(fx), 0] : [0, Math.sign(fz)];
-  const [lx, lz] = [-az, ax];
-  const depth = (k: number) => (k % w) * ax + Math.floor(k / w) * az;
-  const across = (k: number) => (k % w) * lx + Math.floor(k / w) * lz;
-  const walkable = (x: number, z: number) => grid.inBounds(x, z) && !isRock(grid, dim, x, z) && !isVoid(grid, dim, x, z);
-  // the outline as a path of side-by-side cells; the longest chain is the outer edge of the level
   const chains = outlineChains(grid, dim);
-  if (!chains.length) return heights;
+  if (!chains.length) return (sets[dim] = null);
   const chain = chains.reduce((a, b) => (b.length > a.length ? b : a));
   const n0 = chain.length;
   const closed = n0 > 2 && Math.abs((chain[0] % w) - (chain[n0 - 1] % w)) <= 1 && Math.abs(Math.floor(chain[0] / w) - Math.floor(chain[n0 - 1] / w)) <= 1;
@@ -576,71 +558,137 @@ export function nearCut(grid: LevelGrid, dim: DimIndex, fx: number, fz: number):
     path.push(a);
     if (!closed && i === n0 - 1) break;
     const b = chain[(i + 1) % n0];
-    const [ax0, az0, bx, bz] = [a % w, Math.floor(a / w), b % w, Math.floor(b / w)];
-    if (ax0 !== bx && az0 !== bz) path.push(isRock(grid, dim, bx, az0) ? az0 * w + bx : bz * w + ax0);
+    const [ax, az, bx, bz] = [a % w, Math.floor(a / w), b % w, Math.floor(b / w)];
+    if (ax !== bx && az !== bz) path.push(isRock(grid, dim, bx, az) ? az * w + bx : bz * w + ax);
   }
+  return (sets[dim] = { path, closed });
+}
+
+/**
+ * The stretch of the outline hidden for a camera looking exactly one of eight ways (`way` × 45° from +x, towards +z),
+ * as [first, last] indices into the outline path (running forwards, round the end if it is closed), or null.
+ *
+ * Along an axis: the side walls are the outline cells on its two extreme lines across the camera's way with a
+ * walkable cell (floor, doors and all) beside them on the inner side; they cut the outline in two and the half on
+ * the camera's side goes.
+ *
+ * Diagonally: the two lines of the outline's bounding square on the camera's side are marked; from the outermost
+ * marked cell one way round the near corner to the outermost the other way, the outline goes (the longest stretch
+ * between marked cells runs round the far side and stands).
+ */
+function waySpan(grid: LevelGrid, dim: DimIndex, o: OutlinePath, way: number): [number, number] | null {
+  const w = grid.w;
+  const { path, closed } = o;
   const n = path.length;
-  const isExit = (k: number) => grid.cell(dim, k % w, Math.floor(k / w)).def.behavior === 'exit';
-  const hide = (cells: number[]) => {
-    const hidden = new Set(cells);
-    for (const k of rowFill(grid, dim, new Set(cells.filter((k) => !isExit(k))))) hidden.add(k);
-    for (const k of hidden) heights.set(k, 0);
-    return heights;
-  };
-  if (diagonal) {
-    // the two lines of the outline's bounding square on the camera's side; from the outermost of their cells one
-    // way round the near corner to the outermost the other way, everything goes (the outline but for the longest
-    // stretch between their cells, which runs round the far side)
-    const xs = path.map((k) => k % w);
-    const zs = path.map((k) => Math.floor(k / w));
+  const angle = (way * Math.PI) / 4;
+  const [ax, az] = [Math.round(Math.cos(angle)), Math.round(Math.sin(angle))];
+  const xs = path.map((k) => k % w);
+  const zs = path.map((k) => Math.floor(k / w));
+  if (ax && az) {
     const nearX = ax < 0 ? Math.max(...xs) : Math.min(...xs);
     const nearZ = az < 0 ? Math.max(...zs) : Math.min(...zs);
     const on = path.map((_, i) => i).filter((i) => xs[i] === nearX || zs[i] === nearZ);
-    if (!on.length) return heights;
+    if (!on.length) return null;
     let gapAt = on.length - 1;
     let gap = -1;
     for (let j = 0; j < on.length; j++) {
       const next = j + 1 < on.length ? on[j + 1] : closed ? on[0] + n : on[j];
       if (next - on[j] > gap) [gap, gapAt] = [next - on[j], j];
     }
-    // from the marked cell after the gap round to the one before it
-    const from = on[(gapAt + 1) % on.length];
-    const to = on[gapAt];
-    const cells: number[] = [];
-    for (let i = from; ; i++) {
-      cells.push(path[i % n]);
-      if (i % n === to || cells.length >= n) break;
-    }
-    return hide(cells);
+    return [on[(gapAt + 1) % on.length], on[gapAt]];
   }
-  // the side walls: on the outline's two extreme lines across the camera's way, with walkable cells beside them inward
-  const lo = Math.min(...path.map(across));
-  const hi = Math.max(...path.map(across));
-  const side = path.map((k) => {
-    const t = across(k);
-    const inward = t === lo ? 1 : t === hi ? -1 : 0;
-    if (!inward) return 0;
-    const [x, z] = [k % w, Math.floor(k / w)];
-    return walkable(x + inward * lx, z + inward * lz) ? inward : 0;
+  const [lx, lz] = [-az, ax];
+  const across = path.map((_, i) => xs[i] * lx + zs[i] * lz);
+  const depth = (i: number) => xs[i] * ax + zs[i] * az;
+  const walkable = (x: number, z: number) => grid.inBounds(x, z) && !isRock(grid, dim, x, z) && !isVoid(grid, dim, x, z);
+  const lo = Math.min(...across);
+  const hi = Math.max(...across);
+  const side = path.map((_, i) => {
+    const inward = across[i] === lo ? 1 : across[i] === hi ? -1 : 0;
+    return inward && walkable(xs[i] + inward * lx, zs[i] + inward * lz) ? inward : 0;
   });
-  // the stretches of the outline between side wall cells; of those running from one side to the other, the one
-  // nearer the camera goes
   const marks = side.map((s, i) => (s ? i : -1)).filter((i) => i >= 0);
-  if (marks.length < 2) return heights;
-  let best: number[] | null = null;
+  let best: [number, number] | null = null;
   let bestDepth = Infinity;
   for (let j = 0; j < (closed ? marks.length : marks.length - 1); j++) {
     const from = marks[j];
     const to = marks[(j + 1) % marks.length];
     if (side[from] === side[to]) continue;
-    const cells: number[] = [];
-    for (let i = from + 1; i % n !== to; i++) cells.push(path[i % n]);
-    if (!cells.length) continue;
-    const mean = cells.reduce((sum, k) => sum + depth(k), 0) / cells.length;
-    if (mean < bestDepth) [best, bestDepth] = [cells, mean];
+    const len = (to - from - 1 + n) % n;
+    if (!len) continue;
+    let sum = 0;
+    for (let i = 1; i <= len; i++) sum += depth((from + i) % n);
+    if (sum / len < bestDepth) [best, bestDepth] = [[(from + 1) % n, (to - 1 + n) % n], sum / len];
   }
-  if (!best) return heights;
-  return hide(best);
+  return best;
+}
+
+/** Cells (outline lengths) over which the outline fades from hidden to standing, centred on each end of the cut. */
+export const CUT_FADE = 2;
+
+/**
+ * How much of the outermost rock stands for a camera looking along (fx, fz), from any angle: 0 gone, 1 standing,
+ * in between thinned by a dither (see withFade); indices z * w + x, cells not listed stand. Where the hero stands
+ * does not matter.
+ *
+ * The hidden stretch is known exactly for eight ways (see waySpan). Between two neighbouring ways its two ends slide
+ * along the outline from one way's to the other's, halfway at 15° off the axis (so the axis views keep their 30° and
+ * the diagonal ones their 60°, as when the cut snapped). Across each end the outline fades over CUT_FADE cells. The
+ * exit fades like the wall (its light stays); the rock filled in behind the outline (see rowFill) follows the
+ * thinnest outline cell it backs; inner walls are never touched.
+ */
+export function nearFade(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Map<number, number> {
+  const fade = new Map<number, number>();
+  if (!fx && !fz) return fade;
+  const o = outlinePath(grid, dim);
+  if (!o) return fade;
+  const { path, closed } = o;
+  const n = path.length;
+  const w = grid.w;
+  // between which two ways, and how far towards the second (halfway at 15° off the axis)
+  const turn = (((Math.atan2(fz, fx) / (Math.PI / 4)) % 8) + 8) % 8;
+  const lo = Math.floor(turn) % 8;
+  const u = turn - Math.floor(turn);
+  const warp = (off: number) => (off < 15 ? (0.5 * off) / 15 : 0.5 + (0.5 * (off - 15)) / 30); // off-axis ° -> diagonal share
+  const t = lo % 2 === 0 ? warp(u * 45) : 1 - warp((1 - u) * 45);
+  const a = waySpan(grid, dim, o, lo);
+  const b = waySpan(grid, dim, o, (lo + 1) % 8);
+  const from = a ?? b;
+  if (!from) return fade;
+  const to = b ?? from;
+  const shift = (x: number, y: number) => {
+    if (!closed) return y - x;
+    const d = (((y - x) % n) + n) % n;
+    return d > n / 2 ? d - n : d;
+  };
+  const start = from[0] + t * shift(from[0], to[0]) - 0.5;
+  const end = from[1] + t * shift(from[1], to[1]) + 0.5;
+  const len = closed ? (((end - start) % n) + n) % n : end - start;
+  // signed distance of an outline cell outside the hidden stretch (negative inside)
+  const outside = (i: number) => {
+    if (!closed) return i < start ? start - i : i > end ? i - end : -Math.min(i - start, end - i);
+    const d = (((i - start) % n) + n) % n;
+    return d <= len ? -Math.min(d, len - d) : Math.min(d - len, n - d);
+  };
+  for (let i = 0; i < n; i++) {
+    const v = Math.min(1, Math.max(0, 0.5 + outside(i) / CUT_FADE));
+    if (v < 1) fade.set(path[i], Math.min(v, fade.get(path[i]) ?? 1));
+  }
+  // the filled-in rock behind: each piece follows the thinnest outline cell it backs
+  const isExit = (k: number) => grid.cell(dim, k % w, Math.floor(k / w)).def.behavior === 'exit';
+  const seeds = [...fade].filter(([k]) => !isExit(k)).sort((p, q) => p[1] - q[1]);
+  const row = new Set(fade.keys());
+  for (const [seed, v] of seeds) {
+    for (const k of rowFill(grid, dim, new Set([seed]))) if (!row.has(k) && !fade.has(k)) fade.set(k, v);
+  }
+  return fade;
+}
+
+/** The cells mostly gone (standing under half, see nearFade) for a camera looking along (fx, fz), at height 0. */
+export function nearCut(grid: LevelGrid, dim: DimIndex, fx: number, fz: number): Map<number, number> {
+  const heights = new Map<number, number>();
+  for (const [k, v] of nearFade(grid, dim, fx, fz)) if (v < 0.5) heights.set(k, 0);
+  return heights;
 }
 
 /**

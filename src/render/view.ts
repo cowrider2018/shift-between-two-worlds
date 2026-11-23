@@ -19,8 +19,8 @@ import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
-import { HOLE, MOUTH_UP } from './cutaway';
-import { nearCut } from './terrain';
+import { FADE, HOLE, MOUTH_UP, fadeTexture } from './cutaway';
+import { nearFade } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -225,6 +225,11 @@ export class GameView {
     this.blocks = [];
     this.dimBlocks = [[], []];
     this.lowKeys = ['', ''];
+    for (const f of FADE) {
+      f.uFadeMap.value.dispose();
+      f.uFadeMap.value = fadeTexture(sim.grid.w, sim.grid.h);
+      f.uFadeSize.value.set(sim.grid.w, sim.grid.h);
+    }
     this.world.add(...this.dims);
     if (!this.hero) {
       this.hero = new CharacterInstance('hero', 'normal', 'plain');
@@ -366,13 +371,23 @@ export class GameView {
     this.pipeline.render(this.scene, this.follow.camera);
   }
 
-  /** Hide the outermost rock on the camera's side, between the two side walls (see nearCut).
-   *  In both dimensions (the other one shows in the reflection). */
+  /** Thin out the outermost rock on the camera's side (see nearFade): rock wholly gone is not built, rock partly
+   *  standing is dithered through the fade map. In both dimensions (the other one shows in the reflection). */
   private hideNearSide(): void {
     const [fx, fz] = this.follow.forward();
     for (const dim of [0, 1] as DimIndex[]) {
       const { grid } = this.sim;
-      const heights = nearCut(grid, dim, fx, fz);
+      const fade = nearFade(grid, dim, fx, fz);
+      const tex = FADE[dim].uFadeMap.value;
+      const data = tex.image.data as Uint8Array;
+      let changed = false;
+      for (let k = 0; k < grid.w * grid.h; k++) {
+        const v = Math.round((fade.get(k) ?? 1) * 255);
+        if (data[k * 4] !== v) [data[k * 4], changed] = [v, true];
+      }
+      if (changed) tex.needsUpdate = true;
+      const heights = new Map<number, number>();
+      for (const [k, v] of fade) if (v <= 0) heights.set(k, 0);
       const key = [...heights].sort((a, b) => a[0] - b[0]).join(';');
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;

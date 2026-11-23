@@ -11,7 +11,7 @@ import type { Cell, LevelGrid } from '../core/grid';
 import { TUNING, type Sim } from '../core/sim';
 import type { DimTheme } from './palette';
 import { cobble, toon, whitening, wood } from './materials';
-import { throughMouth, withHole, type Mouth } from './cutaway';
+import { throughMouth, withFade, withHole, type Mouth } from './cutaway';
 import {
   CAVE, WALL_H, caveGeometry, cutOf, floorGeometry, outerWallGeometry, wallGeometry, type Cut,
 } from './terrain';
@@ -19,7 +19,7 @@ import {
 export interface BlockView {
   object: Object3D;
   update?(sim: Sim, dt: number, t: number): void;
-  /** Draw the rock with the heights in `heights` (indices z * w + x, see nearCut). */
+  /** Draw the rock with the heights in `heights` (indices z * w + x, see nearFade). */
   setHeights?(heights: ReadonlyMap<number, number>): void;
 }
 
@@ -77,7 +77,7 @@ const CAVE_HAZE: [number, number][] = [[0.42, 0.3], [0.5, 0.4], [0.58, 0.5], [0.
 function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx, cut: Cut): void {
   if (cut.top(cell.x, cell.y) === 0) return;
   const geo = outerWallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, cut);
-  g.add(m(geo, withHole(cobble('#ffffff', true)), 0, 0, 0, false));
+  g.add(m(geo, withFade(withHole(cobble('#ffffff', true)), cell.dim), 0, 0, 0, false));
 }
 
 /**
@@ -359,7 +359,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       const r = new Group();
       // cut down to nothing: not even the floor in its rounded-off corners
       if (cut.height(cell.x, cell.y) <= 0) return r;
-      r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, undefined, cut), withHole(cobble('#ffffff', true))),
+      r.add(m(wallGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, ctx.theme.wallTop, undefined, cut), withFade(withHole(cobble('#ffffff', true)), cell.dim)),
         ...floorTile(cell, ctx));
       addOuterWall(r, cell, ctx, cut);
       return r;
@@ -425,7 +425,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     // a block of rock with a small cave dug into it: plain wall on three sides, a tunnel behind the open one that fades into light
     const [dx, dz] = ctx.grid.exitMouth(cell);
     const mouth = { dx, dz, floor: ctx.theme.floor[0] };
-    const stone = withHole(cobble('#ffffff', true));
+    const stone = withFade(withHole(cobble('#ffffff', true)), cell.dim);
     // everything inside shows only through the arch, so it hides like the wall round it from any other angle
     // (e.g. through the camera hole cut into a neighbouring wall)
     const arch: Mouth = {
@@ -435,7 +435,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       half: CAVE.half,
       spring: CAVE.spring,
     };
-    // in the near row (see nearCut), none of its stone is drawn, the tunnel and floor included: only its light
+    // gone with the near side (see nearFade), none of its stone is drawn, the tunnel and floor included: only its light
     const rock = rockByHeight(cell, ctx, (cut) => {
       const r = new Group();
       if (cut.height(cell.x, cell.y) <= 0) return r;

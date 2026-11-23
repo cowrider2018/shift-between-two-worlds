@@ -9,7 +9,9 @@
  * outer rim the surface comes back through an ordered (Bayer) dither, so the edge fades by pixel density
  * rather than by transparency. gl_FragCoord is in low-res render pixels, so the dither is in art pixels.
  */
-import { Vector2, Vector3, type Material, type WebGLProgramParametersWithUniforms } from 'three';
+import {
+  ClampToEdgeWrapping, DataTexture, LinearFilter, RGBAFormat, Vector2, Vector3, type Material, type WebGLProgramParametersWithUniforms,
+} from 'three';
 
 /** Fraction of the radius that is fully open; the rest is the dithered rim. */
 export const HOLE_INNER = 0.75;
@@ -76,6 +78,64 @@ export function withHole<T extends Material>(mat: T): T {
     m.customProgramCacheKey = () => 'camera-hole';
     cache.set(mat.uuid, m);
   }
+  return m;
+}
+
+/**
+ * Per dimension, how much of each cell's rock stands (see nearFade): one texel per cell (red, 255 standing), read
+ * with linear filtering at the fragment's world x, z so the thinning runs smoothly across cells. The view fills it.
+ */
+export const FADE = [0, 1].map(() => ({
+  uFadeMap: { value: fadeTexture(1, 1) },
+  uFadeSize: { value: new Vector2(1, 1) },
+}));
+
+/** A blank (all standing) fade map for a w × h grid. */
+export function fadeTexture(w: number, h: number): DataTexture {
+  const tex = new DataTexture(new Uint8Array(w * h * 4).fill(255), w, h, RGBAFormat);
+  tex.magFilter = LinearFilter;
+  tex.minFilter = LinearFilter;
+  tex.wrapS = tex.wrapT = ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const fadeCache = new Map<string, Material>();
+
+/**
+ * A copy of `mat` (already given the camera hole) thinned by its dimension's fade map: where a cell's rock stands
+ * only partly, its pixels drop out through the same ordered dither as the hole's rim, so the cut edge fades by pixel
+ * density. Cached per source material and dimension.
+ */
+export function withFade<T extends Material>(mat: T, dim: number): T {
+  const ck = `${mat.uuid}:${dim}`;
+  let m = fadeCache.get(ck) as T | undefined;
+  if (m) return m;
+  m = mat.clone() as T;
+  const uniforms = FADE[dim];
+  const before = mat.onBeforeCompile.bind(mat);
+  m.onBeforeCompile = (shader, renderer) => {
+    before(shader, renderer);
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+varying vec2 vFadeXZ;`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+vFadeXZ = (modelMatrix * vec4(transformed, 1.0)).xz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec2 vFadeXZ;
+uniform sampler2D uFadeMap;
+uniform vec2 uFadeSize;`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+{
+  float fadeKeep = texture2D(uFadeMap, vFadeXZ / uFadeSize).r;
+  if (fadeKeep < 0.999 && fadeKeep <= holeBayer4(gl_FragCoord.xy)) discard;
+}`);
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  m.customProgramCacheKey = () => `${key()}+fade`;
+  fadeCache.set(ck, m);
   return m;
 }
 

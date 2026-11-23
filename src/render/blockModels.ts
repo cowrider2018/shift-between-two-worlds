@@ -481,7 +481,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
       }
       // the tunnel takes no shadow from the rock over it: its light comes from inside
       const tunnel = m(caveGeometry(ctx.grid, cell.dim, cell.x, cell.y, ctx.theme.wallSide, mouth),
-        throughMouth(whitening(stone), arch), 0, 0, 0, false);
+        throughMouth(whitening(stone), arch, true), 0, 0, 0, false);
       tunnel.receiveShadow = false;
       r.add(tunnel, ...floorTile(cell, ctx));
       return r;
@@ -491,7 +491,7 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     // veils of light, so whatever walks in sinks into the glow instead of meeting a flat white board
     for (const [d, opacity] of CAVE_HAZE) {
       const veil = new Mesh(new ShapeGeometry(archShape(0.02), 12),
-        throughMouth(withHole(new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity, depthWrite: false })), arch));
+        throughMouth(withHole(new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity, depthWrite: false })), arch, true));
       veil.position.z = 0.5 - d;
       veil.renderOrder = 3;
       inside.add(veil);

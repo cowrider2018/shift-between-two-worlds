@@ -160,8 +160,10 @@ export const MOUTH_UP = { value: 1 };
  * A copy of `mat` (already given the camera hole) that only shows through `mouth`: a fragment is kept only if the
  * line from the camera to it crosses the face plane inside the arch. Whatever sits behind the opening (a cave) is
  * then hidden like the wall around it from every other angle, e.g. when the camera hole cuts into that wall.
+ * `sealed` also hides it from behind the face: the outer wall is a single sheet with nothing round the cave, so seen
+ * from outside the tunnel would stand out of the wall.
  */
-export function throughMouth<T extends Material>(mat: T, mouth: Mouth): T {
+export function throughMouth<T extends Material>(mat: T, mouth: Mouth, sealed = false): T {
   const m = mat.clone() as T;
   const uniforms = {
     uMouthOrigin: { value: mouth.origin },
@@ -169,6 +171,7 @@ export function throughMouth<T extends Material>(mat: T, mouth: Mouth): T {
     uMouthAlong: { value: mouth.along },
     uMouthSize: { value: new Vector2(mouth.half, mouth.spring) },
     uMouthUp: MOUTH_UP,
+    uMouthSealed: { value: sealed ? 1 : 0 },
   };
   const before = mat.onBeforeCompile.bind(mat);
   m.onBeforeCompile = (shader, renderer) => {
@@ -184,12 +187,14 @@ vMouthWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
 varying vec3 vMouthWorld;
 uniform vec3 uMouthOrigin, uMouthNormal, uMouthAlong;
 uniform vec2 uMouthSize;
-uniform float uMouthUp;`)
+uniform float uMouthUp;
+uniform float uMouthSealed;`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
 {
   vec3 rd = vMouthWorld - cameraPosition;
   float side = dot(cameraPosition - uMouthOrigin, uMouthNormal);
   float dn = dot(rd, uMouthNormal);
+  if (side <= 0.0 && uMouthSealed > 0.5) discard;
   if (side > 0.0 && dn < 0.0) {
     vec3 hit = cameraPosition + rd * (-side / dn) - uMouthOrigin;
     float u = abs(dot(hit, uMouthAlong));

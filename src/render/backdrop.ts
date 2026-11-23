@@ -74,7 +74,7 @@ export class Backdrop {
           // one hard ring in the dark range; instead each pixel is either pure black or not, by a 4x4 ordered
           // dither whose density grows outwards
           vec2 c = (uv - 0.5) * vec2(rtSize.x / rtSize.y, 1.0);
-          float vig = smoothstep(0.45, 1.1, length(c));
+          float vig = smoothstep(0.75, 1.1, length(c));
           col = mix(col, vec3(0.0), step(bayer4(px), vig));
           gl_FragColor = vec4(col, 1.0);
         }

@@ -20,7 +20,7 @@ import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim'
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
 import { FADE, HOLE, MOUTH_UP, fadeTexture } from './cutaway';
-import { nearFade } from './terrain';
+import { CUT_FADE, nearFade } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -382,7 +382,8 @@ export class GameView {
       const data = tex.image.data as Uint8Array;
       let changed = false;
       for (let k = 0; k < grid.w * grid.h; k++) {
-        const v = Math.round(((fade.get(k) ?? 1.5) + 0.5) * 0.5 * 255);
+        // with no fade the map stays blank: a gone cell's texel would otherwise bleed into its neighbours
+        const v = CUT_FADE > 0 ? Math.round(((fade.get(k) ?? 1.5) + 0.5) * 0.5 * 255) : 255;
         if (data[k * 4] !== v) [data[k * 4], changed] = [v, true];
       }
       if (changed) tex.needsUpdate = true;

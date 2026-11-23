@@ -623,8 +623,9 @@ function waySpan(grid: LevelGrid, dim: DimIndex, o: OutlinePath, way: number): [
   return best;
 }
 
-/** Cells (outline lengths) over which the outline fades from hidden to standing, just outside each end of the cut. */
-export const CUT_FADE = 1;
+/** Cells (outline lengths) over which the outline fades from hidden to standing, just outside each end of the cut;
+ *  0 for none: the cut is a clean edge, a cell wholly gone or wholly standing. */
+export const CUT_FADE = 0;
 
 /**
  * How much of the outermost rock stands for a camera looking along (fx, fz), from any angle, per cell (indices
@@ -673,7 +674,8 @@ export function nearFade(grid: LevelGrid, dim: DimIndex, fx: number, fz: number)
     return d <= len ? -Math.min(d, len - d) : Math.min(d - len, n - d);
   };
   for (let i = 0; i < n; i++) {
-    const v = Math.min(1.5, Math.max(-0.5, outside(i) / CUT_FADE));
+    const d = outside(i);
+    const v = CUT_FADE > 0 ? Math.min(1.5, Math.max(-0.5, d / CUT_FADE)) : d < 0 ? -0.5 : 1.5;
     if (v < 1.5) fade.set(path[i], Math.min(v, fade.get(path[i]) ?? 1.5));
   }
   // the filled-in rock behind: each piece follows the thinnest outline cell it backs

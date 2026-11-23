@@ -23,6 +23,8 @@ const SILHOUETTE = 0.07;
 const RIM_FACING = 0.35;
 /** Rim thickness in art pixels: the silhouette pixel plus this many minus one more inward, on the same surface. */
 const RIM_WIDTH = 2;
+/** Brightness steps kept after the post pass. Few steps read as a deliberate palette; many read as a smooth render. */
+export const LUMA_LEVELS = 8;
 
 export class PixelPipeline {
   readonly renderer: WebGLRenderer;
@@ -62,7 +64,7 @@ export class PixelPipeline {
         screenSize: { value: new Vector2() },
         scale: { value: 3 },
         sub: { value: new Vector2() },
-        levels: { value: 14 },
+        levels: { value: LUMA_LEVELS },
         outline: { value: new Color('#140f18') },
         sunDir: { value: new Vector2() },
         sunColor: { value: new Color() },

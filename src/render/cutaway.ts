@@ -10,7 +10,7 @@
  * rather than by transparency. gl_FragCoord is in low-res render pixels, so the dither is in art pixels.
  */
 import {
-  ClampToEdgeWrapping, DataTexture, LinearFilter, RGBAFormat, Vector2, Vector3, type Material, type WebGLProgramParametersWithUniforms,
+  ClampToEdgeWrapping, DataTexture, LinearFilter, NearestFilter, RGBAFormat, Vector2, Vector3, type Material, type WebGLProgramParametersWithUniforms,
 } from 'three';
 
 /** Fraction of the radius that is fully open; the rest is the dithered rim. */
@@ -145,6 +145,70 @@ float fadeFlat = clamp((1.0 - fadeKeep) * 4.0, 0.0, 1.0);`)
   const key = mat.customProgramCacheKey.bind(mat);
   m.customProgramCacheKey = () => `${key()}+fade`;
   fadeCache.set(ck, m);
+  return m;
+}
+
+/**
+ * Where the outermost rock stands, for clipping what is in the room against it (see withRockMask): one texel per
+ * cell, 255 where the cliff stands (not cut away, not the exit), read nearest. The outer wall is a single sheet with
+ * nothing behind it, so whatever reaches past it (a door's end, a troll's ear) would otherwise show from outside.
+ * `uRockShown` is the dimension on show; `uRockOther` the reflected one, hanging below the floor. The view fills them.
+ */
+export const ROCK = {
+  uRockShown: { value: rockTexture(1, 1) },
+  uRockOther: { value: rockTexture(1, 1) },
+  uRockSize: { value: new Vector2(1, 1) },
+};
+
+/** A blank (no standing rock) rock mask for a w x h grid. */
+export function rockTexture(w: number, h: number): DataTexture {
+  const tex = new DataTexture(new Uint8Array(w * h * 4), w, h, RGBAFormat);
+  tex.magFilter = tex.minFilter = NearestFilter;
+  tex.wrapS = tex.wrapT = ClampToEdgeWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** How close (world units) to standing outer rock a fragment may come; anything nearer is dropped, so faces lying
+ *  in the sheet's own plane (a door's end) do not show through it from behind. */
+const ROCK_MARGIN = 0.02;
+
+const rockCache = new Map<string, Material>();
+
+/**
+ * A copy of `mat` that is not drawn inside, or within ROCK_MARGIN of, the standing outermost rock (see ROCK): for
+ * things in the room (doors, levers, characters, vision cones). Above the floor it reads the dimension on show,
+ * below it (the reflection) the other one. Cached per source material.
+ */
+export function withRockMask<T extends Material>(mat: T): T {
+  let m = rockCache.get(mat.uuid) as T | undefined;
+  if (m) return m;
+  m = mat.clone() as T;
+  const before = mat.onBeforeCompile.bind(mat);
+  m.onBeforeCompile = (shader, renderer) => {
+    before(shader, renderer);
+    Object.assign(shader.uniforms, ROCK);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vRockWorld;`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+vRockWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vRockWorld;
+uniform sampler2D uRockShown, uRockOther;
+uniform vec2 uRockSize;
+float rockAt(sampler2D map, vec2 p) {
+  vec2 e = vec2(${ROCK_MARGIN.toFixed(3)});
+  return max(max(texture2D(map, (p + e) / uRockSize).r, texture2D(map, (p - e) / uRockSize).r),
+    max(texture2D(map, (p + vec2(e.x, -e.y)) / uRockSize).r, texture2D(map, (p + vec2(-e.x, e.y)) / uRockSize).r));
+}`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+if ((vRockWorld.y >= 0.0 ? rockAt(uRockShown, vRockWorld.xz) : rockAt(uRockOther, vRockWorld.xz)) > 0.5) discard;`);
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  m.customProgramCacheKey = () => `${key()}+rock`;
+  rockCache.set(mat.uuid, m);
   return m;
 }
 

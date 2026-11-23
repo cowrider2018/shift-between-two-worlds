@@ -19,8 +19,9 @@ import type { DimIndex } from '../core/level';
 import { TUNING, type MonsterState, type Sim, type SimEvent } from '../core/sim';
 import { Backdrop } from './backdrop';
 import { BLOCK_MODELS, type BlockView } from './blockModels';
-import { FADE, HOLE, MOUTH_UP, fadeTexture } from './cutaway';
-import { CUT_FADE, nearFade } from './terrain';
+import type { DataTexture } from 'three';
+import { FADE, HOLE, MOUTH_UP, ROCK, fadeTexture, rockTexture, withRockMask } from './cutaway';
+import { CUT_FADE, isOuterRock, nearFade } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
@@ -53,7 +54,7 @@ class VisionCone {
     this.geo.setAttribute('color', new BufferAttribute(this.col, 4));
     this.mesh = new Mesh(
       this.geo,
-      new MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }),
+      withRockMask(new MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false })),
     );
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 2;
@@ -184,6 +185,8 @@ export class GameView {
   /** Each dimension's blocks, and the rock heights last drawn there (see hideNearSide), as a sorted key. */
   private dimBlocks: [BlockView[], BlockView[]] = [[], []];
   private lowKeys = ['', ''];
+  /** Each dimension's standing outer rock, for clipping what is in the room (see ROCK). */
+  private rockMaps: DataTexture[] = [rockTexture(1, 1), rockTexture(1, 1)];
   private readonly holeAt = new Vector3();
   private readonly sunDir = new Vector3();
   private monsters: MonsterView[] = [];
@@ -224,7 +227,10 @@ export class GameView {
     this.dims = [new Group(), new Group()];
     this.blocks = [];
     this.dimBlocks = [[], []];
-    this.lowKeys = ['', ''];
+    this.lowKeys = ['?', '?']; // never a real key: the first frame draws the cut and fills the rock maps
+    for (const r of this.rockMaps) r.dispose();
+    this.rockMaps = [rockTexture(sim.grid.w, sim.grid.h), rockTexture(sim.grid.w, sim.grid.h)];
+    ROCK.uRockSize.value.set(sim.grid.w, sim.grid.h);
     for (const f of FADE) {
       f.uFadeMap.value.dispose();
       f.uFadeMap.value = fadeTexture(sim.grid.w, sim.grid.h);
@@ -393,7 +399,20 @@ export class GameView {
       if (key === this.lowKeys[dim]) continue;
       this.lowKeys[dim] = key;
       for (const b of this.dimBlocks[dim]) b.setHeights?.(heights);
+      // the cliff left standing (not the exit, which the hero walks into)
+      const rock = this.rockMaps[dim];
+      const mask = rock.image.data as Uint8Array;
+      for (let z = 0; z < grid.h; z++) {
+        for (let x = 0; x < grid.w; x++) {
+          const k = z * grid.w + x;
+          const stands = isOuterRock(grid, dim, x, z) && !heights.has(k) && grid.cell(dim, x, z).def.behavior !== 'exit';
+          mask[k * 4] = stands ? 255 : 0;
+        }
+      }
+      rock.needsUpdate = true;
     }
+    ROCK.uRockShown.value = this.rockMaps[this.sim.dim];
+    ROCK.uRockOther.value = this.rockMaps[1 - this.sim.dim];
   }
 
   /**

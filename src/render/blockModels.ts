@@ -11,7 +11,7 @@ import type { Cell, LevelGrid } from '../core/grid';
 import { TUNING, type Sim } from '../core/sim';
 import type { DimTheme } from './palette';
 import { cobble, toon, whitening, wood } from './materials';
-import { throughMouth, withFade, withHole, type Mouth } from './cutaway';
+import { throughMouth, withFade, withHole, withRockMask, type Mouth } from './cutaway';
 import {
   CAVE, OUTER_H, WALL_H, caveGeometry, cutOf, floorGeometry, isOuterRock, outerSheetGeometry, outerWallGeometry, wallGeometry,
   type CaveMouth, type Cut,
@@ -165,7 +165,7 @@ function hauntDoor(cell: Cell, doorH: number, alongX: boolean, part: DoorPart): 
     while (y < doorH - 0.1) {
       const len = Math.min(doorH - 0.05 - y, 0.18 + rand() * 0.4);
       const base = 0.45 + rand() * 0.55;
-      const mat = withHole(new MeshBasicMaterial({ color: SEAM_GLOW, transparent: true, opacity: base, depthWrite: false, blending: AdditiveBlending }));
+      const mat = withRockMask(withHole(new MeshBasicMaterial({ color: SEAM_GLOW, transparent: true, opacity: base, depthWrite: false, blending: AdditiveBlending })));
       for (const side of [-1, 1]) g.add(part(0.022, len, 0.004, mat, a, y + len / 2, side * 0.152, false));
       cracks.push({ mat, base, phase: rand() * 6.28, speed: 2 + rand() * 5 });
       y += len + 0.04 + rand() * 0.2;
@@ -178,7 +178,7 @@ function hauntDoor(cell: Cell, doorH: number, alongX: boolean, part: DoorPart): 
   // wisps: each rises from a random seam on a random face, sways, swells and fades, then starts over
   const wispGeo = new IcosahedronGeometry(0.05, 0);
   const wisps = Array.from({ length: WISPS }, () => {
-    const mat = withHole(new MeshBasicMaterial({ color: WISP_GLOW, transparent: true, opacity: 0, depthWrite: false, blending: AdditiveBlending }));
+    const mat = withRockMask(withHole(new MeshBasicMaterial({ color: WISP_GLOW, transparent: true, opacity: 0, depthWrite: false, blending: AdditiveBlending })));
     const mesh = new Mesh(wispGeo, mat);
     mesh.renderOrder = 3;
     g.add(mesh);
@@ -327,11 +327,11 @@ function leverGlow(cell: Pick<Cell, 'x' | 'y'>): LeverGlow {
 /** A lever without its floor tile: base, swinging arm and glow, centred on the origin. `update` swings the arm
  *  and recolours the glow toward `on`. */
 export function leverParts(cell: Pick<Cell, 'x' | 'y'>): LeverGlow {
-  const base = m(new BoxGeometry(0.44, 0.16, 0.3), toon('#5a5560'), 0, 0.06, 0);
+  const base = m(new BoxGeometry(0.44, 0.16, 0.3), withRockMask(toon('#5a5560')), 0, 0.06, 0);
   const arm = new Group();
   arm.position.y = 0.1;
-  arm.add(m(new CylinderGeometry(0.04, 0.04, LEVER_ARM, 6), toon('#3a3238'), 0, 0.16, 0));
-  arm.add(m(new IcosahedronGeometry(0.09), toon('#6a6470'), 0, 0.46, 0));
+  arm.add(m(new CylinderGeometry(0.04, 0.04, LEVER_ARM, 6), withRockMask(toon('#3a3238')), 0, 0.16, 0));
+  arm.add(m(new IcosahedronGeometry(0.09), withRockMask(toon('#6a6470')), 0, 0.46, 0));
   const glow = leverGlow(cell);
   let angle = -0.6;
   return {
@@ -419,8 +419,8 @@ export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
     // a box measured along the door (`along`), up, and through it (`across`), centred `off` through the door
     const part = (along: number, h: number, across: number, mat: Material, a: number, y: number, off = 0, shadow = true) =>
       m(new BoxGeometry(spanX ? along : across, h, spanX ? across : along), mat, spanX ? a : off, y, spanX ? off : a, shadow);
-    const iron = withHole(toon('#34343a'));
-    panel.add(part(1, doorH, DOOR_THICKNESS, withHole(wood('#b8a088')), 0, doorH / 2));
+    const iron = withRockMask(withHole(toon('#34343a')));
+    panel.add(part(1, doorH, DOOR_THICKNESS, withRockMask(withHole(wood('#b8a088'))), 0, doorH / 2));
     // iron straps across both faces near the top and bottom, studded with rivets
     for (const y of [0.24, doorH - 0.22]) {
       panel.add(part(1.005, 0.09, 0.34, iron, 0, y));

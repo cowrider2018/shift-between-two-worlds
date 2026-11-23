@@ -10,6 +10,7 @@ import {
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import palette from '../../art/palette.json';
+import { withRockMask } from './cutaway';
 import { ghost, glow, toon } from './materials';
 import { CHARACTER } from './palette';
 
@@ -61,8 +62,8 @@ export async function loadModels(base = './models/'): Promise<void> {
 
 function paletteMaterial(name: string): Material {
   const entry = PALETTE[name];
-  if (!entry) return toon('#ff00ff'); // loud magenta: a material name missing from the palette
-  return entry.emissive ? glow(entry.color) : toon(entry.color, undefined, entry.doubleSided);
+  if (!entry) return withRockMask(toon('#ff00ff')); // loud magenta: a material name missing from the palette
+  return withRockMask(entry.emissive ? glow(entry.color) : toon(entry.color, undefined, entry.doubleSided));
 }
 
 /** A posed, animated instance of a character model. */
@@ -83,7 +84,7 @@ export class CharacterInstance {
     this.variants = t.variants;
     const outfits = Object.keys(t.variants);
     if (outfits.length) this.setOutfit(outfit && t.variants[outfit] ? outfit : outfits[0]);
-    const ghostMat = ghost(CHARACTER.ghost);
+    const ghostMat = withRockMask(ghost(CHARACTER.ghost));
     this.root.traverse((o) => {
       if (!(o instanceof Mesh)) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];

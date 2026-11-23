@@ -620,6 +620,12 @@ function waySpan(grid: LevelGrid, dim: DimIndex, o: OutlinePath, way: number): [
     for (let i = 1; i <= len; i++) sum += depth((from + i) % n);
     if (sum / len < bestDepth) [best, bestDepth] = [[(from + 1) % n, (to - 1 + n) % n], sum / len];
   }
+  // an outline left open (floor running to the grid's edge) has its other half missing: the one stretch between the
+  // side walls goes only if it lies on the camera's side of them, not when it is the far wall
+  if (!closed && best) {
+    const sideDepth = marks.reduce((s, i) => s + depth(i), 0) / marks.length;
+    if (bestDepth >= sideDepth) return null;
+  }
   return best;
 }
 

@@ -81,12 +81,29 @@ function addOuterWall(g: Group, cell: Cell, ctx: ModelCtx, cut: Cut): void {
   g.add(m(geo, withFade(withHole(cobble('#ffffff', true)), cell.dim), 0, 0, 0, false));
 }
 
+const twoSided = new Map<string, Material>();
+
+/** A copy of `mat` (shader patches and all) drawn from both sides, so a sheet of wall still shows when seen from
+ *  behind, e.g. past a turn of the outline. Cached per source material. */
+function bothSides<T extends Material>(mat: T): T {
+  let m = twoSided.get(mat.uuid) as T | undefined;
+  if (!m) {
+    m = mat.clone() as T;
+    m.side = DoubleSide;
+    m.onBeforeCompile = mat.onBeforeCompile;
+    m.customProgramCacheKey = mat.customProgramCacheKey;
+    twoSided.set(mat.uuid, m);
+  }
+  return m;
+}
+
 /**
  * The outermost rock of `cell` as one sheet facing the room (see outerSheetGeometry): up to WALL_H casting shadows,
  * the rest up to OUTER_H not (a cliff that tall would darken half the level). Null for any other rock.
  */
-function outerSheet(cell: Cell, ctx: ModelCtx, mat: Material, cave?: CaveMouth): Object3D[] | null {
+function outerSheet(cell: Cell, ctx: ModelCtx, stone: Material, cave?: CaveMouth): Object3D[] | null {
   if (!isOuterRock(ctx.grid, cell.dim, cell.x, cell.y)) return null;
+  const mat = bothSides(stone);
   const { wallSide, wallTop } = ctx.theme;
   return [
     m(outerSheetGeometry(ctx.grid, cell.dim, cell.x, cell.y, wallSide, wallTop, 0, WALL_H, cave), mat),

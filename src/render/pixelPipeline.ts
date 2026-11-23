@@ -25,6 +25,9 @@ const RIM_FACING = 0.35;
 const RIM_WIDTH = 2;
 /** Brightness steps kept after the post pass. Few steps read as a deliberate palette; many read as a smooth render. */
 export const LUMA_LEVELS = 8;
+/** How far the brightness steps are dithered: 0 rounds to the nearest step, 1 spreads each step over an ordered
+ *  4×4 pattern of art pixels, so a gradient reads as dots between two steps instead of a hard band. */
+export const DITHER = 0.5;
 
 export class PixelPipeline {
   readonly renderer: WebGLRenderer;
@@ -96,6 +99,9 @@ export class PixelPipeline {
         uniform vec2 holeCap;
         ${HOLE_SCALE_GLSL}
         varying vec2 vUv;
+        /** Ordered-dither threshold in [0, 1) for a 4x4 Bayer matrix; a pixel's position picks the entry. */
+        float Bayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
+        float Bayer4(vec2 a) { return Bayer2(0.5 * a) * 0.25 + Bayer2(a); }
         float depthAt(vec2 uv) { return -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, cameraNear, cameraFar); }
         /** Is the pixel at uv (depth d) a silhouette pixel whose outward side faces the sun? */
         bool sunEdge(vec2 uv, float d) {
@@ -124,9 +130,11 @@ export class PixelPipeline {
           float du = depthAt(uv + vec2(0.0, texel.y));
           c = pow(max(c, 0.0), vec3(1.0 / 2.2));
           // quantise brightness only, scaling the colour along with it: hue and saturation survive, where rounding
-          // each channel on its own pushed dark browns toward olive
+          // each channel on its own pushed dark browns toward olive. The threshold comes from an ordered 4x4 pattern
+          // over art pixels, so between two steps the pixels mix in a fixed dot pattern (dithering, DESIGN §4.1)
           float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
-          if (luma > 1e-4) c = min(c * (floor(luma * levels + 0.5) / levels) / luma, vec3(1.0));
+          float threshold = (Bayer4(px) - 0.5) * ${DITHER.toFixed(2)};
+          if (luma > 1e-4) c = min(c * (floor(luma * levels + 0.5 + threshold) / levels) / luma, vec3(1.0));
           float hd = distance(px, hole.xy);
           float hr = hole.z * holeScale(d, holeCap);
           bool rim = hr > 0.0 && hd > hr * ${HOLE_INNER.toFixed(3)} - 1.5 && hd < hr + 1.5;

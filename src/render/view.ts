@@ -31,6 +31,8 @@ import { PixelPipeline } from './pixelPipeline';
 import { TEXEL_DENSITY } from './texgen';
 
 const CONE_SEGMENTS = 32;
+/** Seconds for a shift to dissolve from the dimension left behind into the one entered (see pixelPipeline). */
+const DISSOLVE_TIME = 0.35;
 
 /** Seconds to put the cloak on as the hero crouches on the surface, and to take it off on standing up. */
 const CLOAK_ON = 0.33;
@@ -292,6 +294,7 @@ export class GameView {
     this.catching = null;
     this.takedown = null;
     this.prompt.reset();
+    this.pipeline.fx.dissolve = 1;
     this.hero.root.rotation.set(0, 0, 0);
     this.follow.reset(sim);
     this.resize();
@@ -305,7 +308,7 @@ export class GameView {
   onEvents(events: SimEvent[]): void {
     for (const e of events) {
       if (e.type === 'shift') {
-        this.pipeline.fx.flash = 0.85;
+        this.pipeline.fx.dissolve = 0;
         this.pipeline.fx.ripple = 1;
       } else if (e.type === 'kill') {
         const mv = this.monsters.find((v) => v.state === e.monster);
@@ -337,6 +340,7 @@ export class GameView {
     fx.time = this.t;
     fx.flash = Math.max(0, fx.flash - dt * 4);
     fx.ripple = Math.max(0, fx.ripple - dt * 2.5);
+    fx.dissolve = Math.min(1, fx.dissolve + dt / DISSOLVE_TIME);
     fx.danger = Math.max(0, ...sim.monsters.map((m) => (m.dim === sim.dim ? m.detect : 0)));
 
     // always cloaked in the underside; on the surface the cloak goes on as the hero crouches and comes off as they

@@ -40,13 +40,20 @@ export class PixelPipeline {
   height = 1;
   /** Camera sub-pixel remainder in art pixels (x right, y up), set per frame by the view. */
   readonly subpixel = { x: 0, y: 0 };
-  private readonly rt: WebGLRenderTarget;
+  /** Two low-res frames, swapped each render: the one drawn last frame is copied into `before` when a dissolve starts. */
+  private readonly rts: [WebGLRenderTarget, WebGLRenderTarget];
+  private cur = 0;
+  /** The frame from before a shift, held still for the whole dissolve, and whether it has been taken yet. */
+  private readonly before: WebGLRenderTarget;
+  private beforeTaken = false;
+  private readonly copyMat: ShaderMaterial;
+  private readonly copyScene = new Scene();
   private readonly post: ShaderMaterial;
   private readonly postScene = new Scene();
   private readonly postCam = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
   /** Effects driven by the game. */
-  readonly fx = { flash: 0, ripple: 0, danger: 0, time: 0 };
+  readonly fx = { flash: 0, ripple: 0, danger: 0, time: 0, dissolve: 1 };
   /** Sun direction projected onto the screen (unit, x right, y up; zero when the sun is straight along the view)
    *  and its colour, set per frame by the view. */
   readonly sun = { dir: new Vector2(), color: new Color('#ffffff') };
@@ -59,12 +66,33 @@ export class PixelPipeline {
     this.renderer.shadowMap.enabled = true;
     // hard-edged, unfiltered shadows: a soft penumbra reads as a 3D render, not as drawn shading
     this.renderer.shadowMap.type = BasicShadowMap;
-    this.rt = new WebGLRenderTarget(1, 1, { minFilter: NearestFilter, magFilter: NearestFilter });
-    this.rt.depthTexture = new DepthTexture(1, 1, UnsignedIntType);
+    this.rts = [0, 1].map(() => {
+      const rt = new WebGLRenderTarget(1, 1, { minFilter: NearestFilter, magFilter: NearestFilter });
+      rt.depthTexture = new DepthTexture(1, 1, UnsignedIntType);
+      return rt;
+    }) as [WebGLRenderTarget, WebGLRenderTarget];
+    this.before = new WebGLRenderTarget(1, 1, { minFilter: NearestFilter, magFilter: NearestFilter });
+    this.copyMat = new ShaderMaterial({
+      uniforms: { tSrc: { value: null } },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tSrc;
+        varying vec2 vUv;
+        void main() { gl_FragColor = texture2D(tSrc, vUv); }
+      `,
+      depthTest: false,
+      depthWrite: false,
+    });
+    this.copyScene.add(new Mesh(new PlaneGeometry(2, 2), this.copyMat));
     this.post = new ShaderMaterial({
       uniforms: {
-        tColor: { value: this.rt.texture },
-        tDepth: { value: this.rt.depthTexture },
+        tColor: { value: this.rts[0].texture },
+        tDepth: { value: this.rts[0].depthTexture },
+        tPrev: { value: this.rts[1].texture },
+        dissolve: { value: 1 },
         texel: { value: new Vector2() },
         rtSize: { value: new Vector2() },
         screenSize: { value: new Vector2() },
@@ -92,6 +120,8 @@ export class PixelPipeline {
         uniform sampler2D tColor;
         uniform float cameraNear, cameraFar;
         uniform sampler2D tDepth;
+        uniform sampler2D tPrev;
+        uniform float dissolve;
         uniform vec2 texel, rtSize, screenSize, sub;
         uniform float scale;
         uniform float levels, flash, ripple, danger, time;
@@ -117,6 +147,16 @@ export class PixelPipeline {
           vec2 out2 = vec2(dr - dl, du - dd);
           return dot(out2, sunDir) / max(length(out2), 1e-5) > ${RIM_FACING.toFixed(2)};
         }
+        /** Gamma-correct a low-res colour and quantise its brightness (see main). */
+        vec3 quantise(vec3 c, float threshold) {
+          c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+          // quantise brightness only, scaling the colour along with it: hue and saturation survive, where rounding
+          // each channel on its own pushed dark browns toward olive. The threshold comes from an ordered 4x4 pattern
+          // over art pixels, so between two steps the pixels mix in a fixed dot pattern (dithering, DESIGN §4.1)
+          float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+          if (luma > 1e-4) c = min(c * (floor(luma * levels + 0.5 + threshold) / levels) / luma, vec3(1.0));
+          return c;
+        }
         void main() {
           // screen pixel -> art pixel of the low-res frame, shifted by the camera's sub-pixel remainder
           vec2 px = floor((gl_FragCoord.xy - screenSize * 0.5) / scale + rtSize * 0.5 + sub) + 0.5;
@@ -131,13 +171,8 @@ export class PixelPipeline {
           float dr = depthAt(uv + vec2(texel.x, 0.0));
           float dd = depthAt(uv - vec2(0.0, texel.y));
           float du = depthAt(uv + vec2(0.0, texel.y));
-          c = pow(max(c, 0.0), vec3(1.0 / 2.2));
-          // quantise brightness only, scaling the colour along with it: hue and saturation survive, where rounding
-          // each channel on its own pushed dark browns toward olive. The threshold comes from an ordered 4x4 pattern
-          // over art pixels, so between two steps the pixels mix in a fixed dot pattern (dithering, DESIGN §4.1)
-          float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
           float threshold = (Bayer4(px) - 0.5) * ${DITHER.toFixed(2)};
-          if (luma > 1e-4) c = min(c * (floor(luma * levels + 0.5 + threshold) / levels) / luma, vec3(1.0));
+          c = quantise(c, threshold);
           float hd = distance(px, hole.xy);
           float hr = hole.z * holeScale(d, holeCap);
           bool rim = hr > 0.0 && hd > hr * ${HOLE_INNER.toFixed(3)} - 1.5 && hd < hr + 1.5;
@@ -172,6 +207,12 @@ export class PixelPipeline {
             }
             if (lit) c = min(c * 1.45 + sunColor * 0.12, vec3(1.0));
           }
+          // a shift dissolves from the frame before into this one: each art pixel switches over at its own dither
+          // threshold, so the change reads as a scatter of dots, not a flash. The old frame is only quantised, not
+          // outlined, which a fraction of a second hides
+          if (dissolve < 1.0 && Bayer4(px) >= dissolve) {
+            c = quantise(texture2D(tPrev, uv).rgb, (Bayer4(px) - 0.5) * ${DITHER.toFixed(2)});
+          }
           vec2 q = vUv - 0.5;
           float vig = smoothstep(0.25, 0.75, length(q * vec2(1.3, 1.0)));
           c = mix(c, vec3(0.85, 0.08, 0.1), vig * danger * 0.75);
@@ -195,7 +236,8 @@ export class PixelPipeline {
     this.renderer.setSize(sw, sh, false);
     this.canvas.style.width = `${sw}px`;
     this.canvas.style.height = `${sh}px`;
-    this.rt.setSize(this.width, this.height);
+    for (const rt of this.rts) rt.setSize(this.width, this.height);
+    this.before.setSize(this.width, this.height);
     const u = this.post.uniforms;
     (u.texel.value as Vector2).set(1 / this.width, 1 / this.height);
     (u.rtSize.value as Vector2).set(this.width, this.height);
@@ -217,9 +259,28 @@ export class PixelPipeline {
     u.cameraFar.value = camera.far;
     (u.sunDir.value as Vector2).copy(this.sun.dir);
     (u.sunColor.value as Color).copy(this.sun.color).convertLinearToSRGB();
-    this.renderer.setRenderTarget(this.rt);
+    u.dissolve.value = this.fx.dissolve;
+    // draw into one frame; the other, drawn last time, is the picture before a shift if a dissolve starts now
+    const target = this.rts[this.cur];
+    const last = this.rts[1 - this.cur];
+    u.tColor.value = target.texture;
+    u.tDepth.value = target.depthTexture;
+    if (this.fx.dissolve < 1) {
+      if (!this.beforeTaken) {
+        this.copyMat.uniforms.tSrc.value = last.texture;
+        this.renderer.setRenderTarget(this.before);
+        this.renderer.render(this.copyScene, this.postCam);
+        this.beforeTaken = true;
+      }
+      u.tPrev.value = this.before.texture;
+    } else {
+      this.beforeTaken = false;
+      u.tPrev.value = last.texture;
+    }
+    this.renderer.setRenderTarget(target);
     this.renderer.render(scene, camera);
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.postScene, this.postCam);
+    this.cur = 1 - this.cur;
   }
 }

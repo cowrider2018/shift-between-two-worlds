@@ -1046,7 +1046,77 @@ def build_hair(name):
         return _build_union(name)
     if HAIR_STYLE == "wrap":
         return _build_wrap(name)
+    if HAIR_STYLE == "envelope":
+        return _build_envelope(name)
     return lib.join(name, _build_locks())
+
+
+# Option C (HERO_HAIR=envelope): no projection, no boolean. Each HAIR lock is a chain of spheres along its centreline
+# (the same curve build_lock draws, tail included, radius = half its width). For every direction out of the head, the
+# shell's radius is how far a ray in that direction runs through the chain: the outermost point of the hair in that
+# direction. Directions with no hair stay at the skull. The result is a single continuous surface, shaped by the locks.
+ENV_SUBDIV = 4       # icosphere subdivisions: 2,562 directions before the cut
+ENV_RHO = 0.3        # sphere radius as a fraction of the lock's width
+ENV_BASE = 0.012     # the shell never sits closer to the skull than this
+ENV_FLOOR = 0.03     # cut level above the head centre
+ENV_TRIS = 1500
+ENV_STEPS = 7        # samples per lock centreline, as build_lock uses
+
+
+def _lock_centres(entry):
+    """Centreline and width of a HAIR lock as build_lock draws it (with its tail): [(centre, width)] root to tip."""
+    _, exit_dir, end_dir, width, taper, depth, flick, *rest = entry
+    curl = rest[0] if rest else 0.0
+    tail = rest[2] if len(rest) > 2 else 0.0
+    a, b = _sph(*exit_dir), _sph(*end_dir)
+    out = []
+    if tail:
+        back = []
+        for k in range(math.ceil(tail * ENV_STEPS), 0, -1):
+            u = -tail * k / math.ceil(tail * ENV_STEPS)
+            n = _slerp(a, b, u).normalized()
+            w = width * (1 - (-u / tail) ** TAIL_TAPER)
+            back.append((H + n * (HEAD_R + depth * w / LOCK_RATIO), w))
+        out += back[1:]
+    for k in range(ENV_STEPS):
+        u = k / ENV_STEPS
+        n = _slerp(a, b, u).normalized()
+        w = width * (1 - u ** taper)
+        bend = max(0.0, (u - 0.4) / 0.6) ** 2
+        out.append((H + n * (HEAD_R + depth * w / LOCK_RATIO + flick * bend) + Z * (curl * bend), w))
+    out.insert(0, (H + a * HEAD_R * 0.3, width * 1.05))
+    out.append((H + b * (HEAD_R + flick) + Z * curl, 0.02))
+    return out
+
+
+def _ray_reach(d, c, rho):
+    """Distance along the unit ray d from the head centre to the sphere (c, rho); 0 if the ray misses it."""
+    t = (c - H).dot(d)
+    perp2 = (c - H).length_squared - t * t
+    if t <= 0 or perp2 >= rho * rho:
+        return 0.0
+    return t + math.sqrt(rho * rho - perp2)
+
+
+def _build_envelope(name):
+    spheres = []
+    for entry in HAIR:
+        for c, w in _lock_centres(entry):
+            spheres.append((c, max(w * ENV_RHO, 0.004)))
+    shell = lib.ico(name, H, 1.0, "hero_hair", ENV_SUBDIV)
+    for v in shell.data.vertices:
+        d = (v.co - H).normalized()
+        reach = max([_ray_reach(d, c, r) for c, r in spheres] + [HEAD_R + ENV_BASE])
+        v.co = H + d * reach
+    shell.data.update()
+    _cut_below(shell, H.z + ENV_FLOOR)
+    dec = shell.modifiers.new("decimate", "DECIMATE")
+    dec.ratio = min(1.0, ENV_TRIS / max(1, lib.tri_count(shell)))
+    lib.apply_modifiers(shell)
+    lib.flat(shell)
+    shell.name = name
+    shell.data.name = name
+    return shell
 
 
 # Option A (HERO_HAIR=union): the five locks, exactly as built, are Boolean-unioned into one closed solid, then voxel

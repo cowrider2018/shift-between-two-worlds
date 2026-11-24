@@ -1036,6 +1036,8 @@ def _build_locks():
 
 
 def build_hair(name):
+    if HAIR_STYLE == "normals":
+        return _build_normals(name)
     if HAIR_STYLE == "union":
         return _build_union(name)
     if HAIR_STYLE == "wrap":
@@ -1111,6 +1113,23 @@ def _build_envelope(name):
     shell.name = name
     shell.data.name = name
     return shell
+
+
+# Option 1 (HERO_HAIR=normals): the five locks keep their exact geometry. Only the shading changes: every vertex takes
+# the normal pointing straight out from the head centre, and the faces are smooth. Adjacent locks then light the same
+# way across their seams, so the hair reads as one volume. The silhouette is unchanged.
+NORMALS_SMOOTH = True
+
+
+def _build_normals(name):
+    obj = lib.join(name, _build_locks())
+    me = obj.data
+    me.normals_split_custom_set_from_vertices([(v.co - H).normalized() for v in me.vertices])
+    if NORMALS_SMOOTH:
+        for p in me.polygons:
+            p.use_smooth = True
+    me.update()
+    return obj
 
 
 # Option A (HERO_HAIR=union): the five locks, exactly as built, are Boolean-unioned into one closed solid, then voxel

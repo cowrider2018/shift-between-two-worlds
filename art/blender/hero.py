@@ -14,16 +14,12 @@ Faces +X, feet on z = 0, ~0.84 tiles tall. Right hand = -Y.
 """
 import json
 import math
-import os
 
 import bpy
 from mathutils import Matrix, Quaternion, Vector
 
 import lib
 from lib import X, Y, Z
-
-# Hair: "current" (five separate locks, HAIR) or "mass" (the same centrelines fused into one solid). Set with HERO_HAIR.
-HAIR_STYLE = os.environ.get("HERO_HAIR", "current")
 
 HEIGHT = 0.84
 # Facet density outside the head matches the primitive head (10x8 sphere): coarse planes, few turns.
@@ -1040,78 +1036,7 @@ def _build_locks():
 
 
 def build_hair(name):
-    if HAIR_STYLE == "mass":
-        return _build_mass(name)
     return lib.join(name, _build_locks())
-
-
-# The hair mass: each HAIR lock keeps its centreline (the same curve build_lock draws, tail included), but is laid
-# as a chain of ellipsoids instead of a separate cone. Every ellipsoid lies in the lock's own plane (length along the
-# lock, width across it, thickness along the lock's normal), and the chains are fused with the body's anatomy
-# pipeline: one solid, no slits between locks, tapering to the tips.
-MASS_STEPS = 7
-MASS_TRIS = 1200
-MASS_VOXEL = 0.006
-MASS_RES = 0.006
-MASS_THICK = 0.33  # half the thickness, in the lock's width (the lock's own cross-section is width : width / 2)
-MASS_STIFF = 1.0   # metaball stiffness of each ellipsoid: lower fuses softer and rounds the tips
-MASS_WIDE = 0.5    # half the lock's width across it: above 0.5 neighbouring locks overlap and fuse
-MASS_CAP = True    # a flattened shell over the crown, under the locks, so the gaps between them are filled
-MASS_CAP_OFF = (-0.04, 0.0, 0.05)  # its centre from the head centre: back and up, so the face stays clear
-MASS_CAP_LIFT = 0.02               # how far the shell stands off the skull
-
-
-def _lock_centres(entry):
-    """Centreline and width of a HAIR lock as build_lock draws it (with its tail): [(centre, width)] root to tip."""
-    _, exit_dir, end_dir, width, taper, depth, flick, *rest = entry
-    curl = rest[0] if rest else 0.0
-    tail = rest[2] if len(rest) > 2 else 0.0
-    a, b = _sph(*exit_dir), _sph(*end_dir)
-    out = []
-    if tail:
-        back = []
-        for k in range(math.ceil(tail * MASS_STEPS), 0, -1):
-            u = -tail * k / math.ceil(tail * MASS_STEPS)
-            n = _slerp(a, b, u).normalized()
-            w = width * (1 - (-u / tail) ** TAIL_TAPER)
-            back.append((H + n * (HEAD_R + depth * w / LOCK_RATIO), w))
-        out += back[1:]
-    for k in range(MASS_STEPS):
-        u = k / MASS_STEPS
-        n = _slerp(a, b, u).normalized()
-        w = width * (1 - u ** taper)
-        bend = max(0.0, (u - 0.4) / 0.6) ** 2
-        out.append((H + n * (HEAD_R + depth * w / LOCK_RATIO + flick * bend) + Z * (curl * bend), w))
-    out.insert(0, (H + a * HEAD_R * 0.3, width * 1.05))         # buried root, as build_lock
-    out.append((H + b * (HEAD_R + flick) + Z * curl, 0.02))      # the tip closes to a point
-    return out
-
-
-def _build_mass(name):
-    anat = lib.Anatomy(name, resolution=MASS_RES)
-    if MASS_CAP:
-        r = HEAD_R + MASS_CAP_LIFT
-        anat.ell(H + Vector(MASS_CAP_OFF), (r, r, HEAD_R * 0.8), "hero_hair", stiffness=MASS_STIFF)
-    for entry in HAIR:
-        cut = entry[8] if len(entry) > 8 else None
-        pts = _lock_centres(entry)
-        for (c0, w0), (c1, w1) in zip(pts, pts[1:]):
-            if cut is not None and min(c0.z, c1.z) < H.z + cut:
-                continue                                         # the lock stops at its cut level, as before
-            d = c1 - c0
-            if d.length < 1e-6:
-                continue
-            mid = (c0 + c1) / 2
-            nrm = (mid - H).normalized()
-            side = d.normalized().cross(nrm).normalized()
-            thick = d.normalized().cross(side).normalized()
-            rot = Matrix((d.normalized(), side, thick)).transposed().to_quaternion()
-            w = (w0 + w1) / 2
-            anat.ell(mid, (d.length / 2 * 1.05, w * MASS_WIDE, w * MASS_THICK), "hero_hair", rot, stiffness=MASS_STIFF)
-    obj = anat.build(target_tris=MASS_TRIS, voxel=MASS_VOXEL)
-    _hug_scalp(obj, fringe=True)
-    _drop_crown(obj, CROWN_DROP["sweep_r"])
-    return obj
 
 
 # Hood cross-section: an egg — narrower toward the top, fuller toward the bottom — on a gentle superellipse, so the

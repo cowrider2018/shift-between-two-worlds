@@ -10,6 +10,7 @@ import { DOOR_THICKNESS } from '../core/blocks';
 import type { Cell, LevelGrid } from '../core/grid';
 import { TUNING, type Sim } from '../core/sim';
 import type { DimTheme } from './palette';
+import { floorDecals } from './floorDecals';
 import { cobble, toon, whitening, wood } from './materials';
 import { throughMouth, withFade, withHole, withRockMask, type Mouth } from './cutaway';
 import {
@@ -380,7 +381,7 @@ function doorChains(doorH: number, iron: Material): Group {
 }
 
 export const BLOCK_MODELS: Record<string, BlockModelFactory> = {
-  floor: (cell, ctx) => ({ object: onFloor(cell, ctx) }),
+  floor: (cell, ctx) => ({ object: onFloor(cell, ctx, ...floorDecals(cell)) }),
 
   // dug out of the level: nothing is drawn, the backdrop shows through
   void: () => ({ object: new Group() }),

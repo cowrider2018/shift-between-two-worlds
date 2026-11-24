@@ -4,7 +4,7 @@
  * one has the other. Each object is real geometry, shadowed like the rest of the floor, and keeps the direction it was
  * set down in: it never turns to face the camera. Nothing about them blocks movement or reveals anything.
  */
-import { BoxGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, type Object3D } from 'three';
+import { BoxGeometry, BufferGeometry, CylinderGeometry, Group, IcosahedronGeometry, Mesh, type Object3D } from 'three';
 import type { Cell } from '../core/grid';
 import { toon } from './materials';
 
@@ -15,8 +15,30 @@ const JITTER = 0.12;
 /** Whole-object scale, so the stones and skulls read at the default camera distance. */
 const SCALE = 1.4;
 
+/** Knock a rounded mass out of shape: each vertex moves along its own direction by up to `amount`, the same for every
+ *  copy of a shared corner (so the faces still meet), and the normals are rebuilt flat so it reads as cut stone. */
+function rough(geo: BufferGeometry, amount: number, seed: number): BufferGeometry {
+  const pos = geo.getAttribute('position');
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    let h = seed;
+    for (const v of [x, y, z]) h = Math.imul(h ^ Math.round(v * 1e4), 2654435761);
+    h ^= h >>> 15;
+    h = Math.imul(h, 2246822519);
+    h ^= h >>> 13;
+    const k = 1 + ((h >>> 0) / 4294967296 * 2 - 1) * amount;
+    pos.setXYZ(i, x * k, y * k, z * k);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const rock = rough(new IcosahedronGeometry(0.13, 1).scale(1, 0.55, 1), 0.3, 7);
+
 const GEO = {
-  block: new BoxGeometry(0.22, 0.14, 0.18),
+  block: rock,
   pebble: new IcosahedronGeometry(0.06, 0),
   cranium: new IcosahedronGeometry(0.095, 1),
   jaw: new BoxGeometry(0.11, 0.04, 0.085),

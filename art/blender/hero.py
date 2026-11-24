@@ -14,16 +14,12 @@ Faces +X, feet on z = 0, ~0.84 tiles tall. Right hand = -Y.
 """
 import json
 import math
-import os
 
 import bpy
 from mathutils import Matrix, Quaternion, Vector
 
 import lib
 from lib import X, Y, Z
-
-# Hair: "current" (five separate locks) or "cap" (the same locks over a low-poly crown shell). Set with HERO_HAIR.
-HAIR_STYLE = os.environ.get("HERO_HAIR", "current")
 
 HEIGHT = 0.84
 # Facet density outside the head matches the primitive head (10x8 sphere): coarse planes, few turns.
@@ -1040,8 +1036,6 @@ def _build_locks():
 
 
 def build_hair(name):
-    if HAIR_STYLE == "cap":
-        return lib.join(name, _build_locks() + [_build_cap(f"{name}_cap")])
     if HAIR_STYLE == "union":
         return _build_union(name)
     if HAIR_STYLE == "wrap":
@@ -1199,24 +1193,6 @@ def _build_wrap(name):
     shell.name = name
     shell.data.name = name
     return shell
-
-
-# The crown shell (HERO_HAIR=cap): one low-poly dome laid over the skull under the five locks. The locks keep their own
-# shapes; the dome fills the seams and the hollows between them, so the hair reads as one cap. Its centre sits back and
-# up so the forehead stays clear, and it is cut level at CROWN_SHELL_FLOOR so the ears stay out.
-CROWN_SHELL_OFF = (-0.04, 0.0, 0.05)  # centre from the head centre
-CROWN_SHELL_LIFT = 0.02       # how far the dome stands off the skull
-CROWN_SHELL_HEIGHT = 0.7              # its vertical radius, in head radii
-CROWN_SHELL_FLOOR = 0.05              # lower edge above the head centre
-CROWN_SHELL_SUBDIV = 2                # icosphere subdivisions: 320 faces before the cut
-
-
-def _build_cap(name):
-    r = HEAD_R + CROWN_SHELL_LIFT
-    cap = lib.ico(name, H + Vector(CROWN_SHELL_OFF), r, "hero_hair", CROWN_SHELL_SUBDIV, scale=(1, 1, CROWN_SHELL_HEIGHT * HEAD_R / r))
-    _cut_below(cap, H.z + CROWN_SHELL_FLOOR)
-    lib.flat(cap)
-    return cap
 
 
 # Hood cross-section: an egg — narrower toward the top, fuller toward the bottom — on a gentle superellipse, so the

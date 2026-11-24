@@ -14,12 +14,17 @@ Faces +X, feet on z = 0, ~0.84 tiles tall. Right hand = -Y.
 """
 import json
 import math
+import os
 
 import bpy
 from mathutils import Matrix, Quaternion, Vector
 
+import hair_styles
 import lib
 from lib import X, Y, Z
+
+# Hair generator: "current" (the five hand-placed locks, HAIR) or a hair_styles.STYLES key. Set with HERO_HAIR.
+HAIR_STYLE = os.environ.get("HERO_HAIR", "current")
 
 HEIGHT = 0.84
 # Facet density outside the head matches the primitive head (10x8 sphere): coarse planes, few turns.
@@ -1016,8 +1021,43 @@ def _drop_crown(obj, drop):
     obj.data.update()
 
 
+def _hair_ring(centre, along, normal, w):
+    th = w / LOCK_RATIO
+    side = normal.cross(along).normalized()
+    return [centre + side * (w * x) + normal * (th * y)
+            for x, y in ((0.5, 0), (0.25, 0.5), (-0.25, 0.5), (-0.5, 0), (-0.25, -0.5), (0.25, -0.5))]
+
+
+def _loft_strand(name, path):
+    """One strand from hair_styles: rings along its centres, the first buried in the skull, the tip closed."""
+    pts, ws = path
+    n = len(pts)
+    nrm = [(p - H).normalized() for p in pts]
+    tan = [(pts[min(k + 1, n - 1)] - pts[max(k - 1, 0)]).normalized() for k in range(n)]
+    rings = [_hair_ring(pts[0] - nrm[0] * ws[0] * 0.8, tan[0], nrm[0], ws[0] * 1.05)]
+    rings += [_hair_ring(pts[k], tan[k], nrm[k], ws[k]) for k in range(n)]
+    return lib.loft(name, rings, "hero_hair", tip=pts[-1] + tan[-1] * ws[-1] * 0.8)
+
+
+def _build_styled(style):
+    """The locks of a hair_styles generator, each group cut, hugged and dropped like the HAIR locks."""
+    objs = []
+    for name, strands, cut in hair_styles.STYLES[style](H, HEAD_R, HAIR):
+        o = lib.join(f"hair_{name}", [_loft_strand(f"hair_{name}_{k}", s) for k, s in enumerate(strands)])
+        if cut is not None:
+            _cut_below(o, H.z + cut)
+            _lift_cap(o, H.z + cut)
+        _hug_scalp(o, fringe=name == "sweep_l")
+        if name in CROWN_DROP:
+            _drop_crown(o, CROWN_DROP[name])
+        objs.append(o)
+    return objs
+
+
 def _build_locks():
     """The locks in HAIR order: built, roots swung, cut level (and the cap lifted), pressed to the scalp."""
+    if HAIR_STYLE in hair_styles.STYLES:
+        return _build_styled(HAIR_STYLE)
     objs = [build_lock(f"hair_{n}", *args) for n, *args in HAIR]
     assert len(objs) == 5
     _flare_roots(objs)

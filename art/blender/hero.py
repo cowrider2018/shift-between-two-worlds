@@ -1098,12 +1098,13 @@ def _build_union(name):
 # Option B (HERO_HAIR=wrap): a low-poly sphere, larger than the hair, is shrink-wrapped onto the outside of the five
 # locks (each vertex moves to the nearest point of the locks, pushed just outside). The sphere stays one closed mesh,
 # so the locks' envelope becomes one surface: the gaps are covered by the envelope itself, not by another object.
-WRAP_RADIUS = 0.27
+WRAP_RADIUS = 0.24
 WRAP_CENTRE = (0.0, 0.0, 0.06)
-WRAP_OFFSET = 0.012
+WRAP_OFFSET = 0.004    # hugs the locks: a few thousandths off their surface
 WRAP_FLOOR = 0.03      # the shell is cut level here, above the ears
-WRAP_SMOOTH = 0.6      # Smooth modifier factor, to relax the folds where neighbouring locks meet
-WRAP_SUBDIV = 4        # 2,562 faces before the cut: the lock tips need this much resolution to be caught
+WRAP_SMOOTH = 0.0      # no smoothing: it erases the tips the shell is meant to follow
+WRAP_SUBDIV = 5        # 10,242 faces before the cut, so the shell can follow the tips
+WRAP_TRIS = 1500       # the finished shell is decimated to this
 
 
 def _build_wrap(name):
@@ -1115,11 +1116,15 @@ def _build_wrap(name):
     sw.offset = WRAP_OFFSET
     lib.apply_modifiers(shell)
     bpy.data.objects.remove(target)
-    sm = shell.modifiers.new("smooth", "SMOOTH")
-    sm.factor = WRAP_SMOOTH
-    sm.iterations = 4
-    lib.apply_modifiers(shell)
+    if WRAP_SMOOTH:
+        sm = shell.modifiers.new("smooth", "SMOOTH")
+        sm.factor = WRAP_SMOOTH
+        sm.iterations = 4
+        lib.apply_modifiers(shell)
     _cut_below(shell, H.z + WRAP_FLOOR)
+    dec = shell.modifiers.new("decimate", "DECIMATE")
+    dec.ratio = min(1.0, WRAP_TRIS / max(1, lib.tri_count(shell)))
+    lib.apply_modifiers(shell)
     lib.flat(shell)
     shell.name = name
     shell.data.name = name

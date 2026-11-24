@@ -1044,6 +1044,10 @@ def build_hair(name):
         return _build_wrap(name)
     if HAIR_STYLE == "envelope":
         return _build_envelope(name)
+    if HAIR_STYLE == "puff":
+        return _build_puff(name)
+    if HAIR_STYLE == "smooth_union":
+        return _build_union(name, smooth=True)
     return lib.join(name, _build_locks())
 
 
@@ -1115,6 +1119,35 @@ def _build_envelope(name):
     return shell
 
 
+# Option 2 (HERO_HAIR=puff): the hair is built from round puffs, not from the lock cones. Every other sample of each
+# HAIR centreline becomes a rounded puff the size of the lock's width, and the puffs are fused into one solid
+# (the anatomy pipeline), so the silhouette is a row of rounded clumps like the reference characters. Smooth shading.
+PUFF_EVERY = 2
+PUFF_RES = 0.006
+PUFF_VOXEL = 0.005
+PUFF_TRIS = 1400
+PUFF_SIZE = 0.35  # puff radius as a fraction of the lock's width
+
+
+def _build_puff(name):
+    anat = lib.Anatomy(name, resolution=PUFF_RES)
+    for entry in HAIR:
+        cut = entry[8] if len(entry) > 8 else None
+        pts = _lock_centres(entry)
+        for k in range(1, len(pts), PUFF_EVERY):  # from the first sample out: the root stays inside the skull
+            c, w = pts[k]
+            if cut is not None and c.z < H.z + cut:
+                continue
+            r = max(w * PUFF_SIZE, 0.012)
+            anat.ell(c, (r, r, r * 0.9), "hero_hair")
+    obj = anat.build(target_tris=PUFF_TRIS, voxel=PUFF_VOXEL)
+    for p in obj.data.polygons:
+        p.use_smooth = True
+    obj.name = name
+    obj.data.name = name
+    return obj
+
+
 # Option 1 (HERO_HAIR=normals): the five locks keep their exact geometry. Only the shading changes: every vertex takes
 # the normal pointing straight out from the head centre, and the faces are smooth. Adjacent locks then light the same
 # way across their seams, so the hair reads as one volume. The silhouette is unchanged.
@@ -1136,6 +1169,8 @@ def _build_normals(name):
 # remeshed and decimated. The result has no internal faces and no seams; the lock silhouettes are kept as they are.
 UNION_VOXEL = 0.004
 UNION_TRIS = 1200
+SMOOTH_UNION_FACTOR = 0.5
+SMOOTH_UNION_ITER = 3
 
 
 def _outward(obj):
@@ -1151,7 +1186,7 @@ def _outward(obj):
     bm.free()
 
 
-def _build_union(name):
+def _build_union(name, smooth=False):
     locks = _build_locks()
     for o in locks:
         _outward(o)
@@ -1172,7 +1207,16 @@ def _build_union(name):
     dec = base.modifiers.new("decimate", "DECIMATE")
     dec.ratio = min(1.0, UNION_TRIS / max(1, lib.tri_count(base)))
     lib.apply_modifiers(base)
-    lib.flat(base)
+    if smooth:
+        # round the bulges and the tips: the micro-facets from the remesh and decimate are what read as clutter
+        sm = base.modifiers.new("round", "SMOOTH")
+        sm.factor = SMOOTH_UNION_FACTOR
+        sm.iterations = SMOOTH_UNION_ITER
+        lib.apply_modifiers(base)
+        for p in base.data.polygons:
+            p.use_smooth = True
+    else:
+        lib.flat(base)
     base.name = name
     base.data.name = name
     return base

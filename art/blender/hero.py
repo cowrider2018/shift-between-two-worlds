@@ -1042,7 +1042,88 @@ def _build_locks():
 def build_hair(name):
     if HAIR_STYLE == "cap":
         return lib.join(name, _build_locks() + [_build_cap(f"{name}_cap")])
+    if HAIR_STYLE == "union":
+        return _build_union(name)
+    if HAIR_STYLE == "wrap":
+        return _build_wrap(name)
     return lib.join(name, _build_locks())
+
+
+# Option A (HERO_HAIR=union): the five locks, exactly as built, are Boolean-unioned into one closed solid, then voxel
+# remeshed and decimated. The result has no internal faces and no seams; the lock silhouettes are kept as they are.
+UNION_VOXEL = 0.004
+UNION_TRIS = 1200
+
+
+def _outward(obj):
+    """Close a lock's open root and point its normals out: a Boolean union needs closed, consistently oriented meshes."""
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    holes = [e for e in bm.edges if e.is_boundary]
+    if holes:
+        bmesh.ops.holes_fill(bm, edges=holes)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(obj.data)
+    bm.free()
+
+
+def _build_union(name):
+    locks = _build_locks()
+    for o in locks:
+        _outward(o)
+    base = locks[0]
+    for other in locks[1:]:
+        mod = base.modifiers.new("union", "BOOLEAN")
+        mod.operation = "UNION"
+        mod.solver = "EXACT"
+        mod.use_self = True
+        mod.use_hole_tolerant = True
+        mod.object = other
+        lib.apply_modifiers(base)
+        bpy.data.objects.remove(other)
+    rm = base.modifiers.new("remesh", "REMESH")
+    rm.mode = "VOXEL"
+    rm.voxel_size = UNION_VOXEL
+    lib.apply_modifiers(base)
+    dec = base.modifiers.new("decimate", "DECIMATE")
+    dec.ratio = min(1.0, UNION_TRIS / max(1, lib.tri_count(base)))
+    lib.apply_modifiers(base)
+    lib.flat(base)
+    base.name = name
+    base.data.name = name
+    return base
+
+
+# Option B (HERO_HAIR=wrap): a low-poly sphere, larger than the hair, is shrink-wrapped onto the outside of the five
+# locks (each vertex moves to the nearest point of the locks, pushed just outside). The sphere stays one closed mesh,
+# so the locks' envelope becomes one surface: the gaps are covered by the envelope itself, not by another object.
+WRAP_RADIUS = 0.27
+WRAP_CENTRE = (0.0, 0.0, 0.06)
+WRAP_OFFSET = 0.012
+WRAP_FLOOR = 0.03      # the shell is cut level here, above the ears
+WRAP_SMOOTH = 0.6      # Smooth modifier factor, to relax the folds where neighbouring locks meet
+WRAP_SUBDIV = 4        # 2,562 faces before the cut: the lock tips need this much resolution to be caught
+
+
+def _build_wrap(name):
+    target = lib.join(f"{name}_target", _build_locks())
+    shell = lib.ico(name, H + Vector(WRAP_CENTRE), WRAP_RADIUS, "hero_hair", WRAP_SUBDIV)
+    sw = shell.modifiers.new("wrap", "SHRINKWRAP")
+    sw.wrap_method = "NEAREST_SURFACEPOINT"
+    sw.target = target
+    sw.offset = WRAP_OFFSET
+    lib.apply_modifiers(shell)
+    bpy.data.objects.remove(target)
+    sm = shell.modifiers.new("smooth", "SMOOTH")
+    sm.factor = WRAP_SMOOTH
+    sm.iterations = 4
+    lib.apply_modifiers(shell)
+    _cut_below(shell, H.z + WRAP_FLOOR)
+    lib.flat(shell)
+    shell.name = name
+    shell.data.name = name
+    return shell
 
 
 # The crown shell (HERO_HAIR=cap): one low-poly dome laid over the skull under the five locks. The locks keep their own

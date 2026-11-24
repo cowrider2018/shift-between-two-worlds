@@ -22,17 +22,16 @@ const KEYCAP = [
   '.##########.',
   '#wwwwwwwwww#',
   '#wwwwwwwwww#',
-  '#wwbbbbbbww#',
   '#wwwwwwwwww#',
+  '#wwbbbbbbww#',
   '#dddddddddd#',
   '.##########.',
 ];
 const INK = '#1d1620';
-/** The key takes the colour of what it is for: the warm yellow of a lever, the red of a monster's sight cone. */
-const COLOURS: Record<PromptKind, { face: string; lip: string }> = {
-  lever: { face: '#ffc857', lip: '#c27a1c' },
-  takedown: { face: '#ff6a58', lip: '#a8362b' },
-};
+/** The original look for both kinds: a white keycap with a red bar across it. */
+const FACE = '#f4ecd8';
+const LIP = '#b9ae98';
+const BAR = '#e0302a';
 /** World size of one art pixel at the default camera distance (see TEXEL_DENSITY). */
 const PIXEL = 1 / 48;
 /** The icon is drawn a little larger than one key's art pixels, so it still reads from the default distance. */
@@ -45,7 +44,7 @@ const GLIDE = 14;
 const FADE = 8;
 const POP = 5;
 
-function keycapTexture(kind: PromptKind): CanvasTexture {
+function keycapTexture(): CanvasTexture {
   const c = document.createElement('canvas');
   c.width = KEYCAP[0].length;
   c.height = KEYCAP.length;
@@ -54,8 +53,7 @@ function keycapTexture(kind: PromptKind): CanvasTexture {
     for (let x = 0; x < row.length; x++) {
       const ch = row[x];
       if (ch === '.') continue;
-      const { face, lip } = COLOURS[kind];
-      g.fillStyle = ch === '#' || ch === 'b' ? INK : ch === 'w' ? face : lip;
+      g.fillStyle = ch === '#' ? INK : ch === 'b' ? BAR : ch === 'w' ? FACE : LIP;
       g.fillRect(x, y, 1, 1);
     }
   });
@@ -75,10 +73,8 @@ export class InteractPrompt {
   private readonly goal = new Vector3();
 
   constructor() {
-    this.mats = {
-      lever: new SpriteMaterial({ map: keycapTexture('lever'), transparent: true, depthWrite: false }),
-      takedown: new SpriteMaterial({ map: keycapTexture('takedown'), transparent: true, depthWrite: false }),
-    };
+    const keycap = new SpriteMaterial({ map: keycapTexture(), transparent: true, depthWrite: false });
+    this.mats = { lever: keycap, takedown: keycap };
     this.sprite = new Sprite(this.mats.lever);
     this.sprite.visible = false;
     this.sprite.scale.set(KEYCAP[0].length * SCALE * PIXEL, KEYCAP.length * SCALE * PIXEL, 1);

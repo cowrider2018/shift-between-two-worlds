@@ -26,6 +26,7 @@ import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
 import { InteractPrompt, type PromptTarget } from './interactPrompt';
+import { Motes } from './motes';
 import { THEMES } from './palette';
 import { PixelPipeline } from './pixelPipeline';
 import { TEXEL_DENSITY } from './texgen';
@@ -207,6 +208,7 @@ export class GameView {
   private cloak = 0;
   private readonly backdrop = new Backdrop();
   private readonly prompt = new InteractPrompt();
+  private readonly motes = new Motes();
   private readonly clearColor = new Color();
   /** Fog for the reflection: it sinks into the shown dimension's background with distance. It thickens at half
    *  the rate of a 4..16 fog (both ends doubled), so the reflection stays visible twice as far. */
@@ -222,7 +224,7 @@ export class GameView {
     this.sun.castShadow = true;
     this.sun.shadow.bias = -0.0015;
     this.sun.shadow.normalBias = 0.04;
-    this.scene.add(this.hemi, this.sun, this.sun.target, this.world, this.backdrop.mesh, this.prompt.sprite);
+    this.scene.add(this.hemi, this.sun, this.sun.target, this.world, this.backdrop.mesh, this.prompt.sprite, this.motes.points);
   }
 
   setSim(sim: Sim): void {
@@ -373,6 +375,7 @@ export class GameView {
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     if (this.takedown) this.updateTakedown(this.takedown, dt);
     this.prompt.update(this.promptTarget(), dt, this.t);
+    this.motes.update(sim.x, sim.y, sim.dim, dt, this.t);
     this.follow.update(sim, dt);
     this.hideNearSide();
     this.snapCharacters();

@@ -438,6 +438,24 @@ describe('simulation on level01', () => {
     expect(sim.hunter).toBeNull();
   });
 
+  it('names the Space target the same way Space acts: a lever in reach first, else a monster, none while hunted', () => {
+    const sim = new Sim(ambushLevel(7));
+    const m = sim.monsters[0];
+    sim.x = m.x + TUNING.attackRange - 0.05;
+    sim.update(NO_INPUT, 1 / 60);
+    expect(sim.interactTarget()).toEqual({ kind: 'takedown', monster: m });
+    // a lever at (6, 3), centre (6.5, 3.5): the hero at (6.5, 3.2) is within reach of it and of the monster at (6.5, 2.5)
+    setCell(sim.level, 0, 6, 3, 'L');
+    const both = new Sim(sim.level);
+    both.x = 6.5; both.y = 3.2;
+    both.update(NO_INPUT, 1 / 60);
+    expect(both.interactTarget()?.kind).toBe('lever');
+    const hunted = new Sim(ambushLevel(7));
+    hunted.x = hunted.monsters[0].x + TUNING.attackRange - 0.05;
+    hunted.hunter = hunted.monsters[0];
+    expect(hunted.interactTarget()).toBeNull();
+  });
+
   it('pulls a lever only within interactRange and takes a monster down only within attackRange, centre to centre', () => {
     const sim = new Sim(ambushLevel(7));
     const m = sim.monsters[0];

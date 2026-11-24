@@ -372,6 +372,16 @@ export class Sim {
     return best;
   }
 
+  /** What Space would act on right now, with the same priority as update(): a lever in reach first, else a monster
+   *  to take down. Null while hunted or mid-takedown, when Space does nothing. */
+  interactTarget(): { kind: 'lever'; cell: Cell } | { kind: 'takedown'; monster: MonsterState } | null {
+    if (this.hunter || this.takedownT > 0) return null;
+    const lever = this.nearestLever();
+    if (lever) return { kind: 'lever', cell: lever };
+    const monster = this.attackTarget();
+    return monster ? { kind: 'takedown', monster } : null;
+  }
+
   drainEvents(): SimEvent[] {
     const e = this.events;
     this.events = [];

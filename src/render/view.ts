@@ -25,6 +25,7 @@ import { CUT_FADE, isOuterRock, nearFade } from './terrain';
 import { CharacterInstance } from './models';
 import { CAMERA, FollowCamera } from './followCamera';
 import { glow } from './materials';
+import { InteractPrompt, type PromptTarget } from './interactPrompt';
 import { THEMES } from './palette';
 import { PixelPipeline } from './pixelPipeline';
 import { TEXEL_DENSITY } from './texgen';
@@ -203,6 +204,7 @@ export class GameView {
   /** How far the cloak is on, 0..1: the "cloak" clip's progress. */
   private cloak = 0;
   private readonly backdrop = new Backdrop();
+  private readonly prompt = new InteractPrompt();
   private readonly clearColor = new Color();
   /** Fog for the reflection: it sinks into the shown dimension's background with distance. It thickens at half
    *  the rate of a 4..16 fog (both ends doubled), so the reflection stays visible twice as far. */
@@ -218,7 +220,7 @@ export class GameView {
     this.sun.castShadow = true;
     this.sun.shadow.bias = -0.0015;
     this.sun.shadow.normalBias = 0.04;
-    this.scene.add(this.hemi, this.sun, this.sun.target, this.world, this.backdrop.mesh);
+    this.scene.add(this.hemi, this.sun, this.sun.target, this.world, this.backdrop.mesh, this.prompt.sprite);
   }
 
   setSim(sim: Sim): void {
@@ -289,6 +291,7 @@ export class GameView {
     this.shownDim = -1;
     this.catching = null;
     this.takedown = null;
+    this.prompt.reset();
     this.hero.root.rotation.set(0, 0, 0);
     this.follow.reset(sim);
     this.resize();
@@ -365,6 +368,7 @@ export class GameView {
 
     for (const mv of this.monsters) this.updateMonster(mv, dt);
     if (this.takedown) this.updateTakedown(this.takedown, dt);
+    this.prompt.update(this.promptTarget(), dt, this.t);
     this.follow.update(sim, dt);
     this.hideNearSide();
     this.snapCharacters();
@@ -375,6 +379,18 @@ export class GameView {
     this.backdrop.update(this.pipeline.width, this.pipeline.height, this.follow.camera, this.t);
     this.renderMirror();
     this.pipeline.render(this.scene, this.follow.camera);
+  }
+
+  /** Where the Space prompt floats: over the lever in reach, or over the monster Space would take down. */
+  private promptTarget(): PromptTarget | null {
+    const target = this.sim.interactTarget();
+    if (!target) return null;
+    if (target.kind === 'lever') {
+      const { x, y } = target.cell;
+      return { kind: 'lever', key: `lever:${x},${y}`, x: x + 0.5, y: 1.0, z: y + 0.5 };
+    }
+    const m = target.monster;
+    return { kind: 'takedown', key: `takedown:${this.sim.monsters.indexOf(m)}`, x: m.x, y: 1.8, z: m.y };
   }
 
   /** Thin out the outermost rock on the camera's side (see nearFade): rock wholly gone is not built, rock partly

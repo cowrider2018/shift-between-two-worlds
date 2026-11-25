@@ -1069,22 +1069,47 @@ def _outward_mesh(name, verts, faces):
     return lib.mesh_from(name, verts, faces, "hero_hair")
 
 
-# Root patch: behind the left ear, side_l's root (its first ring, swung into the skull) faces downward and shows as
-# a dark wedge between side_l and the end of back. The wedge's outline (ring corners of either lock, in order around
-# it) is closed by a fan of triangles about one centre point, sunk PATCH_DIP toward the head centre so the patch
-# dips slightly inward.
-#   (lock, [(ring, corner), ...], other lock, [(ring, corner), ...])
-PATCHES = [("side_l", [(1, 3), (1, 2), (1, 1), (1, 0)], "back", [(1, 2)])]
-PATCH_DIP = 0.008
+# Valley fill: behind the left ear, back's end lies against side_l in a V-shaped groove that shows dark from the crown
+# down (side_l's side face turned toward back, back's face turned toward side_l, then side_l's root facing downward
+# as a wedge). It is closed by a shallow valley running its whole length, from side_l's side-point ridge and root
+# corners to back's far ridge (its corner 2): one line of ring corners on each lock (from the top down), both resampled
+# to VALLEY_STEPS points by length, and a middle line between each pair sunk toward the head centre by VALLEY_DIP of
+# the distance across. Two rows of triangles, their diagonals mirrored so they cross the valley, join each side to
+# the middle line.
+#   (lock, [(ring, corner), ...], other lock, [(ring, corner), ...]), both lines from the top down
+VALLEYS = [("side_l", [(3, 3), (2, 3), (1, 3), (1, 2), (1, 1), (1, 0)], "back", [(3, 2), (2, 2), (1, 2)])]
+VALLEY_STEPS = 7
+VALLEY_DIP = 0.1  # of the distance across the pair
 
 
-def _patch(name, loop):
-    c = sum(loop, Vector()) / len(loop)
-    d = c - H
-    c = H + d.normalized() * max(d.length - PATCH_DIP, HEAD_R + HUG_MIN)
-    verts = loop + [c]
-    n = len(loop)
-    return _outward_mesh(name, verts, [(i, (i + 1) % n, n) for i in range(n)])
+def _resample(line, n):
+    """n points spread evenly by length along a polyline."""
+    cum = [0.0]
+    for p, q in zip(line, line[1:]):
+        cum.append(cum[-1] + (q - p).length)
+    out = []
+    for k in range(n):
+        s = cum[-1] * k / (n - 1)
+        i = min(next((j for j in range(1, len(cum)) if cum[j] >= s), len(cum) - 1), len(cum) - 1)
+        f = (s - cum[i - 1]) / max(cum[i] - cum[i - 1], 1e-9)
+        out.append(line[i - 1].lerp(line[i], f))
+    return out
+
+
+def _valley(name, left, right):
+    n = VALLEY_STEPS
+    a, b = _resample(left, n), _resample(right, n)
+    mid = []
+    for p, q in zip(a, b):
+        d = (p + q) / 2 - H
+        mid.append(H + d.normalized() * max(d.length - VALLEY_DIP * (p - q).length, HEAD_R + HUG_MIN))
+    verts = a + mid + b                                   # a: 0..n-1, mid: n..2n-1, b: 2n..3n-1
+    faces = []
+    for k in range(n - 1):
+        l0, l1, m0, m1, r0, r1 = k, k + 1, n + k, n + k + 1, 2 * n + k, 2 * n + k + 1
+        faces += [(l0, l1, m1), (l0, m1, m0)]             # left row, diagonal from the side down to the middle
+        faces += [(r0, m0, m1), (r0, m1, r1)]             # right row, the mirrored diagonal
+    return _outward_mesh(name, verts, faces)
 
 
 def _fill_seams(objs):
@@ -1095,8 +1120,8 @@ def _fill_seams(objs):
 
     strips = [_seam_strip(f"seam_{a}_{b}", _corner_line(by[a], ca, by[b]), _corner_line(by[b], cb, by[a]))
               for a, ca, b, cb in SEAMS]
-    patches = [_patch(f"patch_{a}_{b}", corners(a, ia) + corners(b, ib)) for a, ia, b, ib in PATCHES]
-    return strips + patches
+    valleys = [_valley(f"valley_{a}_{b}", corners(a, ia), corners(b, ib)) for a, ia, b, ib in VALLEYS]
+    return strips + valleys
 
 
 def _build_locks():

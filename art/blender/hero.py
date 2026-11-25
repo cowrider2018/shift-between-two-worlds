@@ -14,6 +14,7 @@ Faces +X, feet on z = 0, ~0.84 tiles tall. Right hand = -Y.
 """
 import json
 import math
+import os
 
 import bpy
 from mathutils import Matrix, Quaternion, Vector
@@ -1016,114 +1017,6 @@ def _drop_crown(obj, drop):
     obj.data.update()
 
 
-# Seam fill: sweep_r lies along the top of back, its side point resting on back's surface while the two locks' outer
-# corners both stand some way off it, so the two meet in a dark V-shaped groove across the crown. A strip of faces
-# is laid across the groove from one lock's outer corner line to the other's, closing it over.
-#   (lock, ring corner, other lock, its ring corner); corners index the hexagon in build_lock (1 and 2 = outer).
-# Only the corners within SEAM_REACH of the other lock take part, so the strip stays on the stretch the two run
-# together.
-SEAMS = [("sweep_r", 2, "back", 1)]
-SEAM_REACH = 0.07
-
-
-def _corner_line(obj, corner, other):
-    """The given hexagon corner of every ring of obj, kept where it lies within SEAM_REACH of the other lock."""
-    from mathutils.bvhtree import BVHTree
-    me = other.data
-    tree = BVHTree.FromPolygons([v.co.copy() for v in me.vertices], [list(p.vertices) for p in me.polygons])
-    vs = obj.data.vertices
-    pts = [vs[r * 6 + corner].co.copy() for r in range(obj["rings"])]
-    # the longest unbroken run of corners near the other lock
-    best, run = [], []
-    for p in pts:
-        run = run + [p] if tree.find_nearest(p)[3] <= SEAM_REACH else []
-        if len(run) > len(best):
-            best = run
-    return best
-
-
-def _seam_strip(name, a, b):
-    """Triangles between two corner lines, advancing along whichever line keeps the new diagonal shorter."""
-    if (a[0] - b[-1]).length + (a[-1] - b[0]).length < (a[0] - b[0]).length + (a[-1] - b[-1]).length:
-        b = b[::-1]
-    verts = a + b
-    n = len(a)
-    faces = []
-    i = j = 0
-    while i < len(a) - 1 or j < len(b) - 1:
-        if j == len(b) - 1 or (i < len(a) - 1 and (a[i + 1] - b[j]).length <= (a[i] - b[j + 1]).length):
-            faces.append((i, i + 1, n + j))
-            i += 1
-        else:
-            faces.append((i, n + j + 1, n + j))
-            j += 1
-    return _outward_mesh(name, verts, faces)
-
-
-def _outward_mesh(name, verts, faces):
-    """A hair mesh whose every face looks away from the head centre."""
-    for k, f in enumerate(faces):
-        p, q, r = (verts[x] for x in f)
-        if (q - p).cross(r - p).dot((p + q + r) / 3 - H) < 0:
-            faces[k] = f[::-1]
-    return lib.mesh_from(name, verts, faces, "hero_hair")
-
-
-# Valley fill: behind the left ear, back's end lies against side_l in a V-shaped groove that shows dark from the crown
-# down (side_l's side face turned toward back, back's face turned toward side_l, then side_l's root facing downward
-# as a wedge). It is closed by a shallow valley running its whole length, from side_l's side-point ridge and root
-# corners to back's far ridge (its corner 2): one line of ring corners on each lock (from the top down), both resampled
-# to VALLEY_STEPS points by length, and a middle line between each pair sunk toward the head centre by VALLEY_DIP of
-# the distance across. Two rows of triangles, their diagonals mirrored so they cross the valley, join each side to
-# the middle line.
-#   (lock, [(ring, corner), ...], other lock, [(ring, corner), ...]), both lines from the top down
-VALLEYS = [("side_l", [(3, 3), (2, 3), (1, 3), (1, 2), (1, 1), (1, 0)], "back", [(3, 2), (2, 2), (1, 2)])]
-VALLEY_STEPS = 7
-VALLEY_DIP = 0.1  # of the distance across the pair
-
-
-def _resample(line, n):
-    """n points spread evenly by length along a polyline."""
-    cum = [0.0]
-    for p, q in zip(line, line[1:]):
-        cum.append(cum[-1] + (q - p).length)
-    out = []
-    for k in range(n):
-        s = cum[-1] * k / (n - 1)
-        i = min(next((j for j in range(1, len(cum)) if cum[j] >= s), len(cum) - 1), len(cum) - 1)
-        f = (s - cum[i - 1]) / max(cum[i] - cum[i - 1], 1e-9)
-        out.append(line[i - 1].lerp(line[i], f))
-    return out
-
-
-def _valley(name, left, right):
-    n = VALLEY_STEPS
-    a, b = _resample(left, n), _resample(right, n)
-    mid = []
-    for p, q in zip(a, b):
-        d = (p + q) / 2 - H
-        mid.append(H + d.normalized() * max(d.length - VALLEY_DIP * (p - q).length, HEAD_R + HUG_MIN))
-    verts = a + mid + b                                   # a: 0..n-1, mid: n..2n-1, b: 2n..3n-1
-    faces = []
-    for k in range(n - 1):
-        l0, l1, m0, m1, r0, r1 = k, k + 1, n + k, n + k + 1, 2 * n + k, 2 * n + k + 1
-        faces += [(l0, l1, m1), (l0, m1, m0)]             # left row, diagonal from the side down to the middle
-        faces += [(r0, m0, m1), (r0, m1, r1)]             # right row, the mirrored diagonal
-    return _outward_mesh(name, verts, faces)
-
-
-def _fill_seams(objs):
-    by = {n: o for (n, *_), o in zip(HAIR, objs)}
-
-    def corners(name, idx):
-        return [by[name].data.vertices[r * 6 + c].co.copy() for r, c in idx]
-
-    strips = [_seam_strip(f"seam_{a}_{b}", _corner_line(by[a], ca, by[b]), _corner_line(by[b], cb, by[a]))
-              for a, ca, b, cb in SEAMS]
-    valleys = [_valley(f"valley_{a}_{b}", corners(a, ia), corners(b, ib)) for a, ia, b, ib in VALLEYS]
-    return strips + valleys
-
-
 def _build_locks():
     """The locks in HAIR order: built, roots swung, cut level (and the cap lifted), pressed to the scalp."""
     objs = [build_lock(f"hair_{n}", *args) for n, *args in HAIR]
@@ -1142,13 +1035,24 @@ def _build_locks():
     return objs
 
 
-def build_hair(name, seams=True):
-    """The joined locks; seams=False leaves out the seam fill (the hooded hair, whose crown the hood covers)."""
+# The full hair was finished by hand in Blender (seams between the locks closed, points moved): it is loaded from
+# baked/hair_full.json, written by bake_mesh.py, in place of the generated locks. The hooded hair is still generated.
+BAKED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "baked")
+
+
+def load_baked(name, mat):
+    """A mesh saved from Blender by bake_mesh.py, placed where it was in the edited scene."""
+    with open(os.path.join(BAKED, f"{name}.json")) as f:
+        data = json.load(f)
+    return lib.mesh_from(name, data["verts"], data["faces"], mat)
+
+
+def build_hair(name):
+    """The joined locks as generated."""
     objs = _build_locks()
-    fill = _fill_seams(objs) if seams else []
     for o in objs:
         del o["rings"]
-    return lib.join(name, objs + fill)
+    return lib.join(name, objs)
 
 
 # Hood cross-section: an egg — narrower toward the top, fuller toward the bottom — on a gentle superellipse, so the
@@ -1281,7 +1185,7 @@ def _hood_volume():
 
 def build_hooded_hair(name):
     """The locks cut down to what lies inside the hood, so they show in the face opening but never poke out."""
-    hair = build_hair(name, seams=False)
+    hair = build_hair(name)
     vol = _hood_volume()
     mod = hair.modifiers.new("hood_cut", "BOOLEAN")
     mod.operation = "INTERSECT"
@@ -1702,7 +1606,7 @@ def build(out_glb, out_preview):
     clothes = [build_tunic(), build_sleeves(), build_boots()]
     belt = build_belt(clothes[0])
     parts = {
-        "hair_full": build_hair("hair_full"),
+        "hair_full": load_baked("hair_full", "hero_hair"),
         "hair_hood": build_hooded_hair("hair_hood"),
         "hood": build_hood(),
     }

@@ -1016,6 +1016,61 @@ def _drop_crown(obj, drop):
     obj.data.update()
 
 
+# Seam fill: sweep_r lies along the top of back, its side point resting on back's surface while the two locks' outer
+# corners both stand some way off it, so the two meet in a dark V-shaped groove across the crown. A strip of faces
+# is laid across the groove from one lock's outer corner line to the other's, closing it over.
+#   (lock, ring corner, other lock, its ring corner); corners index the hexagon in build_lock (1 and 2 = outer).
+# Only the corners within SEAM_REACH of the other lock take part, so the strip stays on the stretch the two run
+# together.
+SEAMS = [("sweep_r", 2, "back", 1)]
+SEAM_REACH = 0.07
+
+
+def _corner_line(obj, corner, other):
+    """The given hexagon corner of every ring of obj, kept where it lies within SEAM_REACH of the other lock."""
+    from mathutils.bvhtree import BVHTree
+    me = other.data
+    tree = BVHTree.FromPolygons([v.co.copy() for v in me.vertices], [list(p.vertices) for p in me.polygons])
+    vs = obj.data.vertices
+    pts = [vs[r * 6 + corner].co.copy() for r in range(obj["rings"])]
+    # the longest unbroken run of corners near the other lock
+    best, run = [], []
+    for p in pts:
+        run = run + [p] if tree.find_nearest(p)[3] <= SEAM_REACH else []
+        if len(run) > len(best):
+            best = run
+    return best
+
+
+def _seam_strip(name, a, b):
+    """Triangles between two corner lines, advancing along whichever line keeps the new diagonal shorter."""
+    if (a[0] - b[-1]).length + (a[-1] - b[0]).length < (a[0] - b[0]).length + (a[-1] - b[-1]).length:
+        b = b[::-1]
+    verts = a + b
+    n = len(a)
+    faces = []
+    i = j = 0
+    while i < len(a) - 1 or j < len(b) - 1:
+        if j == len(b) - 1 or (i < len(a) - 1 and (a[i + 1] - b[j]).length <= (a[i] - b[j + 1]).length):
+            faces.append((i, i + 1, n + j))
+            i += 1
+        else:
+            faces.append((i, n + j + 1, n + j))
+            j += 1
+    # every face looks away from the head centre
+    for k, f in enumerate(faces):
+        p, q, r = (verts[x] for x in f)
+        if (q - p).cross(r - p).dot((p + q + r) / 3 - H) < 0:
+            faces[k] = f[::-1]
+    return lib.mesh_from(name, verts, faces, "hero_hair")
+
+
+def _fill_seams(objs):
+    by = {n: o for (n, *_), o in zip(HAIR, objs)}
+    return [_seam_strip(f"seam_{a}_{b}", _corner_line(by[a], ca, by[b]), _corner_line(by[b], cb, by[a]))
+            for a, ca, b, cb in SEAMS]
+
+
 def _build_locks():
     """The locks in HAIR order: built, roots swung, cut level (and the cap lifted), pressed to the scalp."""
     objs = [build_lock(f"hair_{n}", *args) for n, *args in HAIR]
@@ -1023,7 +1078,6 @@ def _build_locks():
     _flare_roots(objs)
     _pull_tips(objs)
     for o in objs:
-        del o["rings"]
         if "cut" in o:
             _cut_below(o, H.z + o["cut"])
             _lift_cap(o, H.z + o["cut"])
@@ -1035,8 +1089,13 @@ def _build_locks():
     return objs
 
 
-def build_hair(name):
-    return lib.join(name, _build_locks())
+def build_hair(name, seams=True):
+    """The joined locks; seams=False leaves out the seam fill (the hooded hair, whose crown the hood covers)."""
+    objs = _build_locks()
+    fill = _fill_seams(objs) if seams else []
+    for o in objs:
+        del o["rings"]
+    return lib.join(name, objs + fill)
 
 
 # Hood cross-section: an egg — narrower toward the top, fuller toward the bottom — on a gentle superellipse, so the
@@ -1169,7 +1228,7 @@ def _hood_volume():
 
 def build_hooded_hair(name):
     """The locks cut down to what lies inside the hood, so they show in the face opening but never poke out."""
-    hair = build_hair(name)
+    hair = build_hair(name, seams=False)
     vol = _hood_volume()
     mod = hair.modifiers.new("hood_cut", "BOOLEAN")
     mod.operation = "INTERSECT"

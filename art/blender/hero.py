@@ -5,10 +5,8 @@ short sword carried on the back. Stocky pear-shaped trunk; short legs of straigh
 
 Outfits are modular parts on one skeleton (see VARIANTS):
   plain  — the five-lock hair and the backpack (strap across the chest) the cloak is folded away in
-  hooded — close hood with a small peak above the back of the head, full-body cloak, clasp, and the hair cut
-           to what fits inside the hood (it still shows in the face opening)
+  hooded — close hood with a small peak above the back of the head, full-body cloak and clasp; no hair under the hood
   cloaking — the cloak going on (the "cloak" clip): out of the backpack, with the full hair until the hood is over it
-The bulky locks cannot sit under a hood whole, so the hair itself is a swappable part.
 
 Faces +X, feet on z = 0, ~0.84 tiles tall. Right hand = -Y.
 """
@@ -69,7 +67,7 @@ PRONE = 60  # forward pitch (degrees) of the whole body lying on the troll's bac
 # Outfit variants: the game shows the listed parts and hides every other part named here.
 VARIANTS = {
     "plain": ["hair_full", "bag", "strap"],
-    "hooded": ["hair_hood", "hood", "cape", "clasp"],
+    "hooded": ["hood", "cape", "clasp"],
     "cloaking": ["hair_full", "hood", "cape", "clasp", "bag", "strap"],
 }
 
@@ -1036,7 +1034,7 @@ def _build_locks():
 
 
 # The full hair was finished by hand in Blender (seams between the locks closed, points moved): it is loaded from
-# baked/hair_full.json, written by bake_mesh.py, in place of the generated locks. The hooded hair is still generated.
+# baked/hair_full.json, written by bake_mesh.py, in place of the generated locks.
 BAKED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "baked")
 
 
@@ -1091,10 +1089,6 @@ HOOD_SLICES = [0.16, 0.1, 0.03, -0.04, -0.1, -0.15, -0.185, -0.205, -0.225, -0.2
 HOOD_DRAPE_X = (0.12, 0.0, -0.17, -0.2)  # drape ramps in over the first pair of x, out over the second
 # The draped cloth keeps at least this far off the head centre, so it slides down the back of the skull.
 HOOD_SKULL_CLEAR = HEAD_R + 0.025
-# How far inside the cloth the hair is cut, so no lock pokes through a facet of the low-poly hood.
-HOOD_HAIR_INSET = 0.03
-# How far in front of the face opening the hair may still reach (locks peeking out of the hood).
-HOOD_HAIR_LIP = 0.025
 
 
 def _pchip(pts, x):
@@ -1154,49 +1148,6 @@ def build_hood():
     """
     rings, _, tip = _hood_rings()
     return lib.loft("hood", rings, "hero_cape", tip=tip)
-
-
-def _hood_volume():
-    """
-    A closed solid just inside the hood (capped a little in front of the face opening): what the hair may fill.
-    Built from the undraped tube: the drape folds the rings over each other near the peak, which would make the
-    solid self-intersect, and everything below the tube is hidden under the drape anyway.
-    """
-    rings, centres, tip = _hood_rings(draped=False)
-    inner = [[p - (p - c).normalized() * HOOD_HAIR_INSET for p in ring] for ring, c in zip(rings, centres)]
-    lip = [p + X * HOOD_HAIR_LIP for p in inner[0]]
-    rows = [lip] + inner
-    n = HOOD_SIDES
-    verts = [v for row in rows for v in row]
-    faces = []
-    for r in range(len(rows) - 1):
-        for i in range(n):
-            a, b = r * n + i, r * n + (i + 1) % n
-            faces.append((a, b, b + n, a + n))
-    verts.append(tip)
-    t = len(verts) - 1
-    last = (len(rows) - 1) * n
-    faces += [(last + i, last + (i + 1) % n, t) for i in range(n)]
-    verts.append(sum(lip, Vector()) / n)
-    f = len(verts) - 1
-    faces += [(i, f, (i + 1) % n) for i in range(n)]
-    return lib.mesh_from("hood_volume", verts, faces, "hero_hair", recalc=True)
-
-
-def build_hooded_hair(name):
-    """The locks cut down to what lies inside the hood, so they show in the face opening but never poke out."""
-    hair = build_hair(name)
-    vol = _hood_volume()
-    mod = hair.modifiers.new("hood_cut", "BOOLEAN")
-    mod.operation = "INTERSECT"
-    mod.solver = "EXACT"
-    mod.use_self = True  # the locks overlap each other
-    mod.use_hole_tolerant = True
-    mod.object = vol
-    lib.apply_modifiers(hair)
-    bpy.data.objects.remove(vol)
-    lib.flat(hair)
-    return hair
 
 
 def build_cape():
@@ -1607,7 +1558,6 @@ def build(out_glb, out_preview):
     belt = build_belt(clothes[0])
     parts = {
         "hair_full": load_baked("hair_full", "hero_hair"),
-        "hair_hood": build_hooded_hair("hair_hood"),
         "hood": build_hood(),
     }
     parts["cape"], parts["clasp"] = build_cape()
@@ -1627,8 +1577,7 @@ def build(out_glb, out_preview):
     for obj in head_parts:
         lib.attach(obj, rig, "head")
     lib.weight_chain(parts["cape"], rig, [("chest", 0.4), ("cape.1", 0.26), ("cape.2", 0.065)])
-    for name in ("hair_full", "hair_hood"):
-        lib.attach(parts[name], rig, "head")
+    lib.attach(parts["hair_full"], rig, "head")
     lib.attach(parts["hood"], rig, "hood")
     lib.attach(parts["bag"], rig, "bag")
     # rigid on the trunk: no arm or thigh swing may tug it

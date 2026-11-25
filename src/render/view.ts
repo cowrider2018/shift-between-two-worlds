@@ -38,7 +38,7 @@ const DISSOLVE_TIME = 0.35;
 /** Seconds to put the cloak on as the hero crouches on the surface, and to take it off on standing up. */
 const CLOAK_ON = 0.33;
 const CLOAK_OFF = 0.18;
-/** Cloak progress past which the hood is over the head, and the hair is the cut one that fits inside it. */
+/** Cloak progress past which the hood is over the head and the hair is hidden under it. */
 const HOOD_OVER = 0.72;
 
 class VisionCone {

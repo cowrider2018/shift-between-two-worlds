@@ -1057,7 +1057,11 @@ def _seam_strip(name, a, b):
         else:
             faces.append((i, n + j + 1, n + j))
             j += 1
-    # every face looks away from the head centre
+    return _outward_mesh(name, verts, faces)
+
+
+def _outward_mesh(name, verts, faces):
+    """A hair mesh whose every face looks away from the head centre."""
     for k, f in enumerate(faces):
         p, q, r = (verts[x] for x in f)
         if (q - p).cross(r - p).dot((p + q + r) / 3 - H) < 0:
@@ -1065,10 +1069,34 @@ def _seam_strip(name, a, b):
     return lib.mesh_from(name, verts, faces, "hero_hair")
 
 
+# Root patch: behind the left ear, side_l's root (its first ring, swung into the skull) faces downward and shows as
+# a dark wedge between side_l and the end of back. The wedge's outline (ring corners of either lock, in order around
+# it) is closed by a fan of triangles about one centre point, sunk PATCH_DIP toward the head centre so the patch
+# dips slightly inward.
+#   (lock, [(ring, corner), ...], other lock, [(ring, corner), ...])
+PATCHES = [("side_l", [(1, 3), (1, 2), (1, 1), (1, 0)], "back", [(1, 2)])]
+PATCH_DIP = 0.008
+
+
+def _patch(name, loop):
+    c = sum(loop, Vector()) / len(loop)
+    d = c - H
+    c = H + d.normalized() * max(d.length - PATCH_DIP, HEAD_R + HUG_MIN)
+    verts = loop + [c]
+    n = len(loop)
+    return _outward_mesh(name, verts, [(i, (i + 1) % n, n) for i in range(n)])
+
+
 def _fill_seams(objs):
     by = {n: o for (n, *_), o in zip(HAIR, objs)}
-    return [_seam_strip(f"seam_{a}_{b}", _corner_line(by[a], ca, by[b]), _corner_line(by[b], cb, by[a]))
-            for a, ca, b, cb in SEAMS]
+
+    def corners(name, idx):
+        return [by[name].data.vertices[r * 6 + c].co.copy() for r, c in idx]
+
+    strips = [_seam_strip(f"seam_{a}_{b}", _corner_line(by[a], ca, by[b]), _corner_line(by[b], cb, by[a]))
+              for a, ca, b, cb in SEAMS]
+    patches = [_patch(f"patch_{a}_{b}", corners(a, ia) + corners(b, ib)) for a, ia, b, ib in PATCHES]
+    return strips + patches
 
 
 def _build_locks():
